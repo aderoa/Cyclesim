@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v1.9</title>
+<title>CycleSim v2.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -208,7 +208,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v1.9</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v2.0</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -762,18 +762,21 @@ function generateTeams(){
     }
   }
 
-  // ── Step 5: Draft pool — next T×3 best unassigned by avg
+  // ── Step 5: Draft pool — sized to exactly fill all teams to 7
+  // Some teams got fewer than 4 natives, so they need more than 3 draft picks.
+  // Pool size = actual total slots still open across all teams.
+  const draftSlotsNeeded=teams.reduce((s,t)=>s+(7-t.riders.length),0);
   draftPool=[...allRiders]
     .filter(r=>!assigned.has(r.name))
     .sort((a,b)=>b.avg-a.avg)
-    .slice(0,T*3)
+    .slice(0,draftSlotsNeeded)
     .map(r=>r.name);
 
-  // Validate totals
+  // Validate
   const nativeCount=assigned.size;
   const fa=allRiders.length-nativeCount-draftPool.length;
   const incompleteTeams=teams.filter(t=>t.riders.length<4).length;
-  console.log(`T=${teams.length} | Native:${nativeCount} | Draft pool:${draftPool.length} | FA:${fa} | Incomplete native:${incompleteTeams}`);
+  console.log(`T=${teams.length} | Native:${nativeCount} | Draft slots needed:${draftSlotsNeeded} | FA:${fa} | Short-native teams:${incompleteTeams}`);
 
   // Reset draft state
   draftLog=[];draftDone=false;
@@ -1260,12 +1263,12 @@ function renderDraftUI(){
   }
 
   // Info card
+  const roundsUsed=draftLog.length?draftLog[draftLog.length-1].round:0;
   const totalAssigned=new Set(teams.flatMap(t=>t.riders)).size;
-  const totalFA=allRiders.length-totalAssigned-(draftDone?0:draftPool.length);
   document.getElementById('draft-info').innerHTML=draftDone?`
     <div style="display:flex;flex-direction:column;gap:6px">
       <div>🏆 <strong>${draftLog.length}</strong> total picks</div>
-      <div>🚴 <strong>3</strong> rounds · straight order</div>
+      <div>🚴 <strong>${roundsUsed}</strong> rounds · straight order</div>
       <div>👥 <strong>${teams.length}</strong> teams participated</div>
       <div class="sep"></div>
       <div style="font-size:.78rem;color:var(--muted)">Native pool: <strong style="color:var(--text)">${teams.length*4}</strong></div>
@@ -1279,7 +1282,7 @@ function renderDraftUI(){
       <div style="color:var(--muted)">Native pool: <strong style="color:var(--text)">${teams.length*4}</strong> riders</div>
       <div style="color:var(--muted)">Draft pool: <strong style="color:var(--text)">${draftPool.length}</strong> riders</div>
       <div style="color:var(--muted)">Free agents: <strong style="color:var(--accent)">${Math.max(0,allRiders.length-teams.length*4-draftPool.length)}</strong> riders</div>
-      <div style="color:var(--muted);margin-top:4px;font-size:.76rem">Draft picks best available from the pre-selected draft pool only. Free agents are not in either pool.</div>
+      <div style="color:var(--muted);margin-top:4px;font-size:.76rem">Draft fills each team to 7. Teams short on natives get extra draft picks.</div>
     </div>`;
 
   // Pick log
