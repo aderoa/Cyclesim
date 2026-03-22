@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v3.6</title>
+<title>CycleSim v3.7</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -220,7 +220,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v3.6</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v3.7</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -482,7 +482,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '3.1';
+const CACHE_VERSION = '3.7';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1023,15 +1023,26 @@ function renderNFATool(){
   if(nfaList) nfaList.innerHTML=remaining.map(poolRow).join('');
 
   // ── LEFT: riders grouped by continent > region
+  // Build lookup map first - handles both fresh allRiders and any name format
+  const riderMap = new Map();
+  allRiders.forEach(r => riderMap.set(r.name.trim(), r));
+
   const grouped={};
   remaining.forEach((name,idx)=>{
-    const r=allRiders.find(x=>x.name===name);
-    if(!r) return;
-    const cont=getContinent(r.country);
-    const reg=getRegionLabel(r.country);
+    const r=riderMap.get(name.trim()) || riderMap.get(name);
+    const country = r ? r.country : (
+      // fallback: find country from nativePool team data
+      (() => {
+        for(const t of teams){ if(t.riders.includes(name)) return t.country; }
+        return 'Other';
+      })()
+    );
+    const avg = r ? r.avg : 0;
+    const cont = r ? getContinent(r.country) : 'Other';
+    const reg  = r ? getRegionLabel(r.country) : 'Other';
     if(!grouped[cont]) grouped[cont]={};
     if(!grouped[cont][reg]) grouped[cont][reg]=[];
-    grouped[cont][reg].push({idx,name,r});
+    grouped[cont][reg].push({idx, name, r: r||{country, avg, name}});
   });
 
   const contOrder=Object.keys(CONTINENTS).concat(['Other']);
@@ -1040,6 +1051,13 @@ function renderNFATool(){
   let leftHtml='';
   if(!remaining.length){
     leftHtml='<div style="padding:16px;color:var(--green);font-size:.82rem;text-align:center">All assigned!</div>';
+  } else if(!sortedConts.length){
+    // Absolute fallback: flat list
+    leftHtml=remaining.map((name,idx)=>{
+      const r=riderMap.get(name.trim())||riderMap.get(name)||{country:'?',avg:0};
+      const sel=selectedNFA===name;
+      return `<div class="nfa-rider-row${sel?' nfa-selected':''}" data-nfa-idx="${idx}" draggable="true"><span class="nfa-flag">${flagImg(r.country,11)}</span><span class="nfa-name">${name}</span><span class="nfa-avg">${r.avg.toFixed(1)}</span></div>`;
+    }).join('');
   } else {
     sortedConts.forEach(cont=>{
       leftHtml+=`<div class="nfa-continent-header">${cont}</div>`;
@@ -1047,16 +1065,11 @@ function renderNFATool(){
         leftHtml+=`<div class="nfa-region-header">${reg.replace(/\./g,' ')}</div>`;
         grouped[cont][reg].forEach(({idx,name,r})=>{
           const sel=selectedNFA===name;
-          leftHtml+=`<div class="nfa-rider-row${sel?' nfa-selected':''}" data-nfa-idx="${idx}" draggable="true">
-            <span class="nfa-flag">${flagImg(r.country,11)}</span>
-            <span class="nfa-name">${name}</span>
-            <span class="nfa-avg">${r.avg.toFixed(1)}</span>
-          </div>`;
+          leftHtml+=`<div class="nfa-rider-row${sel?' nfa-selected':''}" data-nfa-idx="${idx}" draggable="true"><span class="nfa-flag">${flagImg(r.country,11)}</span><span class="nfa-name">${name}</span><span class="nfa-avg">${r.avg.toFixed(1)}</span></div>`;
         });
       });
     });
   }
-  const unassignedEl=document.getElementById('nfa-unassigned-list');
   unassignedEl.innerHTML=leftHtml;
 
   // Attach events to rider rows via event delegation
