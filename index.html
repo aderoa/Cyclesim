@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v1.7</title>
+<title>CycleSim v1.8</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -207,7 +208,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v1.7</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v1.8</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -574,22 +575,21 @@ function parseCSV(text) {
 // ═══════════════════════════════════════════════════════════════
 const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'nl','Colombia':'co','Australia':'au','United Kingdom':'gb','China':'cn','Denmark':'dk','Germany':'de','Argentina':'ar','Norway':'no','New Zealand':'nz','Japan':'jp','United States':'us','Portugal':'pt','Venezuela':'ve','Czech Republic':'cz','Poland':'pl','Switzerland':'ch','Austria':'at','Russia':'ru','Malaysia':'my','Guatemala':'gt','Turkey':'tr','Algeria':'dz','South Africa':'za','Slovenia':'si','Thailand':'th','Indonesia':'id','Canada':'ca','Costa Rica':'cr','Kazakhstan':'kz','Philippines':'ph','Ireland':'ie','Ecuador':'ec','United Arab Emirates':'ae','Sweden':'se','Chile':'cl','Morocco':'ma','Uruguay':'uy','Estonia':'ee','Eritrea':'er','Brazil':'br','Mexico':'mx','Hungary':'hu','Rwanda':'rw','Hong Kong':'hk','Burkina Faso':'bf','Angola':'ao','Panama':'pa','Slovakia':'sk','Taiwan':'tw','Bolivia':'bo','Luxembourg':'lu','South Korea':'kr','Romania':'ro','Mali':'ml','Latvia':'lv','Israel':'il','Mauritius':'mu','Uzbekistan':'uz','Iran':'ir','India':'in','Mongolia':'mn','Namibia':'na','Saudi Arabia':'sa','Ethiopia':'et','Belize':'bz','Dominican Republic':'do','Singapore':'sg','Ukraine':'ua','Lithuania':'lt','Belarus':'by','Cameroon':'cm','Cuba':'cu','Benin':'bj','Serbia':'rs','Finland':'fi','Greece':'gr','Peru':'pe','Bulgaria':'bg','Azerbaijan':'az','Uganda':'ug','Oman':'om','Kyrgyzstan':'kg','Croatia':'hr','Malta':'mt','Laos':'la','Bahrain':'bh','Iraq':'iq','Vietnam':'vn','Albania':'al','Tunisia':'tn','DR Congo':'cd','Ghana':'gh','Zimbabwe':'zw','Andorra':'ad','Honduras':'hn','Syria':'sy','Paraguay':'py','Egypt':'eg','Ivory Coast':'ci','Senegal':'sn','Puerto Rico':'pr','Cyprus':'cy','Bermuda':'bm','Kosovo':'xk','Lesotho':'ls','Pakistan':'pk','Nigeria':'ng','Kenya':'ke','Guam':'gu','Monaco':'mc','Grenada':'gd','Macau':'mo','Afghanistan':'af','Iceland':'is','Liechtenstein':'li','Qatar':'qa','Curaçao':'cw'};
 
-// Flag image from flagcdn.com — works on all platforms including Windows
-function flagImg(country, h=12){
+// Flag using flag-icons CSS library (SVG sprites, works on all platforms)
+function flagImg(country, size=14){
   const code=CC[country];
-  if(!code) return `<span style="font-size:.68rem;font-family:'Barlow Condensed',sans-serif;font-weight:800;color:var(--muted);background:rgba(120,128,160,.18);border-radius:3px;padding:1px 4px">??</span>`;
-  return `<img src="https://flagcdn.com/${h}x${Math.round(h*4/3)}/${code}.png" alt="${country}" title="${country}" style="height:${h}px;vertical-align:middle;border-radius:1px;display:inline-block">`;
+  if(!code) return ccBadge(country);
+  return `<span class="fi fi-${code}" style="width:${Math.round(size*4/3)}px;height:${size}px;display:inline-block;vertical-align:middle;border-radius:1px;background-size:cover" title="${country}"></span>`;
 }
 
-// ccBadge: text badge fallback (used in list panel where images would be too many requests)
+// Text badge fallback for list panel (avoids many DOM elements)
 function ccBadge(country, small=false){
   const code=(CC[country]||'??').toUpperCase();
-  const sz=small?'font-size:.62rem;padding:1px 4px':'font-size:.68rem;padding:1px 5px';
-  return `<span style="${sz};font-family:'Barlow Condensed',sans-serif;font-weight:800;letter-spacing:.5px;background:rgba(120,128,160,.18);color:var(--muted);border-radius:3px;display:inline-block;line-height:1.4">${code}</span>`;
+  const sz=small?'font-size:.6rem;padding:1px 3px':'font-size:.65rem;padding:1px 4px';
+  return `<span style="${sz};font-family:'Barlow Condensed',sans-serif;font-weight:800;letter-spacing:.5px;background:rgba(120,128,160,.2);color:var(--muted);border-radius:3px;display:inline-block;line-height:1.5">${code}</span>`;
 }
 
-// flag() — use image for individual riders/teams, badge for lists
-function flag(country){ return flagImg(country, 12); }
+function flag(country){ return flagImg(country, 13); }
 
 // ═══════════════════════════════════════════════════════════════
 // DATABASE TAB
@@ -675,7 +675,7 @@ function confirmGenerate(){
 function generateTeams(){
   if(!allRiders.length){alert('Rider database not loaded yet.');return;}
 
-  // ── Step 1: Group riders by country, shuffle within each
+  // ── Step 1: Group & shuffle riders per country
   const byCountry={};
   allRiders.forEach(r=>{
     if(!byCountry[r.country]) byCountry[r.country]=[];
@@ -683,60 +683,77 @@ function generateTeams(){
   });
   Object.values(byCountry).forEach(arr=>arr.sort(()=>Math.random()-.5));
 
-  const totalRiders=allRiders.length;
-
   // ── Step 2: Hamilton apportionment — T = round(total/7)
-  // Distribute T teams across countries proportionally to rider count.
-  // Guarantees T×7 = totalRiders-1 slots (1 free agent).
-  const T=Math.round(totalRiders/7);
+  const T=Math.round(allRiders.length/7);
   const countryList=Object.entries(byCountry);
   const alloc=countryList.map(([country,pool])=>({
     country, pool,
-    base: Math.floor(pool.length/7),
+    nTeams: Math.floor(pool.length/7),
     remainder: pool.length % 7,
   }));
-  let allocated=alloc.reduce((s,a)=>s+a.base,0);
-  // Give extra teams to countries with largest remainders
-  alloc.sort((a,b)=>b.remainder-a.remainder||b.pool.length-a.pool.length);
-  for(let i=0;i<T-allocated;i++) alloc[i].base++;
+  let allocated=alloc.reduce((s,a)=>s+a.nTeams,0);
+  const extras=T-allocated;
+  // Sort by remainder desc to award extras — don't mutate alloc order permanently
+  [...alloc].sort((a,b)=>b.remainder-a.remainder||b.pool.length-a.pool.length)
+    .slice(0,extras).forEach(a=>a.nTeams++);
 
   // ── Step 3: Create team objects
   teams=[];
-  for(const {country,base} of alloc){
-    if(base===0) continue;
+  for(const {country,nTeams} of alloc){
+    if(nTeams===0) continue;
     const names=TEAM_NAMES[country]||[];
-    for(let i=0;i<base;i++){
+    for(let i=0;i<nTeams;i++){
       teams.push({id:teams.length, name:names[i]||`${country} ${i+1}`, country, riders:[]});
     }
   }
 
-  // ── Step 4: Native assignment — T×4 slots, 4 per team
-  // Pass 1: own country riders first (random within country)
-  const nativeAssigned=new Set();
-  for(const team of teams){
-    const pool=(byCountry[team.country]||[]).filter(n=>!nativeAssigned.has(n));
-    const take=Math.min(4,pool.length);
-    for(let i=0;i<take;i++){ team.riders.push(pool[i]); nativeAssigned.add(pool[i]); }
-  }
-  // Pass 2: teams still short of 4 → geographic neighbors, best avg first
-  for(const team of teams){
-    if(team.riders.length>=4) continue;
-    const needed=4-team.riders.length;
-    const neighborPool=getRegionalPool(team.country,nativeAssigned)
-      .sort((a,b)=>(allRiders.find(x=>x.name===b)?.avg||0)-(allRiders.find(x=>x.name===a)?.avg||0));
-    for(let i=0;i<Math.min(needed,neighborPool.length);i++){
-      team.riders.push(neighborPool[i]); nativeAssigned.add(neighborPool[i]);
+  // ── Step 4: Assign 4 riders per team — single global assigned set
+  const assigned=new Set();
+
+  // Pass 1: true nationals, interleaved (round-robin per country)
+  // Group teams by country first
+  const teamsByCountry={};
+  teams.forEach(t=>{
+    if(!teamsByCountry[t.country]) teamsByCountry[t.country]=[];
+    teamsByCountry[t.country].push(t);
+  });
+  for(const [country,ctTeams] of Object.entries(teamsByCountry)){
+    const pool=(byCountry[country]||[]).filter(n=>!assigned.has(n));
+    let pi=0;
+    for(let slot=0;slot<4;slot++){
+      for(const team of ctTeams){
+        if(pi<pool.length){
+          team.riders.push(pool[pi]);
+          assigned.add(pool[pi]);
+          pi++;
+        }
+      }
     }
   }
 
+  // Pass 2: teams short of 4 → geographic neighbors, best avg first
+  for(const team of teams){
+    if(team.riders.length>=4) continue;
+    const needed=4-team.riders.length;
+    const neighborPool=getRegionalPool(team.country,assigned)
+      .sort((a,b)=>(allRiders.find(x=>x.name===b)?.avg||0)-(allRiders.find(x=>x.name===a)?.avg||0));
+    for(const name of neighborPool){
+      if(team.riders.length>=4) break;
+      if(!assigned.has(name)){ team.riders.push(name); assigned.add(name); }
+    }
+  }
+
+  // Safety: remove any accidental duplicates within a team
+  teams.forEach(t=>{ t.riders=[...new Set(t.riders)]; });
+
   // ── Step 5: Draft pool — next T×3 best unassigned by avg
   draftPool=[...allRiders]
-    .filter(r=>!nativeAssigned.has(r.name))
+    .filter(r=>!assigned.has(r.name))
     .sort((a,b)=>b.avg-a.avg)
     .slice(0,T*3)
     .map(r=>r.name);
 
-  // ── Reset draft state
+  // Reset draft state
   draftLog=[];draftDone=false;
   document.getElementById('nav-draft-badge').style.display='none';
   document.getElementById('draft-reset-btn').style.display='none';
@@ -745,8 +762,8 @@ function generateTeams(){
   renderTeams();renderRaceTeamPicker();
   document.getElementById('nav-teams-count').textContent=teams.length;
 
-  const fa=allRiders.length-T*7;
-  console.log(`T=${T} | Native:${T*4} | Draft:${T*3} | FA:${fa}`);
+  const fa=allRiders.length-assigned.size-draftPool.length;
+  console.log(`T=${teams.length} | Native assigned:${assigned.size} | Draft pool:${draftPool.length} | FA:${fa}`);
 }
 
 function getRegionalPool(country,assigned){
