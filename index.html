@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v2.1</title>
+<title>CycleSim v2.2</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -208,7 +208,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v2.1</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v2.2</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -239,16 +239,26 @@ tbody td{padding:6px 10px}
 <!-- ═══ TEAMS ════════════════════════════════════════════════ -->
 <div id="tab-teams" class="tab-content">
   <div class="toolbar">
-    <input type="text" class="search-input" id="teams-search" placeholder="Search team or country…" oninput="renderTeams()">
+    <button class="btn btn-accent" id="btn-step1" onclick="stepGeneratePools()">① Generate Pools</button>
+    <button class="btn btn-ghost" id="btn-step2" onclick="stepCreateTeams()" disabled>② Create Teams</button>
+    <button class="btn btn-ghost" id="btn-step3" onclick="stepAssignNatives()" disabled>③ Assign Natives</button>
+    <button class="btn btn-danger btn-sm" onclick="confirmGenerate()">↺ Reset All</button>
+    <input type="text" class="search-input" id="teams-search" placeholder="Search team or country…" oninput="renderTeams()" style="max-width:200px">
     <select class="form-select" id="teams-country-filter" onchange="renderTeams()">
       <option value="">All Countries</option>
     </select>
-    <button class="btn btn-accent" id="gen-btn" onclick="confirmGenerate()">⚡ Generate Teams</button>
-    <button class="btn btn-ghost" onclick="renderTeams()">↺ Refresh</button>
     <span class="pill" id="teams-count-pill">—</span>
     <span class="pill" id="fa-count-pill" style="color:var(--accent);border-color:rgba(245,196,0,.3);background:rgba(245,196,0,.08)">—</span>
   </div>
-  <div style="display:grid;grid-template-columns:220px 1fr;gap:12px;height:calc(100vh - 115px)">
+  <!-- Pool status bar -->
+  <div id="pool-status-bar" style="display:none;gap:8px;margin-bottom:10px;flex-wrap:wrap" class="toolbar">
+    <div class="pill" id="ps-native" style="color:var(--green);border-color:rgba(62,207,110,.3);background:rgba(62,207,110,.08)">Native pool: —</div>
+    <div class="pill" id="ps-draft" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)">Draft pool: —</div>
+    <div class="pill" id="ps-fa" style="color:var(--accent);border-color:rgba(245,196,0,.3);background:rgba(245,196,0,.08)">Free agents: —</div>
+    <div class="pill" id="ps-teams">Teams: —</div>
+    <div class="pill" id="ps-assigned">Assigned: —</div>
+  </div>
+  <div style="display:grid;grid-template-columns:220px 1fr;gap:12px;height:calc(100vh - 135px)">
     <!-- List panel -->
     <div style="display:flex;flex-direction:column;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">
       <div style="padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
@@ -524,8 +534,10 @@ const REGIONS = {
 // STATE
 // ═══════════════════════════════════════════════════════════════
 let allRiders = [];
+let nativePool = [];     // T×4 rider names, locked first
+let draftPool = [];      // T×3 rider names, locked second
+let freeAgent = [];      // remainder (ideally 1)
 let teams = [];
-let draftPool = [];      // T×3 rider names set at generation time
 let selectedTeams = new Set();
 let stages = [];
 let lastResults = null;
@@ -665,38 +677,71 @@ function saveNewRider(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// TEAM GENERATION
+// TEAM GENERATION — 3 SEQUENTIAL STEPS
 // ═══════════════════════════════════════════════════════════════
 function confirmGenerate(){
-  if(teams.length>0 && !confirm('Re-generating teams will reset all current assignments. Continue?')) return;
-  generateTeams();
+  if((teams.length||nativePool.length) && !confirm('Reset all pools and teams? This cannot be undone.')) return;
+  // Full reset
+  nativePool=[];draftPool=[];freeAgent=[];teams=[];
+  draftLog=[];draftDone=false;
+  document.getElementById('nav-draft-badge').style.display='none';
+  document.getElementById('draft-reset-btn').style.display='none';
+  document.getElementById('btn-step1').disabled=false;
+  document.getElementById('btn-step2').disabled=true;
+  document.getElementById('btn-step3').disabled=true;
+  document.getElementById('pool-status-bar').style.display='none';
+  buildRiderTeamMap();saveTeams();populateCountryFilters();
+  renderTeams();renderRaceTeamPicker();
+  document.getElementById('nav-teams-count').textContent='—';
 }
 
-function generateTeams(){
+// ── STEP 1: Generate pools ─────────────────────────────────────
+// Shuffle ALL riders randomly. First T×4 = native pool.
+// Next T×3 = draft pool. Remainder = free agents.
+function stepGeneratePools(){
   if(!allRiders.length){alert('Rider database not loaded yet.');return;}
-
-  // ── Step 1: Group & shuffle riders per country
-  const byCountry={};
-  allRiders.forEach(r=>{
-    if(!byCountry[r.country]) byCountry[r.country]=[];
-    byCountry[r.country].push(r.name);
-  });
-  Object.values(byCountry).forEach(arr=>arr.sort(()=>Math.random()-.5));
-
-  // ── Step 2: Hamilton apportionment — T = round(total/7)
   const T=Math.round(allRiders.length/7);
-  const alloc=Object.entries(byCountry).map(([country,pool])=>({
-    country, pool,
-    nTeams: Math.floor(pool.length/7),
-    remainder: pool.length%7,
+  const shuffled=[...allRiders].sort(()=>Math.random()-.5);
+  nativePool=shuffled.slice(0,T*4).map(r=>r.name);
+  draftPool=shuffled.slice(T*4,T*4+T*3).map(r=>r.name);
+  freeAgent=shuffled.slice(T*4+T*3).map(r=>r.name);
+  console.log(`Pools: T=${T} | Native=${nativePool.length} | Draft=${draftPool.length} | FA=${freeAgent.length}`);
+  updatePoolStatus();
+  document.getElementById('btn-step2').disabled=false;
+  document.getElementById('btn-step3').disabled=true;
+  teams=[];buildRiderTeamMap();populateCountryFilters();renderTeams();
+  document.getElementById('nav-teams-count').textContent='—';
+  saveTeams();
+}
+
+// ── STEP 2: Create teams from native pool nationalities ─────────
+// Count riders per country IN THE NATIVE POOL.
+// Hamilton apportionment of T teams across those countries.
+function stepCreateTeams(){
+  if(!nativePool.length){alert('Generate pools first.');return;}
+  const T=Math.round(allRiders.length/7);
+
+  // Count native pool riders per country
+  const byCountry={};
+  nativePool.forEach(name=>{
+    const r=allRiders.find(x=>x.name===name);
+    if(!r) return;
+    if(!byCountry[r.country]) byCountry[r.country]=0;
+    byCountry[r.country]++;
+  });
+
+  // Hamilton apportionment of T teams based on native pool composition
+  const alloc=Object.entries(byCountry).map(([country,count])=>({
+    country,
+    nTeams: Math.floor(count/4),
+    remainder: count%4,
   }));
   let allocated=alloc.reduce((s,a)=>s+a.nTeams,0);
   [...alloc]
-    .sort((a,b)=>b.remainder-a.remainder||b.pool.length-a.pool.length)
+    .sort((a,b)=>b.remainder-a.remainder||b.nTeams-a.nTeams)
     .slice(0,T-allocated)
     .forEach(a=>a.nTeams++);
 
-  // ── Step 3: Create team objects
   teams=[];
   for(const {country,nTeams} of alloc){
     if(nTeams===0) continue;
@@ -706,19 +751,47 @@ function generateTeams(){
     }
   }
 
-  // ── Step 4: Lock native pool (T×4 = exactly 2364 riders) BEFORE assigning
-  // Build a SINGLE global assigned Set.
-  // Three passes, in priority order. Each pass atomically marks riders assigned.
+  console.log(`Teams created: ${teams.length} (target ${T})`);
+  updatePoolStatus();
+  document.getElementById('nav-teams-count').textContent=teams.length;
+  document.getElementById('btn-step3').disabled=false;
+  buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
+  saveTeams();
+}
+
+// ── STEP 3: Assign native pool riders to teams ──────────────────
+// Distribute native pool to teams: same-country first (round-robin),
+// then geographic neighbors, then global. Exactly 4 per team.
+function stepAssignNatives(){
+  if(!teams.length){alert('Create teams first.');return;}
+  if(!nativePool.length){alert('Generate pools first.');return;}
+
+  // Reset all riders from teams
+  teams.forEach(t=>t.riders=[]);
+
+  // Build a lookup: name → rider object, restricted to native pool only
+  const nativeSet=new Set(nativePool);
   const assigned=new Set();
 
-  // Group teams by country for round-robin native pass
+  // Group native pool riders by country
+  const byCountry={};
+  nativePool.forEach(name=>{
+    const r=allRiders.find(x=>x.name===name);
+    if(!r) return;
+    if(!byCountry[r.country]) byCountry[r.country]=[];
+    byCountry[r.country].push(name);
+  });
+  // Shuffle within each country
+  Object.values(byCountry).forEach(arr=>arr.sort(()=>Math.random()-.5));
+
+  // Group teams by country
   const teamsByCountry={};
   teams.forEach(t=>{
     if(!teamsByCountry[t.country]) teamsByCountry[t.country]=[];
     teamsByCountry[t.country].push(t);
   });
 
-  // PASS 1 — true nationals, round-robin per country
+  // PASS 1: true nationals, round-robin per country
   for(const [country,ctTeams] of Object.entries(teamsByCountry)){
     const pool=(byCountry[country]||[]).filter(n=>!assigned.has(n));
     let pi=0;
@@ -733,59 +806,53 @@ function generateTeams(){
     }
   }
 
-  // PASS 2 — geographic neighbors for teams still short of 4
-  // Process short teams ordered by deficit descending (most needy first)
-  const shortTeams=teams.filter(t=>t.riders.length<4)
-    .sort((a,b)=>(a.riders.length-b.riders.length));
+  // PASS 2: teams short of 4 → neighbors from native pool
+  const shortTeams=teams.filter(t=>t.riders.length<4).sort((a,b)=>a.riders.length-b.riders.length);
   for(const team of shortTeams){
     const region=getRegion(team.country);
     const neighborCountries=region?REGIONS[region].filter(c=>c!==team.country):[];
-    const neighborPool=allRiders
-      .filter(r=>neighborCountries.includes(r.country)&&!assigned.has(r.name))
-      .sort((a,b)=>b.avg-a.avg);
-    for(const r of neighborPool){
+    const neighborPool=nativePool
+      .filter(name=>{
+        const r=allRiders.find(x=>x.name===name);
+        return r&&neighborCountries.includes(r.country)&&!assigned.has(name);
+      })
+      .sort((a,b)=>(allRiders.find(x=>x.name===b)?.avg||0)-(allRiders.find(x=>x.name===a)?.avg||0));
+    for(const name of neighborPool){
       if(team.riders.length>=4) break;
-      if(!assigned.has(r.name)){ team.riders.push(r.name); assigned.add(r.name); }
+      if(!assigned.has(name)){ team.riders.push(name); assigned.add(name); }
     }
   }
 
-  // PASS 3 — global fallback: any team still short gets best available globally
-  // Use an indexed array (not filtered snapshot) to avoid stale reads
-  const globalQueue=allRiders
-    .filter(r=>!assigned.has(r.name))
-    .sort((a,b)=>b.avg-a.avg);
+  // PASS 3: global fallback — any remaining native pool riders, best avg first
+  const globalQueue=nativePool
+    .filter(name=>!assigned.has(name))
+    .sort((a,b)=>(allRiders.find(x=>x.name===b)?.avg||0)-(allRiders.find(x=>x.name===a)?.avg||0));
   let gi=0;
   for(const team of teams){
     while(team.riders.length<4 && gi<globalQueue.length){
-      const r=globalQueue[gi++];
-      if(!assigned.has(r.name)){ team.riders.push(r.name); assigned.add(r.name); }
+      const name=globalQueue[gi++];
+      if(!assigned.has(name)){ team.riders.push(name); assigned.add(name); }
     }
   }
 
-  // Verify — every team must have exactly 4
-  const incomplete=teams.filter(t=>t.riders.length!==4);
-  if(incomplete.length) console.warn(`${incomplete.length} teams still incomplete after all passes!`);
+  const incomplete=teams.filter(t=>t.riders.length<4).length;
+  console.log(`Native assigned: ${assigned.size}/${nativePool.length} | Short teams: ${incomplete}`);
 
-  // ── Step 5: Draft pool — exactly T×3 next-best unassigned riders
-  // Pool is locked here; draft just assigns from it (3 per team, straight).
-  draftPool=[...allRiders]
-    .filter(r=>!assigned.has(r.name))
-    .sort((a,b)=>b.avg-a.avg)
-    .slice(0,T*3)
-    .map(r=>r.name);
-
-  const fa=allRiders.length-assigned.size-draftPool.length;
-  console.log(`T=${teams.length} | Native:${assigned.size} (target ${T*4}) | Draft:${draftPool.length} | FA:${fa} | Incomplete:${incomplete.length}`);
-
-  // Reset draft state
-  draftLog=[];draftDone=false;
-  document.getElementById('nav-draft-badge').style.display='none';
-  document.getElementById('draft-reset-btn').style.display='none';
-
-  buildRiderTeamMap();saveTeams();populateCountryFilters();
-  renderTeams();renderRaceTeamPicker();
-  document.getElementById('nav-teams-count').textContent=teams.length;
+  updatePoolStatus(assigned.size);
+  buildRiderTeamMap();saveTeams();renderTeams();
 }
+
+function updatePoolStatus(nativeAssigned){
+  const bar=document.getElementById('pool-status-bar');
+  bar.style.display='flex';
+  document.getElementById('ps-native').textContent=`Native pool: ${nativePool.length}`;
+  document.getElementById('ps-draft').textContent=`Draft pool: ${draftPool.length}`;
+  document.getElementById('ps-fa').textContent=`Free agents: ${freeAgent.length}`;
+  document.getElementById('ps-teams').textContent=`Teams: ${teams.length}`;
+  document.getElementById('ps-assigned').textContent=nativeAssigned!=null?`Assigned: ${nativeAssigned}/${nativePool.length}`:'Assigned: —';
+  document.getElementById('fa-count-pill').textContent=`${freeAgent.length} free agent${freeAgent.length!==1?'s':''}`;
+}
+
 
 function getRegion(country){
   for(const [r,cs] of Object.entries(REGIONS)){if(cs.includes(country)) return r;}
@@ -820,20 +887,23 @@ function strengthColor(avg){
 }
 
 // ── localStorage ─────────────────────────────────────────────
-function saveTeams(){try{localStorage.setItem('cyclesim_teams',JSON.stringify({teams,draftPool}));}catch(e){}}
+function saveTeams(){try{localStorage.setItem('cyclesim_teams',JSON.stringify({teams,nativePool,draftPool,freeAgent}));}catch(e){}}
 function loadSavedTeams(){
   try{
     const raw=localStorage.getItem('cyclesim_teams');
     if(raw){
       const parsed=JSON.parse(raw);
-      // Handle both old format (array) and new format (object)
-      if(Array.isArray(parsed)){teams=parsed;draftPool=[];}
-      else{teams=parsed.teams||[];draftPool=parsed.draftPool||[];}
+      if(Array.isArray(parsed)){teams=parsed;nativePool=[];draftPool=[];freeAgent=[];}
+      else{teams=parsed.teams||[];nativePool=parsed.nativePool||[];draftPool=parsed.draftPool||[];freeAgent=parsed.freeAgent||[];}
       buildRiderTeamMap();
       populateCountryFilters();
       renderTeams();
       renderRaceTeamPicker();
-      document.getElementById('nav-teams-count').textContent=teams.length;
+      document.getElementById('nav-teams-count').textContent=teams.length||'—';
+      if(nativePool.length) updatePoolStatus(new Set(teams.flatMap(t=>t.riders)).size||null);
+      // Restore button states
+      if(nativePool.length) document.getElementById('btn-step2').disabled=false;
+      if(teams.length) document.getElementById('btn-step3').disabled=false;
       loadSavedDraft();
     }
   }catch(e){}
