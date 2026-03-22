@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v4.1</title>
+<title>CycleSim v4.2</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -220,7 +220,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v4.1</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v4.2</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '4.1';
+const CACHE_VERSION = '4.2';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -980,14 +980,7 @@ function stepSortByNationality(){
   buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
 
   if(nativeFreeAgents.length>0){
-    document.getElementById('nfa-panel').style.display='flex';
-    const navBtn=document.getElementById('nav-btn-nativeFA');
-    if(navBtn) navBtn.style.display='';
-    showTab('nativeFA');
-  } else {
-    document.getElementById('nfa-panel').style.display='none';
-    resolveTeamIdentities();
-    buildRiderTeamMap();populateCountryFilters();saveTeams();renderTeams();renderRaceTeamPicker();
+    autoAssignNativeFA();
   }
   saveTeams();
 }
@@ -1193,6 +1186,101 @@ function assignNFAToTeam(teamId, riderName){
     showTab('teams');
     renderTeams();
   }
+}
+
+
+// ── AUTO-ASSIGN NATIVE FREE AGENTS ──────────────────────────────
+// Step 1: form packs of 4 from same-country FAs → assign to empty teams
+// Step 2: fill remaining open native slots with geographic neighbors first
+function autoAssignNativeFA(){
+  if(!nativeFreeAgents.length) return;
+
+  const assignedSet = () => new Set(teams.flatMap(t => t.riders));
+
+  // ── Pass 1: packs of 4 from same country → empty teams
+  let assigned = assignedSet();
+  let remaining = nativeFreeAgents.filter(n => !assigned.has(n));
+
+  const byCountry = {};
+  remaining.forEach(name => {
+    const r = allRiders.find(x => x.name === name) || allRiders.find(x => x.name.trim() === name.trim());
+    if(!r) return;
+    if(!byCountry[r.country]) byCountry[r.country] = [];
+    byCountry[r.country].push(name);
+  });
+
+  // Sort countries by count desc so largest groups go first
+  const sorted = Object.entries(byCountry).sort((a,b) => b[1].length - a[1].length);
+  const emptyTeams = teams.filter(t => t.riders.length === 0);
+  let ei = 0;
+
+  sorted.forEach(([country, riders]) => {
+    // Form complete packs of 4
+    for(let i = 0; i + 3 < riders.length && ei < emptyTeams.length; i += 4){
+      const team = emptyTeams[ei++];
+      riders.slice(i, i+4).forEach(n => { team.riders.push(n); assigned.add(n); });
+    }
+  });
+
+  // ── Pass 2: fill teams still short of 4 using geographic proximity
+  // Rebuild remaining after pass 1
+  remaining = nativeFreeAgents.filter(n => !assigned.has(n));
+
+  // Sort remaining by country then name
+  remaining.sort((a, b) => {
+    const ra = allRiders.find(x => x.name === a) || allRiders.find(x => x.name.trim() === a.trim());
+    const rb = allRiders.find(x => x.name === b) || allRiders.find(x => x.name.trim() === b.trim());
+    const ca = ra ? ra.country : '?', cb = rb ? rb.country : '?';
+    return ca.localeCompare(cb) || a.localeCompare(b);
+  });
+
+  // Get teams with open slots, sorted by fewest riders (most needy first)
+  const shortTeams = teams.filter(t => t.riders.length < 4)
+    .sort((a,b) => a.riders.length - b.riders.length);
+
+  shortTeams.forEach(team => {
+    if(!remaining.length) return;
+    const needed = 4 - team.riders.length;
+    const teamCountry = team.country || '';
+    const teamRegion = teamCountry ? getRegionLabel(teamCountry) : '';
+    const teamContinent = teamCountry ? getContinent(teamCountry) : '';
+
+    // Score each remaining rider by geographic closeness to this team
+    // 0=same country, 1=same region, 2=same continent, 3=anywhere
+    const scored = remaining.map(name => {
+      const r = allRiders.find(x => x.name === name) || allRiders.find(x => x.name.trim() === name.trim());
+      const c = r ? r.country : '?';
+      const reg = r ? getRegionLabel(c) : '';
+      const cont = r ? getContinent(c) : '';
+      let score = 3;
+      if(c === teamCountry) score = 0;
+      else if(reg && reg === teamRegion) score = 1;
+      else if(cont && cont === teamContinent) score = 2;
+      return { name, score };
+    }).sort((a,b) => a.score - b.score);
+
+    // Take the closest 'needed' riders
+    for(let i = 0; i < Math.min(needed, scored.length); i++){
+      const name = scored[i].name;
+      team.riders.push(name);
+      assigned.add(name);
+      remaining = remaining.filter(n => n !== name);
+    }
+  });
+
+  // Any still unassigned: assign to any team with open slots
+  remaining.forEach(name => {
+    const team = teams.find(t => t.riders.length < 4);
+    if(team){ team.riders.push(name); assigned.add(name); }
+  });
+
+  resolveTeamIdentities();
+  buildRiderTeamMap();
+  populateCountryFilters();
+  saveTeams();
+  renderTeams();
+  renderRaceTeamPicker();
+  console.log('Auto-assigned native FAs. Teams incomplete:', teams.filter(t=>t.riders.length<4).length);
 }
 
 
