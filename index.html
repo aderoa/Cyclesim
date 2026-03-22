@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v3.4</title>
+<title>CycleSim v3.5</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -190,6 +190,19 @@ tbody td{padding:6px 10px}
 .src-draft{background:rgba(245,196,0,.12);color:var(--accent)}
 .draft-complete-bar{background:rgba(62,207,110,.1);border:1px solid rgba(62,207,110,.3);border-radius:8px;padding:12px 16px;display:flex;align-items:center;gap:12px;font-size:.88rem}
 
+
+.nfa-continent-header{padding:5px 10px 3px;font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1}
+.nfa-region-header{padding:3px 10px 2px;font-family:'Barlow Condensed',sans-serif;font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);background:var(--bg);border-bottom:1px solid var(--border)}
+.nfa-rider-row{display:flex;align-items:center;gap:6px;padding:5px 12px;border-bottom:1px solid var(--border);cursor:grab;transition:background .1s}
+.nfa-rider-row:hover{background:rgba(245,196,0,.06)}
+.nfa-rider-row.nfa-selected{background:rgba(245,196,0,.12)}
+.nfa-flag{flex-shrink:0}
+.nfa-name{flex:1;font-size:.82rem;color:var(--text)}
+.nfa-rider-row.nfa-selected .nfa-name{color:var(--accent);font-weight:700}
+.nfa-avg{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--muted)}
+.nfa-team-row{display:flex;align-items:center;gap:6px;padding:7px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.nfa-team-row:hover{background:rgba(245,196,0,.06)}
+
 /* ── MODAL ───────────────────────────────────────── */
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:100;align-items:center;justify-content:center}
 .modal-bg.open{display:flex}
@@ -207,7 +220,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v3.4</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v3.5</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -700,6 +713,7 @@ let draftPool = [];
 let freeAgent = [];
 let nativeFreeAgents = [];   // native pool riders who couldn't form a pack of 4
 let selectedNFA = null;
+let nfaRiderIndex = [];
 let teams = [];
 let selectedTeams = new Set();
 let stages = [];
@@ -992,10 +1006,14 @@ function resolveTeamIdentities(){
 }
 
 
-// ── NATIVE FA ASSIGNMENT TOOL — DRAG & DROP ──────────────────────
+
+// ── NATIVE FA ASSIGNMENT TOOL ────────────────────────────────────
+// Uses data attributes + event delegation — no inline onclick with names
+
 function renderNFATool(){
   const assigned=new Set(teams.flatMap(t=>t.riders));
   const remaining=nativeFreeAgents.filter(n=>!assigned.has(n));
+  nfaRiderIndex=[...remaining]; // store for index-based lookup
 
   document.getElementById('ps-nfa-count').textContent=remaining.length;
   document.getElementById('nfa-remaining').textContent=`${remaining.length} to assign`;
@@ -1006,81 +1024,106 @@ function renderNFATool(){
   const nfaList=document.getElementById('ps-nfa-list');
   if(nfaList) nfaList.innerHTML=remaining.map(poolRow).join('');
 
-  // ── Left: unassigned riders grouped by continent > region
+  // ── LEFT: riders grouped by continent > region
   const grouped={};
-  remaining.forEach(name=>{
+  remaining.forEach((name,idx)=>{
     const r=allRiders.find(x=>x.name===name);
     if(!r) return;
     const cont=getContinent(r.country);
     const reg=getRegionLabel(r.country);
     if(!grouped[cont]) grouped[cont]={};
     if(!grouped[cont][reg]) grouped[cont][reg]=[];
-    grouped[cont][reg].push({name,r});
+    grouped[cont][reg].push({idx,name,r});
   });
 
-  // Sort continents by CONTINENTS order, regions alphabetically
   const contOrder=Object.keys(CONTINENTS).concat(['Other']);
   const sortedConts=Object.keys(grouped).sort((a,b)=>contOrder.indexOf(a)-contOrder.indexOf(b));
 
   let leftHtml='';
   if(!remaining.length){
-    leftHtml='<div style="padding:16px;color:var(--green);font-size:.82rem;text-align:center">✓ All assigned!</div>';
+    leftHtml='<div style="padding:16px;color:var(--green);font-size:.82rem;text-align:center">All assigned!</div>';
   } else {
     sortedConts.forEach(cont=>{
-      leftHtml+=`<div style="padding:5px 10px 3px;font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1">${cont}</div>`;
-      const regs=Object.keys(grouped[cont]).sort();
-      regs.forEach(reg=>{
-        leftHtml+=`<div style="padding:3px 10px 2px;font-family:'Barlow Condensed',sans-serif;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);background:var(--bg);border-bottom:1px solid var(--border)">${reg.replace(/\./g,' ')}</div>`;
-        grouped[cont][reg].forEach(({name,r})=>{
-          leftHtml+=`<div 
-            draggable="true"
-            data-rider="${esc(name)}"
-            ondragstart="nfaDragStart(event,'${esc(name)}')"
-            onclick="selectNFA('${esc(name)}')"
-            id="nfa-rider-${esc(name).replace(/[^a-z0-9]/gi,'-')}"
-            style="display:flex;align-items:center;gap:6px;padding:5px 12px;border-bottom:1px solid var(--border);cursor:grab;background:${selectedNFA===name?'rgba(245,196,0,.12)':'transparent'};transition:background .1s"
-            onmouseenter="this.style.background='rgba(245,196,0,.08)'"
-            onmouseleave="this.style.background='${selectedNFA===name?'rgba(245,196,0,.12)':'transparent'}'"
-          >
-            ${flagImg(r.country,11)}
-            <span style="flex:1;font-size:.82rem;color:${selectedNFA===name?'var(--accent)':'var(--text)'};font-weight:${selectedNFA===name?700:400}">${name}</span>
-            <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">${r.avg.toFixed(1)}</span>
+      leftHtml+=`<div class="nfa-continent-header">${cont}</div>`;
+      Object.keys(grouped[cont]).sort().forEach(reg=>{
+        leftHtml+=`<div class="nfa-region-header">${reg.replace(/\./g,' ')}</div>`;
+        grouped[cont][reg].forEach(({idx,name,r})=>{
+          const sel=selectedNFA===name;
+          leftHtml+=`<div class="nfa-rider-row${sel?' nfa-selected':''}" data-nfa-idx="${idx}" draggable="true">
+            <span class="nfa-flag">${flagImg(r.country,11)}</span>
+            <span class="nfa-name">${name}</span>
+            <span class="nfa-avg">${r.avg.toFixed(1)}</span>
           </div>`;
         });
       });
     });
   }
-  document.getElementById('nfa-unassigned-list').innerHTML=leftHtml;
+  const unassignedEl=document.getElementById('nfa-unassigned-list');
+  unassignedEl.innerHTML=leftHtml;
 
-  // ── Right: teams with open native slots, sorted fewest-first
+  // Attach events to rider rows via event delegation
+  unassignedEl.onclick=e=>{
+    const row=e.target.closest('.nfa-rider-row');
+    if(!row) return;
+    const idx=parseInt(row.dataset.nfaIdx);
+    const name=nfaRiderIndex[idx];
+    if(name) selectNFA(name);
+  };
+  unassignedEl.ondragstart=e=>{
+    const row=e.target.closest('.nfa-rider-row');
+    if(!row) return;
+    const idx=parseInt(row.dataset.nfaIdx);
+    const name=nfaRiderIndex[idx];
+    if(name){ selectedNFA=name; e.dataTransfer.setData('text/plain',String(idx)); }
+  };
+
+  // ── RIGHT: teams with open native slots
   const openTeams=[...teams].filter(t=>t.riders.length<4).sort((a,b)=>a.riders.length-b.riders.length||a.id-b.id);
   let rightHtml='';
   if(!openTeams.length){
-    rightHtml='<div style="padding:16px;color:var(--green);font-size:.82rem;text-align:center">✓ All teams have 4 natives!</div>';
+    rightHtml='<div style="padding:16px;color:var(--green);font-size:.82rem;text-align:center">All teams have 4 natives!</div>';
   } else {
     openTeams.forEach(t=>{
       const open=4-t.riders.length;
       const flags=t.riders.map(n=>{const r=allRiders.find(x=>x.name===n);return r?flagImg(r.country,10):'';}).join('');
-      const label=t.name&&t.name!=='Empty'?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:.88rem;font-weight:700;text-transform:uppercase;color:var(--text)">${t.name}</span><span style="font-size:.72rem;color:var(--muted);margin-left:4px">${t.country}</span>`:`<span style="color:var(--muted);font-size:.82rem">#${t.id+1}</span>`;
-      rightHtml+=`<div
-        data-teamid="${t.id}"
-        ondragover="event.preventDefault();this.style.background='rgba(245,196,0,.12)'"
-        ondragleave="this.style.background=''"
-        ondrop="nfaDrop(event,${t.id});this.style.background=''"
-        onclick="selectedNFA?assignNFAToTeam(${t.id}):null"
-        style="display:flex;align-items:center;gap:6px;padding:7px 12px;border-bottom:1px solid var(--border);cursor:${selectedNFA?'pointer':'default'};transition:background .1s"
-        onmouseenter="if(selectedNFA)this.style.background='rgba(245,196,0,.08)'"
-        onmouseleave="this.style.background=''"
-      >
-        <span style="display:flex;gap:2px;min-width:44px">${flags||'<span style="color:var(--muted);font-size:.7rem">empty</span>'}</span>
+      const label=t.name&&t.name!=='Empty'
+        ?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:.88rem;font-weight:700;text-transform:uppercase;color:var(--text)">${t.name}</span><span style="font-size:.7rem;color:var(--muted);margin-left:4px">${t.country}</span>`
+        :`<span style="color:var(--muted);font-size:.82rem">#${t.id+1} (empty)</span>`;
+      rightHtml+=`<div class="nfa-team-row" data-team-id="${t.id}">
+        <span style="display:flex;gap:2px;min-width:44px">${flags||'<span style="color:var(--muted);font-size:.7rem">—</span>'}</span>
         <span style="flex:1">${label}</span>
         <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--red);font-weight:700">+${open}</span>
       </div>`;
     });
   }
-  document.getElementById('nfa-team-list').innerHTML=rightHtml;
+  const teamListEl=document.getElementById('nfa-team-list');
+  teamListEl.innerHTML=rightHtml;
 
-  // Auto-complete
+  // Event delegation for team rows
+  teamListEl.onclick=e=>{
+    const row=e.target.closest('.nfa-team-row');
+    if(!row||!selectedNFA) return;
+    assignNFAToTeam(parseInt(row.dataset.teamId));
+  };
+  teamListEl.ondragover=e=>{
+    const row=e.target.closest('.nfa-team-row');
+    if(row){ e.preventDefault(); row.style.background='rgba(245,196,0,.12)'; }
+  };
+  teamListEl.ondragleave=e=>{
+    const row=e.target.closest('.nfa-team-row');
+    if(row) row.style.background='';
+  };
+  teamListEl.ondrop=e=>{
+    e.preventDefault();
+    const row=e.target.closest('.nfa-team-row');
+    if(!row) return;
+    row.style.background='';
+    const idx=parseInt(e.dataTransfer.getData('text/plain'));
+    const name=nfaRiderIndex[idx];
+    if(name){ selectedNFA=name; assignNFAToTeam(parseInt(row.dataset.teamId)); }
+  };
+
+  // Auto-complete when done
   if(remaining.length===0){
     resolveTeamIdentities();
     buildRiderTeamMap();populateCountryFilters();
@@ -1090,22 +1133,6 @@ function renderNFATool(){
   }
 }
 
-// Drag handlers
-function nfaDragStart(event, name){
-  event.dataTransfer.setData('text/plain', name);
-  selectedNFA=name;
-}
-function nfaDrop(event, teamId){
-  event.preventDefault();
-  const name=event.dataTransfer.getData('text/plain')||selectedNFA;
-  if(name) assignNFAToTeam(teamId, name);
-}
-
-
-function selectNFA(name){
-  selectedNFA=selectedNFA===name?null:name;
-  renderNFATool();
-}
 
 function assignNFAToTeam(teamId, riderName){
   const name=riderName||selectedNFA;
