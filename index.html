@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v1.3</title>
+<title>CycleSim v1.5</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -80,8 +80,17 @@ tbody td{padding:6px 10px}
 .rating-input{width:38px;text-align:center;background:var(--bg);border:1px solid var(--accent);border-radius:3px;color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:.8rem;padding:1px 2px}
 .custom-badge{display:inline-block;background:rgba(77,159,255,.15);color:var(--blue);border:1px solid rgba(77,159,255,.3);font-size:.65rem;font-weight:700;letter-spacing:.3px;border-radius:4px;padding:1px 5px;margin-left:5px;text-transform:uppercase}
 
-/* ── TEAMS GRID ──────────────────────────────────── */
-.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;max-height:calc(100vh - 160px);overflow-y:auto;padding-right:4px}
+/* ── TEAM LIST PANEL ─────────────────────────────── */
+.tlist-row{display:flex;align-items:center;gap:7px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;font-size:.82rem}
+.tlist-row:last-child{border-bottom:none}
+.tlist-row:hover{background:var(--surface2)}
+.tlist-row.active{background:rgba(245,196,0,.08);border-left:2px solid var(--accent)}
+.tlist-cc{font-family:'Barlow Condensed',sans-serif;font-size:.65rem;font-weight:800;letter-spacing:.5px;background:rgba(120,128,160,.18);color:var(--muted);border-radius:3px;padding:1px 4px;min-width:24px;text-align:center}
+.tlist-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;color:var(--text)}
+.tlist-avg{font-family:'JetBrains Mono',monospace;font-size:.75rem;color:var(--muted)}
+
+/* ── TEAM GRID ───────────────────────────────────── */
+.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;overflow-y:auto;padding-right:4px;align-content:start}
 .team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;border-left:4px solid var(--muted);transition:border-color .15s}
 .team-card:hover{border-color:var(--border2)}
 .team-card-head{padding:9px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
@@ -198,7 +207,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v1.3</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v1.5</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -236,13 +245,24 @@ tbody td{padding:6px 10px}
     <button class="btn btn-accent" id="gen-btn" onclick="confirmGenerate()">⚡ Generate Teams</button>
     <button class="btn btn-ghost" onclick="renderTeams()">↺ Refresh</button>
     <span class="pill" id="teams-count-pill">—</span>
+    <span class="pill" id="fa-count-pill" style="color:var(--accent);border-color:rgba(245,196,0,.3);background:rgba(245,196,0,.08)">—</span>
   </div>
-  <div id="teams-grid" class="teams-grid">
-    <div class="empty-state" style="grid-column:1/-1">
-      <div class="empty-icon">🚴</div>
-      <div>Click <strong>Generate Teams</strong> to automatically assign riders.<br>
-      <small style="font-size:.8rem;margin-top:6px;display:block">Each team gets 4 native riders. 3 free agent slots will be filled later via draft.</small></div>
+  <div style="display:grid;grid-template-columns:220px 1fr;gap:12px;height:calc(100vh - 115px)">
+    <!-- List panel -->
+    <div style="display:flex;flex-direction:column;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">
+      <div style="padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+        <span style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">All Teams</span>
+        <select class="form-select" id="list-sort" onchange="renderTeamList()" style="padding:3px 6px;font-size:.75rem;border-radius:4px">
+          <option value="avg-desc">Avg ↓</option>
+          <option value="avg-asc">Avg ↑</option>
+          <option value="name-asc">Name A–Z</option>
+          <option value="country-asc">Country A–Z</option>
+        </select>
+      </div>
+      <div id="teams-list" style="flex:1;overflow-y:auto"></div>
     </div>
+    <!-- Card grid -->
+    <div id="teams-grid" class="teams-grid"></div>
   </div>
 </div>
 
@@ -504,6 +524,7 @@ const REGIONS = {
 // ═══════════════════════════════════════════════════════════════
 let allRiders = [];
 let teams = [];
+let draftPool = [];      // T×3 rider names set at generation time
 let selectedTeams = new Set();
 let stages = [];
 let lastResults = null;
@@ -549,10 +570,18 @@ function parseCSV(text) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FLAGS
+// COUNTRY CODES & BADGES
 // ═══════════════════════════════════════════════════════════════
 const CC={'France':'FR','Italy':'IT','Spain':'ES','Belgium':'BE','Netherlands':'NL','Colombia':'CO','Australia':'AU','United Kingdom':'GB','China':'CN','Denmark':'DK','Germany':'DE','Argentina':'AR','Norway':'NO','New Zealand':'NZ','Japan':'JP','United States':'US','Portugal':'PT','Venezuela':'VE','Czech Republic':'CZ','Poland':'PL','Switzerland':'CH','Austria':'AT','Russia':'RU','Malaysia':'MY','Guatemala':'GT','Turkey':'TR','Algeria':'DZ','South Africa':'ZA','Slovenia':'SI','Thailand':'TH','Indonesia':'ID','Canada':'CA','Costa Rica':'CR','Kazakhstan':'KZ','Philippines':'PH','Ireland':'IE','Ecuador':'EC','United Arab Emirates':'AE','Sweden':'SE','Chile':'CL','Morocco':'MA','Uruguay':'UY','Estonia':'EE','Eritrea':'ER','Brazil':'BR','Mexico':'MX','Hungary':'HU','Rwanda':'RW','Hong Kong':'HK','Burkina Faso':'BF','Angola':'AO','Panama':'PA','Slovakia':'SK','Taiwan':'TW','Bolivia':'BO','Luxembourg':'LU','South Korea':'KR','Romania':'RO','Mali':'ML','Latvia':'LV','Israel':'IL','Mauritius':'MU','Uzbekistan':'UZ','Iran':'IR','India':'IN','Mongolia':'MN','Namibia':'NA','Saudi Arabia':'SA','Ethiopia':'ET','Belize':'BZ','Dominican Republic':'DO','Singapore':'SG','Ukraine':'UA','Lithuania':'LT','Belarus':'BY','Cameroon':'CM','Cuba':'CU','Benin':'BJ','Serbia':'RS','Finland':'FI','Greece':'GR','Peru':'PE','Bulgaria':'BG','Azerbaijan':'AZ','Uganda':'UG','Oman':'OM','Kyrgyzstan':'KG','Croatia':'HR','Malta':'MT','Laos':'LA','Bahrain':'BH','Iraq':'IQ','Vietnam':'VN','Albania':'AL','Tunisia':'TN','DR Congo':'CD','Ghana':'GH','Zimbabwe':'ZW','Andorra':'AD','Honduras':'HN','Syria':'SY','Paraguay':'PY','Egypt':'EG','Ivory Coast':'CI','Senegal':'SN','Puerto Rico':'PR','Cyprus':'CY','Bermuda':'BM','Kosovo':'XK','Lesotho':'LS','Pakistan':'PK','Nigeria':'NG','Kenya':'KE','Guam':'GU','Monaco':'MC','Grenada':'GD','Macau':'MO','Afghanistan':'AF','Iceland':'IS','Liechtenstein':'LI','Qatar':'QA','Curaçao':'CW'};
-function flag(c){const code=CC[c];if(!code)return'🏳️';return[...code].map(x=>String.fromCodePoint(x.charCodeAt(0)+127397)).join('');}
+
+// Styled country code badge — reliable cross-platform, matches PCM aesthetic
+function ccBadge(country,small=false){
+  const code=CC[country]||'??';
+  const sz=small?'font-size:.62rem;padding:1px 4px':'font-size:.68rem;padding:1px 5px';
+  return `<span style="${sz};font-family:'Barlow Condensed',sans-serif;font-weight:800;letter-spacing:.5px;background:rgba(120,128,160,.18);color:var(--muted);border-radius:3px;display:inline-block;line-height:1.4">${code}</span>`;
+}
+// Keep flag() as alias for backward compat (returns badge now)
+function flag(c){return ccBadge(c);}
 
 // ═══════════════════════════════════════════════════════════════
 // DATABASE TAB
@@ -638,20 +667,16 @@ function confirmGenerate(){
 function generateTeams(){
   if(!allRiders.length){alert('Rider database not loaded yet.');return;}
 
-  // Shuffle riders per country
+  // ── Step 1: Count teams per country (floor ensures no incomplete teams)
   const byCountry={};
   allRiders.forEach(r=>{
     if(!byCountry[r.country]) byCountry[r.country]=[];
     byCountry[r.country].push(r.name);
   });
+  // Shuffle within each country for random native assignment
   Object.values(byCountry).forEach(arr=>arr.sort(()=>Math.random()-.5));
 
   teams=[];
-  const assigned=new Set();
-
-  // Create teams only when there are enough riders for a complete team of 7.
-  // floor(pool/7) guarantees no team will be left short.
-  // Countries with < 7 riders get 0 teams — those riders become free agents.
   for(const [country,pool] of Object.entries(byCountry)){
     const nTeams=Math.floor(pool.length/7);
     if(nTeams===0) continue;
@@ -661,36 +686,77 @@ function generateTeams(){
     }
   }
 
-  // Interleaved assignment: distribute 4 native riders per team evenly
-  for(const [country,pool] of Object.entries(byCountry)){
-    const ctTeams=teams.filter(t=>t.country===country);
-    if(!ctTeams.length) continue;
-    let pi=0;
-    for(let slot=0;slot<4;slot++){
-      for(const team of ctTeams){
-        if(pi<pool.length && team.riders.length<4){
-          team.riders.push(pool[pi]);
-          assigned.add(pool[pi]);
-          pi++;
-        }
-      }
+  const T=teams.length;
+  const nativePoolSize=T*4;
+  const draftPoolSize=T*3;
+
+  // ── Step 2: Native assignment — T×4 slots total, 4 per team
+  // Priority: own country first, then geographic neighbors
+  const nativeAssigned=new Set();
+
+  // Pass 1: fill with true natives (random order within country)
+  for(const team of teams){
+    const pool=(byCountry[team.country]||[]).filter(n=>!nativeAssigned.has(n));
+    const take=Math.min(4,pool.length);
+    for(let i=0;i<take;i++){
+      team.riders.push(pool[i]);
+      nativeAssigned.add(pool[i]);
     }
   }
+
+  // Pass 2: teams still short of 4 → fill from geographic neighbors (best avg first)
+  for(const team of teams){
+    if(team.riders.length>=4) continue;
+    const needed=4-team.riders.length;
+    const neighborPool=getRegionalPool(team.country,nativeAssigned)
+      .sort((a,b)=>{
+        const ra=allRiders.find(x=>x.name===a), rb=allRiders.find(x=>x.name===b);
+        return (rb?.avg||0)-(ra?.avg||0);
+      });
+    for(let i=0;i<Math.min(needed,neighborPool.length);i++){
+      team.riders.push(neighborPool[i]);
+      nativeAssigned.add(neighborPool[i]);
+    }
+  }
+
+  // ── Step 3: Draft pool — next T×3 best unassigned riders by avg
+  draftPool=[...allRiders]
+    .filter(r=>!nativeAssigned.has(r.name))
+    .sort((a,b)=>b.avg-a.avg)
+    .slice(0,draftPoolSize)
+    .map(r=>r.name);
+
+  // ── Everything else = free agents (not in native pool, not in draft pool)
+  // (no action needed — they're just whoever remains)
+
+  // Reset draft state
+  draftLog=[];
+  draftDone=false;
+  document.getElementById('nav-draft-badge').style.display='none';
+  document.getElementById('draft-reset-btn').style.display='none';
 
   buildRiderTeamMap();
   saveTeams();
   populateCountryFilters();
   renderTeams();
   renderRaceTeamPicker();
-  document.getElementById('nav-teams-count').textContent=teams.length;
+  document.getElementById('nav-teams-count').textContent=T;
+
+  // Show generation summary
+  const totalNative=nativeAssigned.size;
+  const totalFA=allRiders.length-totalNative-draftPool.length;
+  console.log(`Generated ${T} teams | Native pool: ${totalNative} | Draft pool: ${draftPool.length} | Free agents: ${totalFA}`);
 }
 
 function getRegionalPool(country,assigned){
   let region=null;
   for(const [r,cs] of Object.entries(REGIONS)){if(cs.includes(country)){region=r;break;}}
-  if(!region) return allRiders.filter(r=>!assigned.has(r.name)).map(r=>r.name).sort(()=>Math.random()-.5);
-  const cs=REGIONS[region].filter(c=>c!==country);
-  return allRiders.filter(r=>cs.includes(r.country)&&!assigned.has(r.name)).map(r=>r.name).sort(()=>Math.random()-.5);
+  const neighborCountries=region?REGIONS[region].filter(c=>c!==country):[];
+  // If no region found, use global pool
+  const source=neighborCountries.length
+    ?allRiders.filter(r=>neighborCountries.includes(r.country)&&!assigned.has(r.name))
+    :allRiders.filter(r=>!assigned.has(r.name));
+  return source.map(r=>r.name);
 }
 
 function buildRiderTeamMap(){
@@ -712,12 +778,15 @@ function strengthColor(avg){
 }
 
 // ── localStorage ─────────────────────────────────────────────
-function saveTeams(){try{localStorage.setItem('cyclesim_teams',JSON.stringify(teams));}catch(e){}}
+function saveTeams(){try{localStorage.setItem('cyclesim_teams',JSON.stringify({teams,draftPool}));}catch(e){}}
 function loadSavedTeams(){
   try{
-    const t=localStorage.getItem('cyclesim_teams');
-    if(t){
-      teams=JSON.parse(t);
+    const raw=localStorage.getItem('cyclesim_teams');
+    if(raw){
+      const parsed=JSON.parse(raw);
+      // Handle both old format (array) and new format (object)
+      if(Array.isArray(parsed)){teams=parsed;draftPool=[];}
+      else{teams=parsed.teams||[];draftPool=parsed.draftPool||[];}
       buildRiderTeamMap();
       populateCountryFilters();
       renderTeams();
@@ -739,18 +808,48 @@ function populateCountryFilters(){
 }
 
 function renderTeams(){
+  // Free agent count
+  const assignedNames=new Set(teams.flatMap(t=>t.riders));
+  const freeAgents=allRiders.filter(r=>!assignedNames.has(r.name));
+  const faPill=document.getElementById('fa-count-pill');
+  if(faPill) faPill.textContent=`${freeAgents.length} free agents`;
+
   if(!teams.length){
     document.getElementById('teams-count-pill').textContent='—';
-    document.getElementById('teams-grid').innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🚴</div><div>Click <strong>Generate Teams</strong> to automatically assign riders.</div></div>`;
+    document.getElementById('teams-list').innerHTML=`<div class="empty-state" style="padding:24px 12px;font-size:.82rem">Generate teams first.</div>`;
+    document.getElementById('teams-grid').innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🚴</div><div>Click <strong>Generate Teams</strong> to automatically assign riders.<br><small style="font-size:.8rem;margin-top:6px;display:block">Each team gets 4 native riders. 3 free agent slots will be filled later via draft.</small></div></div>`;
     return;
   }
+
   const q=document.getElementById('teams-search').value.toLowerCase();
   const cf=document.getElementById('teams-country-filter').value;
+  const [ls,ld]=(document.getElementById('list-sort')?.value||'avg-desc').split('-');
+
   const filtered=teams.filter(t=>
     (!cf||t.country===cf)&&
     (t.name.toLowerCase().includes(q)||t.country.toLowerCase().includes(q))
   );
   document.getElementById('teams-count-pill').textContent=`${filtered.length} / ${teams.length} teams`;
+
+  // ── List panel (always shows ALL teams, not filtered by search/country)
+  const listSorted=[...teams].sort((a,b)=>{
+    if(ls==='avg') return ld==='asc'?teamAvg(a)-teamAvg(b):teamAvg(b)-teamAvg(a);
+    if(ls==='name') return ld==='asc'?a.name.localeCompare(b.name):b.name.localeCompare(a.name);
+    if(ls==='country') return ld==='asc'?a.country.localeCompare(b.country):b.country.localeCompare(a.country);
+    return 0;
+  });
+  document.getElementById('teams-list').innerHTML=listSorted.map(t=>{
+    const code=CC[t.country]||'??';
+    const avg=teamAvg(t);
+    const color=strengthColor(avg);
+    return `<div class="tlist-row" onclick="highlightTeam(${t.id})" id="tlist-${t.id}">
+      <span class="tlist-cc" style="border-left:2px solid ${color}">${code}</span>
+      <span class="tlist-name">${t.name}</span>
+      <span class="tlist-avg">${avg.toFixed(1)}</span>
+    </div>`;
+  }).join('');
+
+  // ── Card grid (filtered)
   if(!filtered.length){
     document.getElementById('teams-grid').innerHTML='<div class="empty-state" style="grid-column:1/-1;font-size:.85rem">No teams match your search.</div>';
     return;
@@ -761,14 +860,14 @@ function renderTeams(){
     const color=strengthColor(avg);
     const riderRows=team.riders.map((n,i)=>{
       const r=allRiders.find(x=>x.name===n);
-      return `<div class="team-rider-row"><span class="team-rider-num">${i+1}</span><span style="font-size:.85rem;line-height:1">${r?flag(r.country):''}</span><span class="team-rider-name">${n}</span><span class="team-rider-ovr">${r?r.avg.toFixed(1):'-'}</span></div>`;
+      return `<div class="team-rider-row"><span class="team-rider-num">${i+1}</span>${r?ccBadge(r.country,true):''}<span class="team-rider-name">${n}</span><span class="team-rider-ovr">${r?r.avg.toFixed(1):'-'}</span></div>`;
     }).join('');
     const emptyCount=7-team.riders.length;
     const freeSlots=emptyCount>0?Array(emptyCount).fill('<div class="team-free-slot">— Free Agent Slot —</div>').join(''):'';
     return `
-      <div class="team-card" style="border-left-color:${color}">
+      <div class="team-card" id="tcard-${team.id}" style="border-left-color:${color}">
         <div class="team-card-head">
-          <span class="team-flag">${flag(team.country)}</span>
+          <span class="team-flag">${ccBadge(team.country)}</span>
           <span class="team-name-text">${team.name}</span>
           <span class="team-avg-pill">${avg.toFixed(1)}</span>
         </div>
@@ -777,6 +876,12 @@ function renderTeams(){
         ${freeSlots}
       </div>`;
   }).join('');
+}
+
+function highlightTeam(id){
+  // Scroll to card in grid
+  const card=document.getElementById(`tcard-${id}`);
+  if(card){card.scrollIntoView({behavior:'smooth',block:'nearest'});card.style.outline='2px solid var(--accent)';setTimeout(()=>card.style.outline='',1200);}
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1017,31 +1122,33 @@ let draftDone = false;
 
 function runDraft(){
   if(!teams.length){alert('Generate teams first.');return;}
-  if(draftDone && !confirm('Draft already completed. Re-running will reset the 3 free agent slots. Continue?')) return;
+  if(!draftPool.length){alert('Draft pool is empty. Re-generate teams first.');return;}
+  if(draftDone && !confirm('Draft already completed. Re-running will reset the 3 draft slots. Continue?')) return;
 
-  // Reset free agent slots on all teams
+  // Reset draft slots (keep native slots — first 4)
   teams.forEach(t=>{ t.riders=t.riders.slice(0,4); });
 
-  // Build set of already-assigned riders
+  // Build already-assigned set (native riders)
   const assigned=new Set(teams.flatMap(t=>t.riders));
 
-  // Free agents: all riders not assigned, sorted best avg first
-  const freeAgents=[...allRiders]
-    .filter(r=>!assigned.has(r.name))
+  // Draft pool: T×3 pre-selected riders at generation time, best avg first
+  // Filter out any already assigned to avoid edge cases
+  const pool=[...allRiders]
+    .filter(r=>draftPool.includes(r.name)&&!assigned.has(r.name))
     .sort((a,b)=>b.avg-a.avg);
 
-  // Draft order: teams sorted by their native avg, best first (straight, same each round)
+  // Draft order: teams sorted by avg, best first — straight for all 3 rounds
   const draftOrder=[...teams].sort((a,b)=>teamAvg(b)-teamAvg(a));
 
   draftLog=[];
   let pickNum=0;
   const ROUNDS=3;
-  const fa=[...freeAgents]; // mutable pool
+  const fa=[...pool];
 
   for(let round=1;round<=ROUNDS;round++){
     for(const team of draftOrder){
       if(!fa.length) break;
-      const pick=fa.shift(); // best available
+      const pick=fa.shift();
       team.riders.push(pick.name);
       assigned.add(pick.name);
       draftLog.push({round,pick:++pickNum,teamId:team.id,teamName:team.name,teamCountry:team.country,rider:pick.name,avg:pick.avg});
@@ -1056,7 +1163,6 @@ function runDraft(){
   document.getElementById('nav-draft-badge').style.display='inline-block';
   document.getElementById('draft-reset-btn').style.display='inline-flex';
   renderDraftUI();
-  // Refresh teams tab cards too
   renderTeams();
 }
 
@@ -1108,16 +1214,27 @@ function renderDraftUI(){
   }
 
   // Info card
-  const fa=allRiders.filter(r=>!Object.values(riderTeamMap).length||riderTeamMap[r.name]===undefined).length;
+  const totalAssigned=new Set(teams.flatMap(t=>t.riders)).size;
+  const totalFA=allRiders.length-totalAssigned-(draftDone?0:draftPool.length);
   document.getElementById('draft-info').innerHTML=draftDone?`
     <div style="display:flex;flex-direction:column;gap:6px">
       <div>🏆 <strong>${draftLog.length}</strong> total picks</div>
       <div>🚴 <strong>3</strong> rounds · straight order</div>
       <div>👥 <strong>${teams.length}</strong> teams participated</div>
+      <div class="sep"></div>
+      <div style="font-size:.78rem;color:var(--muted)">Native pool: <strong style="color:var(--text)">${teams.length*4}</strong></div>
+      <div style="font-size:.78rem;color:var(--muted)">Draft pool: <strong style="color:var(--text)">${draftPool.length}</strong></div>
+      <div style="font-size:.78rem;color:var(--muted)">Free agents: <strong style="color:var(--accent)">${allRiders.length-teams.length*4-draftPool.length}</strong></div>
       <div style="color:var(--green);margin-top:4px">✓ Draft complete — rosters are locked.</div>
-      <div style="font-size:.78rem;color:var(--muted);margin-top:2px">Reset to reassign free agents.</div>
+      <div style="font-size:.78rem;color:var(--muted)">Reset to reassign draft slots.</div>
     </div>`
-  :'<span style="color:var(--muted)">Run the draft to see results here.</span>';
+  :`<div style="display:flex;flex-direction:column;gap:6px;font-size:.82rem">
+      <div style="color:var(--muted)">Teams: <strong style="color:var(--text)">${teams.length}</strong></div>
+      <div style="color:var(--muted)">Native pool: <strong style="color:var(--text)">${teams.length*4}</strong> riders</div>
+      <div style="color:var(--muted)">Draft pool: <strong style="color:var(--text)">${draftPool.length}</strong> riders</div>
+      <div style="color:var(--muted)">Free agents: <strong style="color:var(--accent)">${Math.max(0,allRiders.length-teams.length*4-draftPool.length)}</strong> riders</div>
+      <div style="color:var(--muted);margin-top:4px;font-size:.76rem">Draft picks best available from the pre-selected draft pool only. Free agents are not in either pool.</div>
+    </div>`;
 
   // Pick log
   renderDraftLog();
