@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v2.7</title>
+<title>CycleSim v2.9</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -298,7 +298,7 @@ tbody td{padding:6px 10px}
     <div style="display:flex;flex-direction:column;gap:8px;overflow:hidden">
 
       <!-- Native FA assignment tool (shown when nativeFAs exist) -->
-      <div id="nfa-tool" style="display:none;flex-direction:column;border:1px solid rgba(232,64,64,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex-shrink:0;max-height:45%">
+      <div id="nfa-tool" style="display:none;flex-direction:column;border:1px solid rgba(232,64,64,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex:0 0 260px">
         <div style="padding:8px 14px;background:rgba(232,64,64,.08);border-bottom:1px solid rgba(232,64,64,.2);display:flex;align-items:center;gap:10px;flex-shrink:0">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--red)">⚠ Assign Native Free Agents</span>
           <span style="font-size:.78rem;color:var(--muted)">Click a rider, then click a team slot to assign</span>
@@ -319,7 +319,7 @@ tbody td{padding:6px 10px}
       </div>
 
       <!-- Teams grid -->
-      <div id="teams-grid" class="teams-grid" style="flex:1;overflow-y:auto;align-content:start">
+      <div id="teams-grid" class="teams-grid" style="flex:1;min-height:0;overflow-y:auto;align-content:start">
         <div class="empty-state" style="grid-column:1/-1">
           <div class="empty-icon">🚴</div>
           <div>Generate pools, then sort by nationality to create teams.</div>
@@ -792,8 +792,14 @@ function saveNewRider(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// TEAM GENERATION — 2 STEPS + NATIVE FA ASSIGNMENT
+// TEAM GENERATION — CONSTANTS
 // ═══════════════════════════════════════════════════════════════
+const T = 590;           // fixed number of teams
+const NATIVE_SIZE = T*4; // 2360
+const DRAFT_SIZE  = T*3; // 1770
+// free agents = allRiders.length - NATIVE_SIZE - DRAFT_SIZE (=6 with 4136 riders)
+
+// ── RESET ───────────────────────────────────────────────────────
 function confirmGenerate(){
   if((teams.length||nativePool.length) && !confirm('Reset all pools and teams? This cannot be undone.')) return;
   nativePool=[];draftPool=[];freeAgent=[];nativeFreeAgents=[];teams=[];
@@ -810,14 +816,13 @@ function confirmGenerate(){
   document.getElementById('nav-teams-count').textContent='—';
 }
 
-// ── STEP 1: Generate pools — purely random ──────────────────────
+// ── STEP 1: Generate pools — purely random, fixed sizes ─────────
 function stepGeneratePools(){
   if(!allRiders.length){alert('Rider database not loaded yet.');return;}
-  const T=Math.floor(allRiders.length/7);
   const shuffled=[...allRiders].sort(()=>Math.random()-.5);
-  nativePool=shuffled.slice(0,T*4).map(r=>r.name);
-  draftPool=shuffled.slice(T*4,T*4+T*3).map(r=>r.name);
-  freeAgent=shuffled.slice(T*4+T*3).map(r=>r.name);
+  nativePool = shuffled.slice(0, NATIVE_SIZE).map(r=>r.name);
+  draftPool  = shuffled.slice(NATIVE_SIZE, NATIVE_SIZE+DRAFT_SIZE).map(r=>r.name);
+  freeAgent  = shuffled.slice(NATIVE_SIZE+DRAFT_SIZE).map(r=>r.name);
   nativeFreeAgents=[];teams=[];selectedNFA=null;
   document.getElementById('btn-step2').disabled=false;
   document.getElementById('nfa-panel').style.display='none';
@@ -827,16 +832,17 @@ function stepGeneratePools(){
   updatePoolStatus();
   buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
   saveTeams();
-  console.log(`T=${T} | Native=${nativePool.length} | Draft=${draftPool.length} | FA=${freeAgent.length}`);
+  console.log(`Native=${nativePool.length} Draft=${draftPool.length} FA=${freeAgent.length}`);
 }
 
-// ── STEP 2: Sort native pool by nationality ─────────────────────
-// Group native pool riders by country. Form packs of exactly 4.
-// Each complete pack → one team. Leftover riders → nativeFreeAgents.
+// ── STEP 2: Sort native pool by nationality → packs of 4 ────────
+// Each country's riders form complete packs of 4 → teams (unnamed).
+// Leftover riders per country (1–3) → nativeFreeAgents.
+// Teams start with NO name or nationality — those are assigned
+// after native FAs are placed (resolveTeamIdentities).
 function stepSortByNationality(){
   if(!nativePool.length){alert('Generate pools first.');return;}
 
-  // Group native pool by country (preserve random order within country)
   const byCountry={};
   nativePool.forEach(name=>{
     const r=allRiders.find(x=>x.name===name);
@@ -848,58 +854,101 @@ function stepSortByNationality(){
   teams=[];
   nativeFreeAgents=[];
 
-  for(const [country,riders] of Object.entries(byCountry)){
-    const names=TEAM_NAMES[country]||[];
-    let teamIdx=0;
-    // Form packs of 4
-    for(let i=0;i+3<riders.length;i+=4){
-      const pack=riders.slice(i,i+4);
+  // Fixed sequential team IDs; no country/name yet
+  Object.entries(byCountry).forEach(([country,riders])=>{
+    const fullPacks=Math.floor(riders.length/4);
+    const remainder=riders.length%4;
+    for(let i=0;i<fullPacks;i++){
       teams.push({
         id:teams.length,
-        name:names[teamIdx]||`${country} ${teamIdx+1}`,
-        country,
-        riders:[...pack]
+        name:null,      // assigned later
+        country:null,   // assigned later
+        riders:riders.slice(i*4, i*4+4)
       });
-      teamIdx++;
     }
-    // Remainder riders → native free agents
-    const remainder=riders.length%4;
-    if(remainder>0){
-      nativeFreeAgents.push(...riders.slice(riders.length-remainder));
-    }
-  }
+    if(remainder>0) nativeFreeAgents.push(...riders.slice(fullPacks*4));
+  });
 
-  console.log(`Teams: ${teams.length} | Native FAs: ${nativeFreeAgents.length}`);
+  // Pad to exactly T=590 teams with empty teams if needed
+  // (shouldn't happen with proper pool size but safety net)
+  while(teams.length<T){
+    teams.push({id:teams.length, name:null, country:null, riders:[]});
+  }
+  // Trim if over (edge case)
+  if(teams.length>T) teams=teams.slice(0,T);
+
+  console.log(`Teams formed: ${teams.length} | Native FAs: ${nativeFreeAgents.length}`);
 
   document.getElementById('nav-teams-count').textContent=teams.length;
   updatePoolStatus();
   buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
 
-  // Show native FA panel and tool if needed
   if(nativeFreeAgents.length>0){
     document.getElementById('nfa-panel').style.display='flex';
     document.getElementById('nfa-tool').style.display='flex';
     document.getElementById('nfa-count-pill').style.display='inline-block';
     renderNFATool();
-  } else {
-    document.getElementById('nfa-panel').style.display='none';
-    document.getElementById('nfa-tool').style.display='none';
-    document.getElementById('nfa-count-pill').style.display='none';
   }
   saveTeams();
 }
 
-// ── NATIVE FA ASSIGNMENT TOOL ───────────────────────────────────
+// ── RESOLVE TEAM IDENTITIES ─────────────────────────────────────
+// Called after all native FAs are assigned (or at any point).
+// Assigns each team a country (majority nationality, tiebreak by
+// best avg, then random) and a city name.
+function resolveTeamIdentities(){
+  const usedNames={}; // country → index of next name to use
+
+  teams.forEach(team=>{
+    if(!team.riders.length){ team.country='—'; team.name='Empty Team'; return; }
+
+    // Count riders per country
+    const counts={};
+    team.riders.forEach(name=>{
+      const r=allRiders.find(x=>x.name===name);
+      if(!r) return;
+      counts[r.country]=(counts[r.country]||0)+1;
+    });
+
+    // Find max count
+    const maxCount=Math.max(...Object.values(counts));
+    let candidates=Object.entries(counts).filter(([,c])=>c===maxCount).map(([c])=>c);
+
+    let chosenCountry;
+    if(candidates.length===1){
+      chosenCountry=candidates[0];
+    } else {
+      // Tiebreak: best avg among each candidate country's riders on this team
+      const bestAvg=c=>{
+        const rs=team.riders.map(n=>allRiders.find(x=>x.name===n)).filter(r=>r&&r.country===c);
+        return rs.length?Math.max(...rs.map(r=>r.avg)):0;
+      };
+      const maxAvg=Math.max(...candidates.map(bestAvg));
+      const topCandidates=candidates.filter(c=>bestAvg(c)>=maxAvg-0.001);
+      chosenCountry=topCandidates[Math.floor(Math.random()*topCandidates.length)];
+    }
+
+    team.country=chosenCountry;
+
+    // Assign name (next unused city for this country)
+    if(!usedNames[chosenCountry]) usedNames[chosenCountry]=0;
+    const nameList=TEAM_NAMES[chosenCountry]||[`${chosenCountry}`];
+    const idx=usedNames[chosenCountry];
+    team.name=nameList[idx]||`${chosenCountry} ${idx+1}`;
+    usedNames[chosenCountry]++;
+  });
+}
+
+// ── NATIVE FA ASSIGNMENT TOOL ────────────────────────────────────
 function renderNFATool(){
-  // Update NFA sidebar list
-  const nfaPanel=document.getElementById('ps-nfa-list');
   const remaining=nativeFreeAgents.filter(n=>!teams.some(t=>t.riders.includes(n)));
   document.getElementById('ps-nfa-count').textContent=remaining.length;
   document.getElementById('nfa-remaining').textContent=`${remaining.length} to assign`;
   const nfaPill=document.getElementById('nfa-count-pill');
   if(nfaPill) nfaPill.textContent=`${remaining.length} native FAs`;
 
-  nfaPanel.innerHTML=remaining.map(name=>{
+  // Sidebar NFA list
+  const poolRow=name=>{
     const r=allRiders.find(x=>x.name===name);
     if(!r) return '';
     return `<div style="display:flex;align-items:center;gap:5px;padding:3px 10px;border-bottom:1px solid var(--border)">
@@ -907,46 +956,52 @@ function renderNFATool(){
       <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);font-size:.76rem">${name}</span>
       <span style="font-family:JetBrains Mono,monospace;font-size:.68rem;color:var(--muted)">${r.avg.toFixed(1)}</span>
     </div>`;
-  }).join('');
+  };
+  const nfaList=document.getElementById('ps-nfa-list');
+  if(nfaList) nfaList.innerHTML=remaining.map(poolRow).join('');
 
-  // Left panel: unassigned native FAs (clickable to select)
-  const unassignedEl=document.getElementById('nfa-unassigned-list');
-  unassignedEl.innerHTML=remaining.length
+  // Left: unassigned riders
+  document.getElementById('nfa-unassigned-list').innerHTML=remaining.length
     ? remaining.map(name=>{
         const r=allRiders.find(x=>x.name===name);
         if(!r) return '';
         const sel=selectedNFA===name;
-        return `<div onclick="selectNFA('${esc(name)}')" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:pointer;background:${sel?'rgba(245,196,0,.12)':'transparent'};transition:background .1s">
+        return `<div onclick="selectNFA('${esc(name)}')" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:pointer;background:${sel?'rgba(245,196,0,.12)':'transparent'}">
           ${flagImg(r.country,11)}
-          <span style="flex:1;font-size:.82rem;color:${sel?'var(--accent)':'var(--text)'};font-weight:${sel?'700':'400'}">${name}</span>
+          <span style="flex:1;font-size:.82rem;color:${sel?'var(--accent)':'var(--text)'};font-weight:${sel?700:400}">${name}</span>
           <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">${r.avg.toFixed(1)}</span>
-          ${sel?'<span style="color:var(--accent);font-size:.75rem">▶</span>':''}
+          ${sel?'<span style="color:var(--accent)">▶</span>':''}
         </div>`;
       }).join('')
     : '<div style="padding:16px;color:var(--green);font-size:.82rem;text-align:center">✓ All assigned!</div>';
 
-  // Right panel: teams with open slots
-  const openTeams=teams.filter(t=>t.riders.length<4).sort((a,b)=>a.country.localeCompare(b.country));
-  const teamListEl=document.getElementById('nfa-team-list');
-  teamListEl.innerHTML=openTeams.length
-    ? openTeams.map(t=>{
-        const openSlots=4-t.riders.length;
-        const disabled=!selectedNFA;
-        return `<div onclick="${disabled?'':'assignNFAToTeam('+t.id+')'}" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:${disabled?'default':'pointer'};opacity:${disabled?.5:1};transition:background .1s" onmouseenter="this.style.background='rgba(245,196,0,.08)'" onmouseleave="this.style.background='transparent'">
-          ${flagImg(t.country,11)}
-          <span style="flex:1;font-family:'Barlow Condensed',sans-serif;font-size:.88rem;font-weight:700;text-transform:uppercase;color:var(--text)">${t.name}</span>
-          <span style="font-size:.72rem;color:var(--muted)">${t.country}</span>
-          <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--red);min-width:24px;text-align:right">+${openSlots}</span>
-        </div>`;
-      }).join('')
-    : '<div style="padding:16px;color:var(--green);font-size:.82rem;text-align:center">✓ All teams full!</div>';
+  // Right: ALL teams sorted by open slots (fewest riders first)
+  // Show ALL teams so empty ones are visible too
+  const sortedTeams=[...teams].sort((a,b)=>a.riders.length-b.riders.length||a.id-b.id);
+  document.getElementById('nfa-team-list').innerHTML=sortedTeams.map(t=>{
+    const openSlots=7-t.riders.length;
+    if(openSlots<=0) return '';
+    const disabled=!selectedNFA;
+    // Show current riders as country flags
+    const riderFlags=t.riders.map(n=>{
+      const r=allRiders.find(x=>x.name===n);
+      return r?flagImg(r.country,10):'';
+    }).join('');
+    return `<div onclick="${disabled?'':'assignNFAToTeam('+t.id+')'}" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:${disabled?'default':'pointer'};opacity:${disabled?.5:1}" onmouseenter="if(${!disabled})this.style.background='rgba(245,196,0,.08)'" onmouseleave="this.style.background='transparent'">
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:.75rem;font-weight:700;color:var(--muted);min-width:24px">#${t.id+1}</span>
+      <span style="display:flex;gap:2px;flex-wrap:nowrap">${riderFlags}</span>
+      <span style="flex:1;font-size:.78rem;color:var(--muted)">${t.riders.length}/4 natives</span>
+      <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--red);min-width:24px;text-align:right">+${openSlots}</span>
+    </div>`;
+  }).join('');
 
-  // Hide tool if nothing left to assign or all teams full
-  if(remaining.length===0||openTeams.length===0){
-    if(remaining.length===0){
-      document.getElementById('nfa-tool').style.display='none';
-      document.getElementById('nfa-count-pill').style.display='none';
-    }
+  // If all native FAs assigned, resolve identities and hide tool
+  if(remaining.length===0){
+    resolveTeamIdentities();
+    buildRiderTeamMap();populateCountryFilters();
+    saveTeams();renderTeams();renderRaceTeamPicker();
+    document.getElementById('nfa-tool').style.display='none';
+    document.getElementById('nfa-count-pill').style.display='none';
   }
 }
 
@@ -966,6 +1021,7 @@ function assignNFAToTeam(teamId){
   renderNFATool();
   renderTeams();
 }
+
 
 function updatePoolStatus(){
   document.getElementById('ps-native-count').textContent=nativePool.length||'—';
@@ -1060,7 +1116,7 @@ function loadSavedTeams(){
 // RENDER TEAMS TAB
 // ═══════════════════════════════════════════════════════════════
 function populateCountryFilters(){
-  const countries=[...new Set(teams.map(t=>t.country))].sort();
+  const countries=[...new Set(teams.map(t=>t.country).filter(Boolean))].sort();
   const opts='<option value="">All Countries</option>'+countries.map(c=>`<option>${c}</option>`).join('');
   document.getElementById('teams-country-filter').innerHTML=opts;
   document.getElementById('race-country-filter').innerHTML=opts;
@@ -1095,11 +1151,11 @@ function renderTeams(){
     const freeSlots=emptyCount>0?Array(emptyCount).fill('<div class="team-free-slot">— empty slot —</div>').join(''):'';
     return `<div class="team-card" id="tcard-${team.id}" style="border-left-color:${color}">
         <div class="team-card-head">
-          <span class="team-flag">${flagImg(team.country,13)}</span>
-          <span class="team-name-text">${team.name}</span>
+          <span class="team-flag">${team.country?flagImg(team.country,13):'🏳️'}</span>
+          <span class="team-name-text">${team.name||'Team #'+(team.id+1)}</span>
           <span class="team-avg-pill">${avg.toFixed(1)}</span>
         </div>
-        <div class="team-country-text">${team.country}</div>
+        <div class="team-country-text">${team.country||'Unassigned'}</div>
         ${riderRows}${freeSlots}
       </div>`;
   }).join('');
