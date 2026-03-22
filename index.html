@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v2.9</title>
+<title>CycleSim v3.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -207,7 +207,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v2.5</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v3.0</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -1132,9 +1132,9 @@ function renderTeams(){
   const cf=document.getElementById('teams-country-filter').value;
   const filtered=teams.filter(t=>
     (!cf||t.country===cf)&&
-    (t.name.toLowerCase().includes(q)||t.country.toLowerCase().includes(q))
+    ((t.name||'').toLowerCase().includes(q)||(t.country||'').toLowerCase().includes(q))
   );
-  document.getElementById('teams-count-pill').textContent=`${filtered.length} / ${teams.length} teams`;
+  document.getElementById('teams-count-pill').textContent=`${filtered.length} / ${teams.length} teams`; document.getElementById('nav-teams-count').textContent=teams.length;
   if(!filtered.length){
     document.getElementById('teams-grid').innerHTML='<div class="empty-state" style="grid-column:1/-1;font-size:.85rem">No teams match your search.</div>';
     return;
