@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v3.1</title>
+<title>CycleSim v3.2</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -91,7 +91,7 @@ tbody td{padding:6px 10px}
 .tlist-avg{font-family:'JetBrains Mono',monospace;font-size:.75rem;color:var(--muted)}
 
 /* ── TEAM GRID ───────────────────────────────────── */
-.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;overflow-y:auto;padding-right:4px;align-content:start}.team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;border-left:4px solid var(--muted);transition:border-color .15s}
+.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;overflow-y:auto;padding-right:4px;align-content:start;padding-bottom:8px}.team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;border-left:4px solid var(--muted);transition:border-color .15s;min-height:120px}
 .team-card:hover{border-color:var(--border2)}
 .team-card-head{padding:9px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;color:var(--text)}
 .team-flag{font-size:1.1rem;line-height:1}
@@ -207,7 +207,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v3.1</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v3.2</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -471,6 +471,19 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
+const CACHE_VERSION = '3.1';
+function clearStaleCache(){
+  try{
+    const stored = localStorage.getItem('cyclesim_version');
+    if(stored !== CACHE_VERSION){
+      localStorage.removeItem('cyclesim_teams');
+      localStorage.removeItem('cyclesim_draft');
+      localStorage.setItem('cyclesim_version', CACHE_VERSION);
+      console.log('Cache cleared (version mismatch)');
+    }
+  }catch(e){}
+}
+
 // ═══════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════
@@ -672,6 +685,7 @@ async function loadData() {
     document.getElementById('nav-count').textContent = allRiders.length;
     document.getElementById('db-count-pill').textContent = `${allRiders.length} riders`;
     renderDatabase();
+    clearStaleCache();
     loadSavedTeams();
   } catch(e) {
     document.getElementById('db-wrap').innerHTML =
@@ -1090,7 +1104,7 @@ function strengthColor(avg){
 }
 
 // ── localStorage ─────────────────────────────────────────────
-function saveTeams(){try{localStorage.setItem('cyclesim_teams',JSON.stringify({teams,nativePool,draftPool,freeAgent,nativeFreeAgents}));}catch(e){}}
+function saveTeams(){try{localStorage.setItem('cyclesim_teams',JSON.stringify({teams,nativePool,draftPool,freeAgent,nativeFreeAgents}));localStorage.setItem('cyclesim_version',CACHE_VERSION);}catch(e){}}
 function loadSavedTeams(){
   try{
     const raw=localStorage.getItem('cyclesim_teams');
@@ -1156,7 +1170,7 @@ function renderTeams(){
         <div class="team-card-head">
           <span class="team-flag">${team.country?flagImg(team.country,13):'🏳️'}</span>
           <span class="team-name-text">${team.name||'Team #'+(team.id+1)}</span>
-          <span class="team-avg-pill">${avg.toFixed(1)}</span>
+          <span class="team-avg-pill">${team.riders.length ? avg.toFixed(1) : '—'}</span>
         </div>
         <div class="team-country-text">${team.country||'Unassigned'}</div>
         ${riderRows}${freeSlots}
