@@ -787,16 +787,6 @@ function generateTeams(){
   document.getElementById('nav-teams-count').textContent=teams.length;
 }
 
-  // Reset draft state
-  draftLog=[];draftDone=false;
-  document.getElementById('nav-draft-badge').style.display='none';
-  document.getElementById('draft-reset-btn').style.display='none';
-
-  buildRiderTeamMap();saveTeams();populateCountryFilters();
-  renderTeams();renderRaceTeamPicker();
-  document.getElementById('nav-teams-count').textContent=teams.length;
-}
-
 function getRegion(country){
   for(const [r,cs] of Object.entries(REGIONS)){if(cs.includes(country)) return r;}
   return null;
