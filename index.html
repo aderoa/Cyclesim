@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v2.4</title>
+<title>CycleSim v2.5</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -208,7 +208,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v2.4</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v2.5</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -244,37 +244,49 @@ tbody td{padding:6px 10px}
     <button class="btn btn-ghost" id="btn-step2" onclick="stepCreateTeams()" disabled>② Create Teams</button>
     <button class="btn btn-ghost" id="btn-step3" onclick="stepAssignNatives()" disabled>③ Assign Natives</button>
     <button class="btn btn-danger btn-sm" onclick="confirmGenerate()">↺ Reset All</button>
-    <input type="text" class="search-input" id="teams-search" placeholder="Search team or country…" oninput="renderTeams()" style="max-width:200px">
+    <input type="text" class="search-input" id="teams-search" placeholder="Search teams…" oninput="renderTeams()" style="max-width:180px">
     <select class="form-select" id="teams-country-filter" onchange="renderTeams()">
       <option value="">All Countries</option>
     </select>
     <span class="pill" id="teams-count-pill">—</span>
-    <span class="pill" id="fa-count-pill" style="color:var(--accent);border-color:rgba(245,196,0,.3);background:rgba(245,196,0,.08)">—</span>
   </div>
-  <!-- Pool status bar -->
-  <div id="pool-status-bar" style="display:none;gap:8px;margin-bottom:10px;flex-wrap:wrap" class="toolbar">
-    <div class="pill" id="ps-native" style="color:var(--green);border-color:rgba(62,207,110,.3);background:rgba(62,207,110,.08)">Native pool: —</div>
-    <div class="pill" id="ps-draft" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)">Draft pool: —</div>
-    <div class="pill" id="ps-fa" style="color:var(--accent);border-color:rgba(245,196,0,.3);background:rgba(245,196,0,.08)">Free agents: —</div>
-    <div class="pill" id="ps-teams">Teams: —</div>
-    <div class="pill" id="ps-assigned">Assigned: —</div>
-  </div>
-  <div style="display:grid;grid-template-columns:220px 1fr;gap:12px;height:calc(100vh - 135px)">
-    <!-- List panel -->
-    <div style="display:flex;flex-direction:column;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">
-      <div style="padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
-        <span style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">All Teams</span>
-        <select class="form-select" id="list-sort" onchange="renderTeamList()" style="padding:3px 6px;font-size:.75rem;border-radius:4px">
-          <option value="avg-desc">Avg ↓</option>
-          <option value="avg-asc">Avg ↑</option>
-          <option value="name-asc">Name A–Z</option>
-          <option value="country-asc">Country A–Z</option>
-        </select>
+
+  <!-- Pool panels: visible after Step 1 -->
+  <div id="pool-panels" style="display:none;gap:10px;margin-bottom:10px;height:220px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;height:100%">
+      <!-- Native pool -->
+      <div style="display:flex;flex-direction:column;border:1px solid rgba(62,207,110,.3);border-radius:8px;overflow:hidden;background:var(--surface)">
+        <div style="padding:7px 12px;background:rgba(62,207,110,.08);border-bottom:1px solid rgba(62,207,110,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--green)">① Native Pool</span>
+          <span class="pill" id="ps-native-count" style="color:var(--green);border-color:rgba(62,207,110,.3);background:rgba(62,207,110,.08)">—</span>
+        </div>
+        <div id="ps-native-list" style="flex:1;overflow-y:auto;font-size:.78rem"></div>
       </div>
-      <div id="teams-list" style="flex:1;overflow-y:auto"></div>
+      <!-- Draft pool -->
+      <div style="display:flex;flex-direction:column;border:1px solid rgba(77,159,255,.3);border-radius:8px;overflow:hidden;background:var(--surface)">
+        <div style="padding:7px 12px;background:rgba(77,159,255,.08);border-bottom:1px solid rgba(77,159,255,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue)">② Draft Pool</span>
+          <span class="pill" id="ps-draft-count" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)">—</span>
+        </div>
+        <div id="ps-draft-list" style="flex:1;overflow-y:auto;font-size:.78rem"></div>
+      </div>
+      <!-- Free agents -->
+      <div style="display:flex;flex-direction:column;border:1px solid rgba(245,196,0,.3);border-radius:8px;overflow:hidden;background:var(--surface)">
+        <div style="padding:7px 12px;background:rgba(245,196,0,.08);border-bottom:1px solid rgba(245,196,0,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Free Agents</span>
+          <span class="pill" id="ps-fa-count" style="color:var(--accent);border-color:rgba(245,196,0,.3);background:rgba(245,196,0,.08)">—</span>
+        </div>
+        <div id="ps-fa-list" style="flex:1;overflow-y:auto;font-size:.78rem"></div>
+      </div>
     </div>
-    <!-- Card grid -->
-    <div id="teams-grid" class="teams-grid"></div>
+  </div>
+
+  <!-- Teams grid: full width, visible after Step 2 -->
+  <div id="teams-grid" class="teams-grid" style="height:calc(100vh - 115px)">
+    <div class="empty-state" style="grid-column:1/-1">
+      <div class="empty-icon">🚴</div>
+      <div>Use the steps above to generate pools, create teams, and assign riders.</div>
+    </div>
   </div>
 </div>
 
@@ -444,85 +456,128 @@ const GAP_SPD  = {FLA:1.5,MTN:11,MM:8,HIL:5,TTR:4,PRL:2.5,COB:5};
 // TEAM NAMES  (place names per country, ≥ number of teams)
 // ═══════════════════════════════════════════════════════════════
 const TEAM_NAMES = {
-  'France':['Paris','Lyon','Marseille','Bordeaux','Toulouse','Nantes','Strasbourg','Rennes','Grenoble','Montpellier','Nice','Rouen','Toulon','Lille','Reims','Saint-Étienne','Brest','Le Havre','Dijon','Amiens','Angers','Metz','Clermont-Ferrand','Nancy','Perpignan','Caen','Orléans','Tours','Limoges','Pau','Béziers','Bayonne','Ajaccio','Chambéry','Annecy','Colmar','Troyes','Mulhouse','Besançon','Calais','Dunkerque','Valence','Périgueux','Aurillac','Carcassonne','Albi','Rodez','Auxerre','Châlons','Charleville','Épinal','Laval','Chartres','Arras'],
-  'Italy':['Roma','Milano','Torino','Napoli','Firenze','Bologna','Venezia','Palermo','Genova','Bari','Catania','Verona','Messina','Padova','Trieste','Taranto','Brescia','Parma','Reggio Calabria','Reggio Emilia','Modena','Prato','Livorno','Cagliari','Perugia','Foggia','Salerno','Rimini','Ferrara','Sassari','Siena','Bergamo','Trento','Udine','Ancona','Pescara','Mantova','Como','Pisa','Arezzo','Lucca','Piacenza'],
-  'Spain':['Madrid','Barcelona','Valencia','Sevilla','Zaragoza','Málaga','Murcia','Palma','Las Palmas','Bilbao','Alicante','Córdoba','Valladolid','Vigo','Gijón','A Coruña','Vitoria','Granada','Elche','Oviedo','Badalona','Cartagena','Terrassa','Jerez','Sabadell','Móstoles','Santa Cruz','Pamplona','Almería','Fuenlabrada','Leganés','Santander','Castellón','Burgos','Albacete','Salamanca'],
-  'Belgium':['Bruxelles','Antwerpen','Gent','Charleroi','Liège','Brugge','Namur','Leuven','Mons','Aalst','Mechelen','La Louvière','Kortrijk','Hasselt','Ostende','Sint-Niklaas','Tournai','Genk','Seraing','Roeselare','Mouscron','Beveren','Dendermonde','Beringen','Turnhout','Lokeren','Maasmechelen','Wavre','Verviers','Arlon','Tongeren','Soignies','Huy'],
-  'Netherlands':['Amsterdam','Rotterdam','Den Haag','Utrecht','Eindhoven','Tilburg','Groningen','Almere','Breda','Nijmegen','Enschede','Haarlem','Arnhem','Zaanstad','Amersfoort','Apeldoorn','Den Bosch','Hoofddorp','Zoetermeer','Leiden','Maastricht','Dordrecht','Zwolle','Deventer','Delft','Alkmaar','Helmond'],
-  'Colombia':['Bogotá','Medellín','Cali','Barranquilla','Cartagena','Cúcuta','Bucaramanga','Pereira','Santa Marta','Ibagué','Pasto','Manizales','Neiva','Soledad','Armenia','Villavicencio','Soacha','Bello','Montería','Valledupar','Sincelejo','Popayán','Palmira','Floridablanca','Itagüí','Buenaventura'],
-  'Australia':['Sydney','Melbourne','Brisbane','Perth','Adelaide','Gold Coast','Canberra','Newcastle','Wollongong','Sunshine Coast','Hobart','Geelong','Townsville','Cairns','Darwin','Toowoomba','Ballarat','Bendigo','Albury','Mackay','Launceston'],
-  'United Kingdom':['London','Manchester','Birmingham','Leeds','Glasgow','Sheffield','Edinburgh','Liverpool','Bristol','Cardiff','Leicester','Coventry','Nottingham','Newcastle','Belfast','Southampton','Brighton','Plymouth','Hull'],
-  'China':['Beijing','Shanghai','Guangzhou','Shenzhen','Chengdu','Tianjin','Wuhan','Dongguan','Chongqing','Nanjing','Xi\'an','Hangzhou','Shenyang','Harbin','Zhengzhou'],
-  'Denmark':['København','Aarhus','Odense','Aalborg','Esbjerg','Randers','Kolding','Horsens','Vejle','Roskilde','Herning','Silkeborg','Helsingør','Næstved','Fredericia'],
-  'Germany':['Berlin','Hamburg','München','Köln','Frankfurt','Stuttgart','Düsseldorf','Leipzig','Dortmund','Essen','Bremen','Dresden','Hannover','Nürnberg'],
-  'Argentina':['Buenos Aires','Córdoba','Rosario','Mendoza','San Miguel','La Plata','Mar del Plata','Salta','Santa Fe','San Juan','Resistencia','Tucumán','Neuquén'],
-  'Norway':['Oslo','Bergen','Trondheim','Stavanger','Drammen','Fredrikstad','Porsgrunn','Kristiansand','Ålesund','Tønsberg','Moss','Bodø'],
-  'New Zealand':['Auckland','Wellington','Christchurch','Hamilton','Tauranga','Napier','Dunedin','Palmerston North','Nelson','Rotorua','Whangarei','Invercargill'],
-  'Japan':['Tokyo','Osaka','Nagoya','Sapporo','Fukuoka','Kobe','Kyoto','Kawasaki','Saitama','Hiroshima','Sendai','Chiba'],
-  'United States':['New York','Los Angeles','Chicago','Houston','Phoenix','Philadelphia','San Antonio','San Diego','Dallas','San Jose','Austin','Jacksonville'],
-  'Portugal':['Lisboa','Porto','Amadora','Braga','Setúbal','Coimbra','Funchal','Almada','Agualva','Aveiro','Guimarães'],
-  'Venezuela':['Caracas','Maracaibo','Valencia','Barquisimeto','Maracay','Barcelona','Maturín','San Cristóbal','Ciudad Guayana'],
-  'Czech Republic':['Praha','Brno','Ostrava','Plzeň','Liberec','Olomouc','Ústí nad Labem','Hradec Králové'],
-  'Poland':['Warszawa','Kraków','Łódź','Wrocław','Poznań','Gdańsk','Szczecin','Bydgoszcz'],
-  'Switzerland':['Zürich','Genève','Basel','Bern','Lausanne','Winterthur','Luzern','St. Gallen'],
-  'Austria':['Wien','Graz','Linz','Salzburg','Innsbruck','Klagenfurt','Villach','Wels'],
-  'Russia':['Moskva','Sankt-Peterburg','Novosibirsk','Yekaterinburg','Kazan','Nizhny Novgorod','Chelyabinsk','Omsk'],
-  'Malaysia':['Kuala Lumpur','George Town','Ipoh','Shah Alam','Johor Bahru','Petaling Jaya','Kota Kinabalu'],
-  'Guatemala':['Guatemala City','Mixco','Villa Nueva','Quetzaltenango','San Juan Sacatepéquez','Escuintla','Huehuetenango'],
-  'Turkey':['Istanbul','Ankara','Izmir','Bursa','Adana','Gaziantep','Konya'],
-  'Algeria':['Alger','Oran','Constantine','Annaba','Blida','Batna'],
-  'South Africa':['Johannesburg','Cape Town','Durban','Pretoria','Port Elizabeth','Bloemfontein'],
-  'Slovenia':['Ljubljana','Maribor','Celje','Kranj','Velenje'],
-  'Thailand':['Bangkok','Nonthaburi','Pak Kret','Hat Yai','Chiang Mai'],
-  'Indonesia':['Jakarta','Surabaya','Bandung','Medan','Semarang'],
-  'Canada':['Toronto','Vancouver','Montréal','Calgary','Ottawa'],
-  'Costa Rica':['San José','Cartago','Heredia','Alajuela','Liberia'],
-  'Kazakhstan':['Almaty','Nur-Sultan','Shymkent','Karaganda','Aktobe'],
-  'Philippines':['Manila','Quezon City','Davao','Cebu'],
-  'Ireland':['Dublin','Cork','Limerick','Galway'],
-  'Ecuador':['Quito','Guayaquil','Cuenca','Ambato'],
-  'United Arab Emirates':['Dubai','Abu Dhabi','Sharjah','Al Ain'],
-  'Sweden':['Stockholm','Göteborg','Malmö','Uppsala'],
-  'Chile':['Santiago','Valparaíso','Concepción','Antofagasta'],
-  'Morocco':['Casablanca','Rabat','Fès','Marrakech'],
-  'Uruguay':['Montevideo','Salto','Paysandú'],
-  'Estonia':['Tallinn','Tartu','Narva'],
-  'Eritrea':['Asmara','Keren','Massawa'],
-  'Brazil':['São Paulo','Rio de Janeiro','Brasília'],
-  'Mexico':['México City','Guadalajara','Monterrey'],
-  'Hungary':['Budapest','Debrecen','Miskolc'],
-  'Rwanda':['Kigali','Butare','Gisenyi'],
-  'Hong Kong':['Kowloon','Central','Sha Tin'],
-  'Burkina Faso':['Ouagadougou','Bobo-Dioulasso','Koudougou'],
-  'Angola':['Luanda','Huambo','Lobito'],
-  'Panama':['Panama City','Colón','David'],
-  'Slovakia':['Bratislava','Košice'],
-  'Taiwan':['Taipei','Kaohsiung'],
-  'Bolivia':['La Paz','Santa Cruz'],
-  'Luxembourg':['Luxembourg','Esch-sur-Alzette'],
-  'South Korea':['Seoul','Busan'],
-  'Romania':['București','Cluj-Napoca'],
-  'Mali':['Bamako','Sikasso'],
-  'Latvia':['Riga','Daugavpils'],
-  'Israel':['Tel Aviv','Jerusalem'],
-  'Mauritius':['Port Louis','Vacoas'],
-  'Uzbekistan':['Tashkent','Samarkand'],
-  'Iran':['Tehran'],'India':['Mumbai'],'Mongolia':['Ulaanbaatar'],'Namibia':['Windhoek'],
-  'Saudi Arabia':['Riyadh'],'Ethiopia':['Addis Abeba'],'Belize':['Belize City'],
-  'Dominican Republic':['Santo Domingo'],'Singapore':['Singapore'],'Ukraine':['Kyiv'],
-  'Lithuania':['Vilnius'],'Belarus':['Minsk'],'Cameroon':['Yaoundé'],'Cuba':['La Habana'],
-  'Benin':['Cotonou'],'Serbia':['Beograd'],'Finland':['Helsinki'],'Greece':['Athinai'],
-  'Peru':['Lima'],'Bulgaria':['Sofia'],'Azerbaijan':['Baku'],'Uganda':['Kampala'],
-  'Oman':['Muscat'],'Kyrgyzstan':['Bishkek'],'Croatia':['Zagreb'],'Malta':['Valletta'],
-  'Laos':['Vientiane'],'Bahrain':['Manama'],'Iraq':['Baghdad'],'Vietnam':['Hanoi'],
-  'Albania':['Tirana'],'Tunisia':['Tunis'],'DR Congo':['Kinshasa'],'Ghana':['Accra'],
-  'Zimbabwe':['Harare'],'Andorra':['Andorra la Vella'],'Honduras':['Tegucigalpa'],
-  'Syria':['Damascus'],'Paraguay':['Asunción'],'Egypt':['Cairo'],'Ivory Coast':['Abidjan'],
-  'Senegal':['Dakar'],'Puerto Rico':['San Juan'],'Cyprus':['Nicosia'],'Bermuda':['Hamilton'],
-  'Kosovo':['Pristina'],'Lesotho':['Maseru'],'Pakistan':['Karachi'],'Nigeria':['Lagos'],
-  'Kenya':['Nairobi'],'Guam':['Hagåtña'],'Monaco':['Monte-Carlo'],'Grenada':["St. George's"],
-  'Macau':['Macau'],'Afghanistan':['Kabul'],'Iceland':['Reykjavik'],'Liechtenstein':['Vaduz'],
-  'Qatar':['Doha'],'Curaçao':['Willemstad'],
+  'France':['Paris','Lyon','Marseille','Bordeaux','Toulouse','Nantes','Strasbourg','Rennes','Grenoble','Montpellier','Nice','Rouen','Toulon','Lille','Reims','Saint-Étienne','Brest','Le Havre','Dijon','Amiens','Angers','Metz','Clermont-Ferrand','Nancy','Perpignan','Caen','Orléans','Tours','Limoges','Pau','Béziers','Bayonne','Ajaccio','Chambéry','Annecy','Colmar','Troyes','Mulhouse','Besançon','Calais','Dunkerque','Valence','Périgueux','Aurillac','Carcassonne','Albi','Rodez','Auxerre','Châlons','Charleville','Épinal','Laval','Chartres','Arras','Angoulême','Niort','Poitiers','Vannes','Lorient','Saint-Malo','Quimper','Boulogne','Creil','Évry','Caen','Nîmes','Avignon','Fréjus','Cannes','Antibes','Menton','Hyères','Aix-en-Provence','Draguignan','Arles','Montauban','Agen','Périgueux','Bayeux','Lisieux','Évreux','Versailles','Mantes','Melun','Meaux'],
+  'Italy':['Roma','Milano','Torino','Napoli','Firenze','Bologna','Venezia','Palermo','Genova','Bari','Catania','Verona','Messina','Padova','Trieste','Taranto','Brescia','Parma','Reggio Calabria','Reggio Emilia','Modena','Prato','Livorno','Cagliari','Perugia','Foggia','Salerno','Rimini','Ferrara','Sassari','Siena','Bergamo','Trento','Udine','Ancona','Pescara','Mantova','Como','Pisa','Arezzo','Lucca','Piacenza','Lecce','Catanzaro','Andria','Novara','Ravenna','Vicenza','Terni','Bolzano','Monza','Forlì','Giugliano','La Spezia','Reggio Emilia','Ferrara','Sassari','Brindisi','Bergamo','Forlì','Trento','Vicenza','Terni','Bolzano','Novara','Piacenza','Ancona','Udine','Perugia','Ravenna','Salerno'],
+  'Spain':['Madrid','Barcelona','Valencia','Sevilla','Zaragoza','Málaga','Murcia','Palma','Las Palmas','Bilbao','Alicante','Córdoba','Valladolid','Vigo','Gijón','A Coruña','Vitoria','Granada','Elche','Oviedo','Badalona','Cartagena','Terrassa','Jerez','Sabadell','Móstoles','Santa Cruz','Pamplona','Almería','Fuenlabrada','Leganés','Santander','Castellón','Burgos','Albacete','Salamanca','Alcalá','Getafe','Hospitalet','Badalona','Mataró','Alcorcón','Logroño','Badajoz','Huelva','León','Cádiz','Tarragona','Mérida','Lérida','Lugo','Ourense','Santiago','Cáceres','Melilla','Ceuta','Pontevedra'],
+  'Belgium':['Bruxelles','Antwerpen','Gent','Charleroi','Liège','Brugge','Namur','Leuven','Mons','Aalst','Mechelen','La Louvière','Kortrijk','Hasselt','Ostende','Sint-Niklaas','Tournai','Genk','Seraing','Roeselare','Mouscron','Beveren','Dendermonde','Beringen','Turnhout','Lokeren','Maasmechelen','Wavre','Verviers','Arlon','Tongeren','Soignies','Huy','Sint-Truiden','Herentals','Tienen','Diest','Ieper','Veurne','Poperinge','Diksmuide','Nieuport','Bruges','Deinze','Ronse','Zottegem','Ninove','Asse','Vilvoorde','Hal','Leuven','Mechelen','Diest','Tienen','Aarschot','Heist-op-den-Berg','Bornem'],
+  'Netherlands':['Amsterdam','Rotterdam','Den Haag','Utrecht','Eindhoven','Tilburg','Groningen','Almere','Breda','Nijmegen','Enschede','Haarlem','Arnhem','Zaanstad','Amersfoort','Apeldoorn','Den Bosch','Hoofddorp','Zoetermeer','Leiden','Maastricht','Dordrecht','Zwolle','Deventer','Delft','Alkmaar','Helmond','Heerlen','Ede','Purmerend','Leeuwarden','Venlo','Roosendaal','Sittard','Emmen','Vught','Gouda','Hoorn','Alphen','Vlaardingen','Schiedam','Spijkenisse','Lelystad','Nieuwegein','Zeist','Veenendaal','Hardenberg','Oss','Roermond','Bergen op Zoom'],
+  'Colombia':['Bogotá','Medellín','Cali','Barranquilla','Cartagena','Cúcuta','Bucaramanga','Pereira','Santa Marta','Ibagué','Pasto','Manizales','Neiva','Soledad','Armenia','Villavicencio','Soacha','Bello','Montería','Valledupar','Sincelejo','Popayán','Palmira','Floridablanca','Itagüí','Buenaventura','Barrancabermeja','Dos Quebradas','Riohacha','Girardot','Ocaña','Magangué','Mompós','Zipaquirá','Facatativá','Sogamoso','Duitama','Tunja','Chiquinquirá','Barbosa','Girón','Piedecuesta'],
+  'Australia':['Sydney','Melbourne','Brisbane','Perth','Adelaide','Gold Coast','Canberra','Newcastle','Wollongong','Sunshine Coast','Hobart','Geelong','Townsville','Cairns','Darwin','Toowoomba','Ballarat','Bendigo','Albury','Mackay','Launceston','Rockhampton','Bunbury','Bundaberg','Mildura','Shepparton','Gladstone','Tamworth','Orange','Dubbo','Wagga Wagga','Broken Hill','Port Augusta','Whyalla','Alice Springs','Palmerston','Wodonga'],
+  'United Kingdom':['London','Manchester','Birmingham','Leeds','Glasgow','Sheffield','Edinburgh','Liverpool','Bristol','Cardiff','Leicester','Coventry','Nottingham','Newcastle','Belfast','Southampton','Brighton','Plymouth','Hull','Wolverhampton','Derby','Stoke','Reading','Sunderland','Preston','Swansea','Newport','Aberdeen','Dundee','Inverness','Exeter','Oxford','Cambridge','Bath','Salisbury','Canterbury','Winchester','Norwich','Ipswich','Lincoln','Gloucester','Worcester','Hereford','Chester','York'],
+  'China':['Beijing','Shanghai','Guangzhou','Shenzhen','Chengdu','Tianjin','Wuhan','Dongguan','Chongqing','Nanjing','Xi\'an','Hangzhou','Shenyang','Harbin','Zhengzhou','Qingdao','Foshan','Dalian','Jinan','Changsha','Kunming','Changchun','Shijiazhuang','Fuzhou','Urumqi','Suzhou','Ningbo','Hefei','Nanchang','Guiyang','Taiyuan','Lanzhou','Xuzhou'],
+  'Denmark':['København','Aarhus','Odense','Aalborg','Esbjerg','Randers','Kolding','Horsens','Vejle','Roskilde','Herning','Silkeborg','Helsingør','Næstved','Fredericia','Viborg','Holstebro','Slagelse','Hillerød','Sønderborg','Holbæk','Frederiksberg','Gentofte','Gladsaxe','Hvidovre','Ballerup','Rødovre','Albertslund','Brøndby'],
+  'Germany':['Berlin','Hamburg','München','Köln','Frankfurt','Stuttgart','Düsseldorf','Leipzig','Dortmund','Essen','Bremen','Dresden','Hannover','Nürnberg','Duisburg','Bochum','Wuppertal','Bielefeld','Bonn','Mannheim','Karlsruhe','Augsburg','Wiesbaden','Mönchengladbach','Gelsenkirchen','Braunschweig','Kiel','Chemnitz','Aachen','Halle','Magdeburg','Freiburg','Krefeld','Lübeck','Erfurt'],
+  'Argentina':['Buenos Aires','Córdoba','Rosario','Mendoza','San Miguel','La Plata','Mar del Plata','Salta','Santa Fe','San Juan','Resistencia','Tucumán','Neuquén','Corrientes','Posadas','Bahía Blanca','Paraná','Formosa','San Luis','La Rioja','Catamarca','Jujuy','Río Gallegos','Ushuaia','Viedma','Rawson','Santa Rosa'],
+  'Norway':['Oslo','Bergen','Trondheim','Stavanger','Drammen','Fredrikstad','Porsgrunn','Kristiansand','Ålesund','Tønsberg','Moss','Bodø','Tromsø','Sandefjord','Larvik','Halden','Lillehammer','Hamar','Gjøvik','Molde','Ålesund','Steinkjer','Namsos','Harstad','Alta'],
+  'New Zealand':['Auckland','Wellington','Christchurch','Hamilton','Tauranga','Napier','Dunedin','Palmerston North','Nelson','Rotorua','Whangarei','Invercargill','Hastings','New Plymouth','Porirua','Queenstown','Timaru','Blenheim','Gisborne','Whanganui','Kapiti','Upper Hutt','Lower Hutt','Masterton','Greymouth','Oamaru'],
+  'Japan':['Tokyo','Osaka','Nagoya','Sapporo','Fukuoka','Kobe','Kyoto','Kawasaki','Saitama','Hiroshima','Sendai','Chiba','Kitakyushu','Setagaya','Sakai','Niigata','Hamamatsu','Kumamoto','Sagamihara','Shizuoka','Okayama','Kagoshima','Funabashi','Hachioji','Higashiosaka','Matsuyama','Matsudo','Kanazawa','Utsunomiya','Oita','Toyama','Nagasaki'],
+  'United States':['New York','Los Angeles','Chicago','Houston','Phoenix','Philadelphia','San Antonio','San Diego','Dallas','San Jose','Austin','Jacksonville','Fort Worth','Columbus','Charlotte','Indianapolis','San Francisco','Seattle','Denver','Nashville','Boston','El Paso','Portland','Las Vegas','Memphis','Louisville','Baltimore','Milwaukee','Albuquerque','Tucson','Fresno','Sacramento','Atlanta','Miami','Minneapolis'],
+  'Portugal':['Lisboa','Porto','Amadora','Braga','Setúbal','Coimbra','Funchal','Almada','Agualva','Aveiro','Guimarães','Viseu','Faro','Évora','Viana do Castelo','Gondomar','Matosinhos','Leiria','Seixal','Odivelas','Cascais','Sintra','Loures','Amarante','Lamego','Chaves','Bragança'],
+  'Venezuela':['Caracas','Maracaibo','Valencia','Barquisimeto','Maracay','Barcelona','Maturín','San Cristóbal','Ciudad Guayana','Cumana','Cabimas','Petare','Mérida','Barinas','Punto Fijo','Acarigua','Güiria','Porlamar','Los Teques'],
+  'Czech Republic':['Praha','Brno','Ostrava','Plzeň','Liberec','Olomouc','Ústí nad Labem','Hradec Králové','České Budějovice','Pardubice','Zlín','Kladno','Most','Opava','Frýdek-Místek','Jihlava','Teplice'],
+  'Poland':['Warszawa','Kraków','Łódź','Wrocław','Poznań','Gdańsk','Szczecin','Bydgoszcz','Lublin','Katowice','Białystok','Gdynia','Częstochowa','Radom','Sosnowiec','Toruń','Kielce','Rzeszów','Bytom'],
+  'Switzerland':['Zürich','Genève','Basel','Bern','Lausanne','Winterthur','Luzern','St. Gallen','Lugano','Biel','Thun','Köniz','La Chaux-de-Fonds','Schaffhausen','Fribourg','Chur','Vernier','Neuchâtel'],
+  'Austria':['Wien','Graz','Linz','Salzburg','Innsbruck','Klagenfurt','Villach','Wels','Sankt Pölten','Dornbirn','Steyr','Wiener Neustadt','Feldkirch','Bregenz','Leonding','Klosterneuburg'],
+  'Russia':['Moskva','Sankt-Peterburg','Novosibirsk','Yekaterinburg','Kazan','Nizhny Novgorod','Chelyabinsk','Omsk','Samara','Ufa','Rostov-na-Donu','Krasnoyarsk','Perm','Voronezh','Volgograd','Krasnodar','Saratov','Tyumen','Tolyatti','Izhevsk'],
+  'Malaysia':['Kuala Lumpur','George Town','Ipoh','Shah Alam','Johor Bahru','Petaling Jaya','Kota Kinabalu','Kuching','Subang Jaya','Klang','Ampang Jaya','Iskandar Puteri','Putrajaya','Seremban'],
+  'Guatemala':['Guatemala City','Mixco','Villa Nueva','Quetzaltenango','San Juan Sacatepéquez','Escuintla','Huehuetenango','Cobán','Chiquimula','Zacapa','Totonicapán','Sololá','Antigua','Puerto Barrios'],
+  'Turkey':['Istanbul','Ankara','Izmir','Bursa','Adana','Gaziantep','Konya','Antalya','Kayseri','Mersin','Eskişehir','Diyarbakır','Samsun','Denizli','Adapazarı','Malatya','Kahramanmaraş','Erzurum'],
+  'Algeria':['Alger','Oran','Constantine','Annaba','Blida','Batna','Sétif','Tizi Ouzou','Djelfa','Béjaïa','Biskra','Tlemcen','Sidi Bel Abbès','Skikda'],
+  'South Africa':['Johannesburg','Cape Town','Durban','Pretoria','Port Elizabeth','Bloemfontein','East London','Pietermaritzburg','Benoni','Boksburg','Tembisa','Soweto','Katlehong','Port Shepstone'],
+  'Slovenia':['Ljubljana','Maribor','Celje','Kranj','Velenje','Koper','Novo Mesto','Ptuj','Murska Sobota','Nova Gorica','Domžale','Kamnik','Škofja Loka'],
+  'Thailand':['Bangkok','Nonthaburi','Pak Kret','Hat Yai','Chiang Mai','Pattaya','Khon Kaen','Udon Thani','Nakhon Ratchasima','Chiang Rai'],
+  'Indonesia':['Jakarta','Surabaya','Bandung','Medan','Semarang','Palembang','Makassar','Depok','Tangerang','Bekasi','South Tangerang'],
+  'Canada':['Toronto','Vancouver','Montréal','Calgary','Ottawa','Edmonton','Mississauga','Winnipeg','Quebec City','Hamilton','Kitchener','London','Halifax','Victoria'],
+  'Costa Rica':['San José','Cartago','Heredia','Alajuela','Liberia','Limón','Puntarenas','Quesada','Nicoya','Turrialba'],
+  'Kazakhstan':['Almaty','Nur-Sultan','Shymkent','Karaganda','Aktobe','Taraz','Oskemen','Semey','Petropavl','Atyrau','Kostanay'],
+  'Philippines':['Manila','Quezon City','Davao','Cebu','Zamboanga','Taguig','Antipolo','Pasig','Cagayan de Oro','Parañaque'],
+  'Ireland':['Dublin','Cork','Limerick','Galway','Waterford','Drogheda','Dundalk','Kilkenny','Sligo','Wexford'],
+  'Ecuador':['Quito','Guayaquil','Cuenca','Ambato','Manta','Portoviejo','Machala','Duran','Loja','Ibarra'],
+  'United Arab Emirates':['Dubai','Abu Dhabi','Sharjah','Al Ain','Ajman','Ras al-Khaimah','Fujairah','Umm al-Quwain'],
+  'Sweden':['Stockholm','Göteborg','Malmö','Uppsala','Västerås','Örebro','Linköping','Helsingborg','Jönköping','Norrköping','Umeå','Lund','Gävle','Borås'],
+  'Chile':['Santiago','Valparaíso','Concepción','Antofagasta','La Serena','Arica','Temuco','Puerto Montt','Rancagua','Viña del Mar','Talca','Iquique','Copiapó'],
+  'Morocco':['Casablanca','Rabat','Fès','Marrakech','Agadir','Tanger','Meknès','Oujda','Kénitra','Tétouan','Safi','El Jadida'],
+  'Uruguay':['Montevideo','Salto','Paysandú','Las Piedras','Rivera','Maldonado','Tacuarembó','Melo','Mercedes','Artigas'],
+  'Estonia':['Tallinn','Tartu','Narva','Pärnu','Kohtla-Järve','Viljandi','Rakvere','Maardu','Sillamäe','Kuressaare'],
+  'Eritrea':['Asmara','Keren','Massawa','Assab','Mendefera','Adi Keyh','Barentu','Dekemhare'],
+  'Brazil':['São Paulo','Rio de Janeiro','Brasília','Salvador','Fortaleza','Belo Horizonte','Manaus','Curitiba','Recife','Porto Alegre','Belém','Goiânia','Guarulhos'],
+  'Mexico':['México City','Guadalajara','Monterrey','Puebla','Tijuana','León','Juárez','Mérida','Zapopan','Cancún','Acapulco','Querétaro','San Luis Potosí'],
+  'Hungary':['Budapest','Debrecen','Miskolc','Szeged','Pécs','Győr','Nyíregyháza','Kecskemét','Székesfehérvár'],
+  'Rwanda':['Kigali','Butare','Gisenyi','Ruhengeri','Cyangugu','Byumba','Kibungo'],
+  'Hong Kong':['Kowloon','Central','Sha Tin','Tsuen Wan','Tuen Mun','Yuen Long','Tseung Kwan O'],
+  'Burkina Faso':['Ouagadougou','Bobo-Dioulasso','Koudougou','Ouahigouya','Banfora','Kaya','Tenkodogo'],
+  'Angola':['Luanda','Huambo','Lobito','Benguela','Lubango','Malanje','Cabinda','Soyo','Kuito','Menongue'],
+  'Panama':['Panama City','Colón','David','La Chorrera','Santiago','Chitré','Almirante','Las Tablas'],
+  'Slovakia':['Bratislava','Košice','Prešov','Žilina','Banská Bystrica','Nitra','Trnava','Martin'],
+  'Taiwan':['Taipei','Kaohsiung','Taichung','Tainan','Hsinchu','Keelung','Chiayi','Taoyuan'],
+  'Bolivia':['La Paz','Santa Cruz','Cochabamba','Sucre','Oruro','Potosí','Tarija','Trinidad'],
+  'Luxembourg':['Luxembourg','Esch-sur-Alzette','Differdange','Dudelange','Pétange'],
+  'South Korea':['Seoul','Busan','Incheon','Daegu','Daejeon','Gwangju','Suwon','Ulsan','Changwon'],
+  'Romania':['București','Cluj-Napoca','Timișoara','Iași','Constanța','Craiova','Brașov','Galați','Ploiești'],
+  'Mali':['Bamako','Sikasso','Mopti','Ségou','Kayes','Gao','Koutiala','Kati'],
+  'Latvia':['Riga','Daugavpils','Jelgava','Liepāja','Jūrmala','Rēzekne','Valmiera'],
+  'Israel':['Tel Aviv','Jerusalem','Haifa','Rishon LeZion','Petah Tikva','Ashdod','Beersheba','Netanya','Holon','Bnei Brak'],
+  'Mauritius':['Port Louis','Vacoas','Beau Bassin','Curepipe','Quatre Bornes','Rose Hill','Mahébourg'],
+  'Uzbekistan':['Tashkent','Samarkand','Namangan','Andijan','Bukhara','Nukus','Fergana','Kokand'],
+  'Iran':['Tehran','Mashhad','Isfahan','Karaj','Tabriz','Shiraz','Ahvaz','Qom'],
+  'India':['Mumbai','Delhi','Bengaluru','Hyderabad','Ahmedabad','Chennai','Kolkata','Pune','Jaipur'],
+  'Mongolia':['Ulaanbaatar','Erdenet','Darkhan','Choibalsan','Ölgii'],
+  'Namibia':['Windhoek','Rundu','Walvis Bay','Swakopmund','Oshakati','Rehoboth'],
+  'Saudi Arabia':['Riyadh','Jeddah','Mecca','Medina','Dammam','Taif','Tabuk','Buraidah'],
+  'Ethiopia':['Addis Abeba','Dire Dawa','Mekelle','Gondar','Hawassa','Bahir Dar','Jimma'],
+  'Belize':['Belize City','San Ignacio','Orange Walk','Belmopan','Dangriga'],
+  'Dominican Republic':['Santo Domingo','Santiago','La Romana','San Pedro de Macorís','La Vega','San Francisco de Macorís'],
+  'Singapore':['Singapore','Jurong','Woodlands','Tampines','Ang Mo Kio'],
+  'Ukraine':['Kyiv','Kharkiv','Odessa','Dnipro','Donetsk','Zaporizhzhia','Lviv'],
+  'Lithuania':['Vilnius','Kaunas','Klaipėda','Šiauliai','Panevėžys'],
+  'Belarus':['Minsk','Gomel','Mogilev','Vitebsk','Grodno','Brest'],
+  'Cameroon':['Yaoundé','Douala','Garoua','Bamenda','Maroua','Bafoussam'],
+  'Cuba':['La Habana','Santiago de Cuba','Camagüey','Holguín','Santa Clara','Guantánamo'],
+  'Benin':['Cotonou','Porto-Novo','Parakou','Abomey','Kandi','Lokossa'],
+  'Serbia':['Beograd','Novi Sad','Niš','Kragujevac','Subotica','Zrenjanin'],
+  'Finland':['Helsinki','Tampere','Turku','Oulu','Lahti','Kuopio','Espoo','Vantaa'],
+  'Greece':['Athinai','Thessaloniki','Patras','Heraklion','Larissa','Volos','Ioannina','Chania'],
+  'Peru':['Lima','Arequipa','Trujillo','Chiclayo','Piura','Iquitos','Cusco','Huancayo'],
+  'Bulgaria':['Sofia','Plovdiv','Varna','Burgas','Ruse','Stara Zagora','Pleven','Sliven'],
+  'Azerbaijan':['Baku','Ganja','Sumqayit','Mingachevir','Lankaran','Shirvan'],
+  'Uganda':['Kampala','Gulu','Lira','Jinja','Mbale','Mbarara','Masaka'],
+  'Oman':['Muscat','Salalah','Sohar','Nizwa','Sur','Ibri'],
+  'Kyrgyzstan':['Bishkek','Osh','Jalal-Abad','Karakol','Tokmok'],
+  'Croatia':['Zagreb','Split','Rijeka','Osijek','Zadar'],
+  'Malta':['Valletta','Birkirkara','Qormi','Mosta','San Ġwann'],
+  'Laos':['Vientiane','Pakse','Savannakhet','Luang Prabang'],
+  'Bahrain':['Manama','Muharraq','Riffa','Hamad Town'],
+  'Iraq':['Baghdad','Basra','Mosul','Erbil'],
+  'Vietnam':['Hanoi','Ho Chi Minh City','Da Nang','Hai Phong'],
+  'Albania':['Tirana','Durrës','Vlorë','Shkodër'],
+  'Tunisia':['Tunis','Sfax','Sousse','Kairouan'],
+  'DR Congo':['Kinshasa','Lubumbashi','Mbuji-Mayi','Kananga'],
+  'Ghana':['Accra','Kumasi','Tamale','Sekondi-Takoradi'],
+  'Zimbabwe':['Harare','Bulawayo','Chitungwiza','Mutare'],
+  'Andorra':['Andorra la Vella','Escaldes-Engordany'],
+  'Honduras':['Tegucigalpa','San Pedro Sula','Choloma','La Ceiba'],
+  'Syria':['Damascus','Aleppo','Homs','Latakia'],
+  'Paraguay':['Asunción','Ciudad del Este','San Lorenzo','Lambaré'],
+  'Egypt':['Cairo','Alexandria','Giza','Shubra el-Kheima'],
+  'Ivory Coast':['Abidjan','Bouaké','Daloa'],
+  'Senegal':['Dakar','Thiès','Kaolack'],
+  'Puerto Rico':['San Juan','Bayamón'],
+  'Cyprus':['Nicosia','Limassol'],
+  'Bermuda':['Hamilton','Saint George'],
+  'Kosovo':['Pristina','Prizren'],
+  'Lesotho':['Maseru','Teyateyaneng'],
+  'Pakistan':['Karachi','Lahore'],
+  'Nigeria':['Lagos','Kano','Ibadan','Abuja'],
+  'Kenya':['Nairobi','Mombasa'],
+  'Guam':['Hagåtña','Dededo'],
+  'Monaco':['Monte-Carlo','Monaco-Ville'],
+  'Grenada':["St. George's",'Gouyave'],
+  'Macau':['Macau','Taipa'],
+  'Afghanistan':['Kabul','Kandahar'],
+  'Iceland':['Reykjavik','Akureyri'],
+  'Liechtenstein':['Vaduz','Schaan'],
+  'Qatar':['Doha','Al Rayyan'],
+  'Curaçao':['Willemstad','Barber'],
 };
 
 // Geographic regions for neighbor fallback
@@ -719,6 +774,7 @@ function confirmGenerate(){
 function stepGeneratePools(){
   if(!allRiders.length){alert('Rider database not loaded yet.');return;}
   const T=Math.floor(allRiders.length/7);
+  const shuffled=[...allRiders].sort(()=>Math.random()-.5);
   nativePool=shuffled.slice(0,T*4).map(r=>r.name);
   draftPool=shuffled.slice(T*4,T*4+T*3).map(r=>r.name);
   freeAgent=shuffled.slice(T*4+T*3).map(r=>r.name);
@@ -827,16 +883,40 @@ function stepAssignNatives(){
 }
 
 function updatePoolStatus(nativeAssigned){
-  const bar=document.getElementById('pool-status-bar');
-  bar.style.display='flex';
-  document.getElementById('ps-native').textContent=`Native pool: ${nativePool.length}`;
-  document.getElementById('ps-draft').textContent=`Draft pool: ${draftPool.length}`;
-  document.getElementById('ps-fa').textContent=`Free agents: ${freeAgent.length}`;
-  document.getElementById('ps-teams').textContent=`Teams: ${teams.length}`;
-  document.getElementById('ps-assigned').textContent=nativeAssigned!=null?`Assigned: ${nativeAssigned}/${nativePool.length}`:'Assigned: —';
-  document.getElementById('fa-count-pill').textContent=`${freeAgent.length} free agent${freeAgent.length!==1?'s':''}`;
+  // Show pool panels
+  const panels=document.getElementById('pool-panels');
+  if(panels) panels.style.display='block';
+
+  // Adjust grid height when panels visible
+  const grid=document.getElementById('teams-grid');
+  if(grid) grid.style.height='calc(100vh - 345px)';
+
+  // Counts
+  document.getElementById('ps-native-count').textContent=nativePool.length;
+  document.getElementById('ps-draft-count').textContent=draftPool.length;
+  document.getElementById('ps-fa-count').textContent=freeAgent.length;
+
+  // Nav badge
   const badge=document.getElementById('nav-fa-count');
   if(badge) badge.textContent=freeAgent.length||'—';
+
+  // Pool row helper
+  const poolRow=(name,poolLabel)=>{
+    const r=allRiders.find(x=>x.name===name);
+    if(!r) return '';
+    return `<div style="display:flex;align-items:center;gap:6px;padding:3px 10px;border-bottom:1px solid var(--border)">
+      ${flagImg(r.country,11)}
+      <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">${name}</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:var(--muted)">${r.avg.toFixed(1)}</span>
+    </div>`;
+  };
+
+  document.getElementById('ps-native-list').innerHTML=nativePool.map(n=>poolRow(n,'N')).join('');
+  document.getElementById('ps-draft-list').innerHTML=draftPool.map(n=>poolRow(n,'D')).join('');
+  document.getElementById('ps-fa-list').innerHTML=freeAgent.map(n=>poolRow(n,'FA')).join('');
+
+  // Teams count pill
+  document.getElementById('teams-count-pill').textContent=teams.length?`${teams.length} teams`:'—';
 }
 
 
@@ -906,48 +986,18 @@ function populateCountryFilters(){
 }
 
 function renderTeams(){
-  // Free agent count
-  const assignedNames=new Set(teams.flatMap(t=>t.riders));
-  const freeAgents=allRiders.filter(r=>!assignedNames.has(r.name));
-  const faPill=document.getElementById('fa-count-pill');
-  if(faPill) faPill.textContent=`${freeAgents.length} free agents`;
-
   if(!teams.length){
     document.getElementById('teams-count-pill').textContent='—';
-    document.getElementById('teams-list').innerHTML=`<div class="empty-state" style="padding:24px 12px;font-size:.82rem">Generate teams first.</div>`;
-    document.getElementById('teams-grid').innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🚴</div><div>Click <strong>Generate Teams</strong> to automatically assign riders.<br><small style="font-size:.8rem;margin-top:6px;display:block">Each team gets 4 native riders. 3 free agent slots will be filled later via draft.</small></div></div>`;
+    document.getElementById('teams-grid').innerHTML=`<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">🚴</div><div>Use the steps above to generate pools, create teams, and assign riders.</div></div>`;
     return;
   }
-
   const q=document.getElementById('teams-search').value.toLowerCase();
   const cf=document.getElementById('teams-country-filter').value;
-  const [ls,ld]=(document.getElementById('list-sort')?.value||'avg-desc').split('-');
-
   const filtered=teams.filter(t=>
     (!cf||t.country===cf)&&
     (t.name.toLowerCase().includes(q)||t.country.toLowerCase().includes(q))
   );
   document.getElementById('teams-count-pill').textContent=`${filtered.length} / ${teams.length} teams`;
-
-  // ── List panel (always shows ALL teams, not filtered by search/country)
-  const listSorted=[...teams].sort((a,b)=>{
-    if(ls==='avg') return ld==='asc'?teamAvg(a)-teamAvg(b):teamAvg(b)-teamAvg(a);
-    if(ls==='name') return ld==='asc'?a.name.localeCompare(b.name):b.name.localeCompare(a.name);
-    if(ls==='country') return ld==='asc'?a.country.localeCompare(b.country):b.country.localeCompare(a.country);
-    return 0;
-  });
-  document.getElementById('teams-list').innerHTML=listSorted.map(t=>{
-    const code=CC[t.country]||'??';
-    const avg=teamAvg(t);
-    const color=strengthColor(avg);
-    return `<div class="tlist-row" onclick="highlightTeam(${t.id})" id="tlist-${t.id}">
-      <span class="tlist-cc" style="border-left:2px solid ${color}">${code}</span>
-      <span class="tlist-name">${t.name}</span>
-      <span class="tlist-avg">${avg.toFixed(1)}</span>
-    </div>`;
-  }).join('');
-
-  // ── Card grid (filtered)
   if(!filtered.length){
     document.getElementById('teams-grid').innerHTML='<div class="empty-state" style="grid-column:1/-1;font-size:.85rem">No teams match your search.</div>';
     return;
@@ -961,17 +1011,15 @@ function renderTeams(){
       return `<div class="team-rider-row"><span class="team-rider-num">${i+1}</span>${r?flagImg(r.country,11):''}<span class="team-rider-name">${n}</span><span class="team-rider-ovr">${r?r.avg.toFixed(1):'-'}</span></div>`;
     }).join('');
     const emptyCount=7-team.riders.length;
-    const freeSlots=emptyCount>0?Array(emptyCount).fill('<div class="team-free-slot">— Free Agent Slot —</div>').join(''):'';
-    return `
-      <div class="team-card" id="tcard-${team.id}" style="border-left-color:${color}">
+    const freeSlots=emptyCount>0?Array(emptyCount).fill('<div class="team-free-slot">— empty slot —</div>').join(''):'';
+    return `<div class="team-card" id="tcard-${team.id}" style="border-left-color:${color}">
         <div class="team-card-head">
           <span class="team-flag">${flagImg(team.country,13)}</span>
           <span class="team-name-text">${team.name}</span>
           <span class="team-avg-pill">${avg.toFixed(1)}</span>
         </div>
         <div class="team-country-text">${team.country}</div>
-        ${riderRows}
-        ${freeSlots}
+        ${riderRows}${freeSlots}
       </div>`;
   }).join('');
 }
