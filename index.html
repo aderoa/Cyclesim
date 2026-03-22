@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v1.5</title>
+<title>CycleSim v1.7</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -207,7 +207,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v1.5</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v1.7</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -570,18 +570,26 @@ function parseCSV(text) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// COUNTRY CODES & BADGES
+// COUNTRY CODES & FLAGS
 // ═══════════════════════════════════════════════════════════════
-const CC={'France':'FR','Italy':'IT','Spain':'ES','Belgium':'BE','Netherlands':'NL','Colombia':'CO','Australia':'AU','United Kingdom':'GB','China':'CN','Denmark':'DK','Germany':'DE','Argentina':'AR','Norway':'NO','New Zealand':'NZ','Japan':'JP','United States':'US','Portugal':'PT','Venezuela':'VE','Czech Republic':'CZ','Poland':'PL','Switzerland':'CH','Austria':'AT','Russia':'RU','Malaysia':'MY','Guatemala':'GT','Turkey':'TR','Algeria':'DZ','South Africa':'ZA','Slovenia':'SI','Thailand':'TH','Indonesia':'ID','Canada':'CA','Costa Rica':'CR','Kazakhstan':'KZ','Philippines':'PH','Ireland':'IE','Ecuador':'EC','United Arab Emirates':'AE','Sweden':'SE','Chile':'CL','Morocco':'MA','Uruguay':'UY','Estonia':'EE','Eritrea':'ER','Brazil':'BR','Mexico':'MX','Hungary':'HU','Rwanda':'RW','Hong Kong':'HK','Burkina Faso':'BF','Angola':'AO','Panama':'PA','Slovakia':'SK','Taiwan':'TW','Bolivia':'BO','Luxembourg':'LU','South Korea':'KR','Romania':'RO','Mali':'ML','Latvia':'LV','Israel':'IL','Mauritius':'MU','Uzbekistan':'UZ','Iran':'IR','India':'IN','Mongolia':'MN','Namibia':'NA','Saudi Arabia':'SA','Ethiopia':'ET','Belize':'BZ','Dominican Republic':'DO','Singapore':'SG','Ukraine':'UA','Lithuania':'LT','Belarus':'BY','Cameroon':'CM','Cuba':'CU','Benin':'BJ','Serbia':'RS','Finland':'FI','Greece':'GR','Peru':'PE','Bulgaria':'BG','Azerbaijan':'AZ','Uganda':'UG','Oman':'OM','Kyrgyzstan':'KG','Croatia':'HR','Malta':'MT','Laos':'LA','Bahrain':'BH','Iraq':'IQ','Vietnam':'VN','Albania':'AL','Tunisia':'TN','DR Congo':'CD','Ghana':'GH','Zimbabwe':'ZW','Andorra':'AD','Honduras':'HN','Syria':'SY','Paraguay':'PY','Egypt':'EG','Ivory Coast':'CI','Senegal':'SN','Puerto Rico':'PR','Cyprus':'CY','Bermuda':'BM','Kosovo':'XK','Lesotho':'LS','Pakistan':'PK','Nigeria':'NG','Kenya':'KE','Guam':'GU','Monaco':'MC','Grenada':'GD','Macau':'MO','Afghanistan':'AF','Iceland':'IS','Liechtenstein':'LI','Qatar':'QA','Curaçao':'CW'};
+const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'nl','Colombia':'co','Australia':'au','United Kingdom':'gb','China':'cn','Denmark':'dk','Germany':'de','Argentina':'ar','Norway':'no','New Zealand':'nz','Japan':'jp','United States':'us','Portugal':'pt','Venezuela':'ve','Czech Republic':'cz','Poland':'pl','Switzerland':'ch','Austria':'at','Russia':'ru','Malaysia':'my','Guatemala':'gt','Turkey':'tr','Algeria':'dz','South Africa':'za','Slovenia':'si','Thailand':'th','Indonesia':'id','Canada':'ca','Costa Rica':'cr','Kazakhstan':'kz','Philippines':'ph','Ireland':'ie','Ecuador':'ec','United Arab Emirates':'ae','Sweden':'se','Chile':'cl','Morocco':'ma','Uruguay':'uy','Estonia':'ee','Eritrea':'er','Brazil':'br','Mexico':'mx','Hungary':'hu','Rwanda':'rw','Hong Kong':'hk','Burkina Faso':'bf','Angola':'ao','Panama':'pa','Slovakia':'sk','Taiwan':'tw','Bolivia':'bo','Luxembourg':'lu','South Korea':'kr','Romania':'ro','Mali':'ml','Latvia':'lv','Israel':'il','Mauritius':'mu','Uzbekistan':'uz','Iran':'ir','India':'in','Mongolia':'mn','Namibia':'na','Saudi Arabia':'sa','Ethiopia':'et','Belize':'bz','Dominican Republic':'do','Singapore':'sg','Ukraine':'ua','Lithuania':'lt','Belarus':'by','Cameroon':'cm','Cuba':'cu','Benin':'bj','Serbia':'rs','Finland':'fi','Greece':'gr','Peru':'pe','Bulgaria':'bg','Azerbaijan':'az','Uganda':'ug','Oman':'om','Kyrgyzstan':'kg','Croatia':'hr','Malta':'mt','Laos':'la','Bahrain':'bh','Iraq':'iq','Vietnam':'vn','Albania':'al','Tunisia':'tn','DR Congo':'cd','Ghana':'gh','Zimbabwe':'zw','Andorra':'ad','Honduras':'hn','Syria':'sy','Paraguay':'py','Egypt':'eg','Ivory Coast':'ci','Senegal':'sn','Puerto Rico':'pr','Cyprus':'cy','Bermuda':'bm','Kosovo':'xk','Lesotho':'ls','Pakistan':'pk','Nigeria':'ng','Kenya':'ke','Guam':'gu','Monaco':'mc','Grenada':'gd','Macau':'mo','Afghanistan':'af','Iceland':'is','Liechtenstein':'li','Qatar':'qa','Curaçao':'cw'};
 
-// Styled country code badge — reliable cross-platform, matches PCM aesthetic
-function ccBadge(country,small=false){
-  const code=CC[country]||'??';
+// Flag image from flagcdn.com — works on all platforms including Windows
+function flagImg(country, h=12){
+  const code=CC[country];
+  if(!code) return `<span style="font-size:.68rem;font-family:'Barlow Condensed',sans-serif;font-weight:800;color:var(--muted);background:rgba(120,128,160,.18);border-radius:3px;padding:1px 4px">??</span>`;
+  return `<img src="https://flagcdn.com/${h}x${Math.round(h*4/3)}/${code}.png" alt="${country}" title="${country}" style="height:${h}px;vertical-align:middle;border-radius:1px;display:inline-block">`;
+}
+
+// ccBadge: text badge fallback (used in list panel where images would be too many requests)
+function ccBadge(country, small=false){
+  const code=(CC[country]||'??').toUpperCase();
   const sz=small?'font-size:.62rem;padding:1px 4px':'font-size:.68rem;padding:1px 5px';
   return `<span style="${sz};font-family:'Barlow Condensed',sans-serif;font-weight:800;letter-spacing:.5px;background:rgba(120,128,160,.18);color:var(--muted);border-radius:3px;display:inline-block;line-height:1.4">${code}</span>`;
 }
-// Keep flag() as alias for backward compat (returns badge now)
-function flag(c){return ccBadge(c);}
+
+// flag() — use image for individual riders/teams, badge for lists
+function flag(country){ return flagImg(country, 12); }
 
 // ═══════════════════════════════════════════════════════════════
 // DATABASE TAB
@@ -667,85 +675,78 @@ function confirmGenerate(){
 function generateTeams(){
   if(!allRiders.length){alert('Rider database not loaded yet.');return;}
 
-  // ── Step 1: Count teams per country (floor ensures no incomplete teams)
+  // ── Step 1: Group riders by country, shuffle within each
   const byCountry={};
   allRiders.forEach(r=>{
     if(!byCountry[r.country]) byCountry[r.country]=[];
     byCountry[r.country].push(r.name);
   });
-  // Shuffle within each country for random native assignment
   Object.values(byCountry).forEach(arr=>arr.sort(()=>Math.random()-.5));
 
+  const totalRiders=allRiders.length;
+
+  // ── Step 2: Hamilton apportionment — T = round(total/7)
+  // Distribute T teams across countries proportionally to rider count.
+  // Guarantees T×7 = totalRiders-1 slots (1 free agent).
+  const T=Math.round(totalRiders/7);
+  const countryList=Object.entries(byCountry);
+  const alloc=countryList.map(([country,pool])=>({
+    country, pool,
+    base: Math.floor(pool.length/7),
+    remainder: pool.length % 7,
+  }));
+  let allocated=alloc.reduce((s,a)=>s+a.base,0);
+  // Give extra teams to countries with largest remainders
+  alloc.sort((a,b)=>b.remainder-a.remainder||b.pool.length-a.pool.length);
+  for(let i=0;i<T-allocated;i++) alloc[i].base++;
+
+  // ── Step 3: Create team objects
   teams=[];
-  for(const [country,pool] of Object.entries(byCountry)){
-    const nTeams=Math.floor(pool.length/7);
-    if(nTeams===0) continue;
+  for(const {country,base} of alloc){
+    if(base===0) continue;
     const names=TEAM_NAMES[country]||[];
-    for(let i=0;i<nTeams;i++){
+    for(let i=0;i<base;i++){
       teams.push({id:teams.length, name:names[i]||`${country} ${i+1}`, country, riders:[]});
     }
   }
 
-  const T=teams.length;
-  const nativePoolSize=T*4;
-  const draftPoolSize=T*3;
-
-  // ── Step 2: Native assignment — T×4 slots total, 4 per team
-  // Priority: own country first, then geographic neighbors
+  // ── Step 4: Native assignment — T×4 slots, 4 per team
+  // Pass 1: own country riders first (random within country)
   const nativeAssigned=new Set();
-
-  // Pass 1: fill with true natives (random order within country)
   for(const team of teams){
     const pool=(byCountry[team.country]||[]).filter(n=>!nativeAssigned.has(n));
     const take=Math.min(4,pool.length);
-    for(let i=0;i<take;i++){
-      team.riders.push(pool[i]);
-      nativeAssigned.add(pool[i]);
-    }
+    for(let i=0;i<take;i++){ team.riders.push(pool[i]); nativeAssigned.add(pool[i]); }
   }
-
-  // Pass 2: teams still short of 4 → fill from geographic neighbors (best avg first)
+  // Pass 2: teams still short of 4 → geographic neighbors, best avg first
   for(const team of teams){
     if(team.riders.length>=4) continue;
     const needed=4-team.riders.length;
     const neighborPool=getRegionalPool(team.country,nativeAssigned)
-      .sort((a,b)=>{
-        const ra=allRiders.find(x=>x.name===a), rb=allRiders.find(x=>x.name===b);
-        return (rb?.avg||0)-(ra?.avg||0);
-      });
+      .sort((a,b)=>(allRiders.find(x=>x.name===b)?.avg||0)-(allRiders.find(x=>x.name===a)?.avg||0));
     for(let i=0;i<Math.min(needed,neighborPool.length);i++){
-      team.riders.push(neighborPool[i]);
-      nativeAssigned.add(neighborPool[i]);
+      team.riders.push(neighborPool[i]); nativeAssigned.add(neighborPool[i]);
     }
   }
 
-  // ── Step 3: Draft pool — next T×3 best unassigned riders by avg
+  // ── Step 5: Draft pool — next T×3 best unassigned by avg
   draftPool=[...allRiders]
     .filter(r=>!nativeAssigned.has(r.name))
     .sort((a,b)=>b.avg-a.avg)
-    .slice(0,draftPoolSize)
+    .slice(0,T*3)
     .map(r=>r.name);
 
-  // ── Everything else = free agents (not in native pool, not in draft pool)
-  // (no action needed — they're just whoever remains)
-
-  // Reset draft state
-  draftLog=[];
-  draftDone=false;
+  // ── Reset draft state
+  draftLog=[];draftDone=false;
   document.getElementById('nav-draft-badge').style.display='none';
   document.getElementById('draft-reset-btn').style.display='none';
 
-  buildRiderTeamMap();
-  saveTeams();
-  populateCountryFilters();
-  renderTeams();
-  renderRaceTeamPicker();
-  document.getElementById('nav-teams-count').textContent=T;
+  buildRiderTeamMap();saveTeams();populateCountryFilters();
+  renderTeams();renderRaceTeamPicker();
+  document.getElementById('nav-teams-count').textContent=teams.length;
 
-  // Show generation summary
-  const totalNative=nativeAssigned.size;
-  const totalFA=allRiders.length-totalNative-draftPool.length;
-  console.log(`Generated ${T} teams | Native pool: ${totalNative} | Draft pool: ${draftPool.length} | Free agents: ${totalFA}`);
+  const fa=allRiders.length-T*7;
+  console.log(`T=${T} | Native:${T*4} | Draft:${T*3} | FA:${fa}`);
 }
 
 function getRegionalPool(country,assigned){
@@ -860,14 +861,14 @@ function renderTeams(){
     const color=strengthColor(avg);
     const riderRows=team.riders.map((n,i)=>{
       const r=allRiders.find(x=>x.name===n);
-      return `<div class="team-rider-row"><span class="team-rider-num">${i+1}</span>${r?ccBadge(r.country,true):''}<span class="team-rider-name">${n}</span><span class="team-rider-ovr">${r?r.avg.toFixed(1):'-'}</span></div>`;
+      return `<div class="team-rider-row"><span class="team-rider-num">${i+1}</span>${r?flagImg(r.country,11):''}<span class="team-rider-name">${n}</span><span class="team-rider-ovr">${r?r.avg.toFixed(1):'-'}</span></div>`;
     }).join('');
     const emptyCount=7-team.riders.length;
     const freeSlots=emptyCount>0?Array(emptyCount).fill('<div class="team-free-slot">— Free Agent Slot —</div>').join(''):'';
     return `
       <div class="team-card" id="tcard-${team.id}" style="border-left-color:${color}">
         <div class="team-card-head">
-          <span class="team-flag">${ccBadge(team.country)}</span>
+          <span class="team-flag">${flagImg(team.country,13)}</span>
           <span class="team-name-text">${team.name}</span>
           <span class="team-avg-pill">${avg.toFixed(1)}</span>
         </div>
@@ -931,7 +932,7 @@ function renderRaceTeamPicker(){
     const avg=teamAvg(team);
     return `
       <div class="team-select-card ${sel?'selected':''}" onclick="toggleTeam(${team.id})">
-        <span class="tsc-flag">${flag(team.country)}</span>
+        <span class="tsc-flag">${flagImg(team.country,13)}</span>
         <div class="tsc-info">
           <div class="tsc-name">${team.name}</div>
           <div class="tsc-meta">${team.country} · ${avg.toFixed(1)} avg</div>
@@ -1091,7 +1092,7 @@ function buildResultRow(pos,rider,gap){
   const teamName=getTeamName(rider.name);
   return`<tr>
     <td>${posLabel(pos)}</td>
-    <td class="rname">${flag(rider.country)} ${rider.name}</td>
+    <td class="rname">${flagImg(rider.country,12)} ${rider.name}</td>
     <td class="rcountry">${rider.country}</td>
     <td class="rteam">${teamName}</td>
     <td class="ravg">${rider.avg.toFixed(1)}</td>
@@ -1252,8 +1253,8 @@ function renderDraftLog(){
     return`<div class="draft-pick-row">
       <span class="draft-pick-num">#${p.pick}</span>
       <span class="draft-pick-round draft-pick-round-${p.round}">R${p.round}</span>
-      <span class="draft-pick-team" title="${p.teamName}">${flag(p.teamCountry)} ${p.teamName}</span>
-      <span class="draft-pick-rider">${r?flag(r.country):''} ${p.rider}</span>
+      <span class="draft-pick-team" title="${p.teamName}">${flagImg(p.teamCountry,11)} ${p.teamName}</span>
+      <span class="draft-pick-rider">${r?flagImg(r.country,11):''} ${p.rider}</span>
       <span class="draft-pick-avg">${p.avg.toFixed(1)}</span>
     </div>`;
   }).join('');
@@ -1289,7 +1290,7 @@ function renderDraftTeams(){
             <div class="draft-rider-item">
               <span style="color:var(--muted);font-size:.68rem;min-width:14px">${i+1}</span>
               <span class="draft-rider-src src-${item.src}">${item.src==='native'?'NAT':'DFT'}</span>
-              <span style="font-size:.85rem;line-height:1">${item.r?flag(item.r.country):''}</span>
+              ${item.r?flagImg(item.r.country,11):''}
               <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${item.n}</span>
               <span style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:var(--muted)">${item.r?item.r.avg.toFixed(1):'-'}</span>
             </div>`
