@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v3.7</title>
+<title>CycleSim v3.8</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -220,10 +220,11 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v3.7</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v3.8</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
+    <button class="nav-btn" id="nav-btn-nativeFA" onclick="showTab('nativeFA')" style="display:none">Native FA <span class="nav-badge" id="nav-nfa-count" style="background:var(--red)">—</span></button>
     <button class="nav-btn" onclick="showTab('draft')">Draft <span class="nav-badge" id="nav-draft-badge" style="display:none">✓</span></button>
     <button class="nav-btn" onclick="showTab('freeagents')">Free Agents <span class="nav-badge" id="nav-fa-count" style="background:var(--accent)">—</span></button>
     <button class="nav-btn" onclick="showTab('race')">Race Builder</button>
@@ -341,7 +342,33 @@ tbody td{padding:6px 10px}
   </div>
 </div>
 
-<!-- ═══ DRAFT ════════════════════════════════════════════════ -->
+<!-- ═══ NATIVE FA ASSIGNMENT ═════════════════════════════════ -->
+<div id="tab-nativeFA" class="tab-content">
+  <div class="toolbar">
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--red)">⚠ Assign Native Free Agents</span>
+    <span class="pill" id="nfa-tab-count" style="color:var(--red);border-color:rgba(232,64,64,.3);background:rgba(232,64,64,.08)">—</span>
+    <span style="font-size:.82rem;color:var(--muted)">Drag a rider onto a team, or click rider → click team</span>
+    <button class="btn btn-ghost btn-sm" onclick="showTab('teams')">← Back to Teams</button>
+  </div>
+  <div style="display:grid;grid-template-columns:320px 1fr;gap:10px;height:calc(100vh - 110px)">
+    <!-- Left: NFA riders flat list -->
+    <div style="display:flex;flex-direction:column;border:1px solid rgba(232,64,64,.3);border-radius:8px;overflow:hidden;background:var(--surface)">
+      <div style="padding:7px 12px;background:rgba(232,64,64,.08);border-bottom:1px solid rgba(232,64,64,.2);font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--red);flex-shrink:0">
+        Unassigned Riders
+      </div>
+      <div id="nfa-tab-riders" style="flex:1;overflow-y:auto"></div>
+    </div>
+    <!-- Right: Teams with open slots -->
+    <div style="display:flex;flex-direction:column;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">
+      <div style="padding:7px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);flex-shrink:0">
+        Teams with open slots
+      </div>
+      <div id="nfa-tab-teams" style="flex:1;overflow-y:auto"></div>
+    </div>
+  </div>
+</div>
+
+
 <div id="tab-draft" class="tab-content">
   <div class="toolbar">
     <button class="btn btn-accent" id="draft-run-btn" onclick="runDraft()">⚡ Run Free Agent Draft</button>
@@ -482,7 +509,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '3.7';
+const CACHE_VERSION = '3.8';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -953,12 +980,13 @@ function stepSortByNationality(){
 
   if(nativeFreeAgents.length>0){
     document.getElementById('nfa-panel').style.display='flex';
-    document.getElementById('nfa-tool').style.display='flex';
-    document.getElementById('nfa-count-pill').style.display='inline-block';
-    renderNFATool();
+    const navBtn=document.getElementById('nav-btn-nativeFA');
+    if(navBtn) navBtn.style.display='';
+    showTab('nativeFA');
   } else {
     document.getElementById('nfa-panel').style.display='none';
-    document.getElementById('nfa-tool').style.display='none';
+    resolveTeamIdentities();
+    buildRiderTeamMap();populateCountryFilters();saveTeams();renderTeams();renderRaceTeamPicker();
   }
   saveTeams();
 }
@@ -1155,8 +1183,123 @@ function assignNFAToTeam(teamId, riderName){
   resolveTeamIdentities();
   selectedNFA=null;
   buildRiderTeamMap();saveTeams();
-  renderNFATool();
-  renderTeams();
+  renderNativeFA();
+  // If all assigned, go back to teams
+  const assigned=new Set(teams.flatMap(t=>t.riders));
+  const remaining=nativeFreeAgents.filter(n=>!assigned.has(n));
+  if(remaining.length===0){
+    document.getElementById('nav-btn-nativeFA').style.display='none';
+    showTab('teams');
+    renderTeams();
+  }
+}
+
+
+// ── NATIVE FA TAB ───────────────────────────────────────────────
+function renderNativeFA(){
+  const assigned = new Set(teams.flatMap(t => t.riders));
+  const remaining = nativeFreeAgents.filter(n => !assigned.has(n));
+
+  const badge = document.getElementById('nav-nfa-count');
+  if(badge) badge.textContent = remaining.length;
+  const pill = document.getElementById('nfa-tab-count');
+  if(pill) pill.textContent = remaining.length + ' to assign';
+  const navBtn = document.getElementById('nav-btn-nativeFA');
+  if(navBtn) navBtn.style.display = remaining.length > 0 ? '' : 'none';
+
+  nfaRiderIndex = [...remaining];
+
+  const riderEl = document.getElementById('nfa-tab-riders');
+  if(!riderEl) return;
+
+  if(!remaining.length){
+    riderEl.innerHTML = '<div style="padding:24px;color:var(--green);text-align:center">All native free agents assigned!</div>';
+    const teamEl2 = document.getElementById('nfa-tab-teams');
+    if(teamEl2) teamEl2.innerHTML = '';
+    return;
+  }
+
+  // Build rider HTML - no grouping, just flat indexed list
+  let rHtml = '';
+  remaining.forEach((name, idx) => {
+    let r = allRiders.find(x => x.name === name);
+    if(!r) r = allRiders.find(x => x.name.trim() === name.trim());
+    const country = r ? r.country : '?';
+    const avg = r ? r.avg.toFixed(1) : '—';
+    const sel = selectedNFA === name;
+    rHtml += '<div class="nfa-rider-row' + (sel ? ' nfa-selected' : '') + '" data-nfa-idx="' + idx + '" draggable="true">' +
+      flagImg(country, 12) + '<span class="nfa-name">' + name + '</span><span class="nfa-avg">' + avg + '</span></div>';
+  });
+  riderEl.innerHTML = rHtml;
+
+  riderEl.onclick = function(e){
+    const row = e.target.closest('.nfa-rider-row');
+    if(!row) return;
+    const name = nfaRiderIndex[+row.dataset.nfaIdx];
+    if(name){ selectedNFA = selectedNFA === name ? null : name; renderNativeFA(); }
+  };
+  riderEl.ondragstart = function(e){
+    const row = e.target.closest('.nfa-rider-row');
+    if(!row) return;
+    selectedNFA = nfaRiderIndex[+row.dataset.nfaIdx];
+    e.dataTransfer.setData('text/plain', row.dataset.nfaIdx);
+  };
+
+  // Build team HTML
+  const openTeams = teams.filter(t => t.riders.length < 4)
+    .sort((a, b) => a.riders.length - b.riders.length || a.id - b.id);
+
+  const teamEl = document.getElementById('nfa-tab-teams');
+  if(!teamEl) return;
+
+  if(!openTeams.length){
+    teamEl.innerHTML = '<div style="padding:24px;color:var(--green);text-align:center">All teams have 4 native riders!</div>';
+    return;
+  }
+
+  let tHtml = '';
+  openTeams.forEach(function(t){
+    const open = 4 - t.riders.length;
+    let flags = '';
+    t.riders.forEach(function(n){
+      let r = allRiders.find(x => x.name === n);
+      if(!r) r = allRiders.find(x => x.name.trim() === n.trim());
+      if(r) flags += flagImg(r.country, 11);
+    });
+    const hasName = t.name && t.name !== 'Empty';
+    const label = hasName ? t.name : '#' + (t.id + 1);
+    const sub = hasName ? t.country : 'empty';
+    tHtml += '<div class="nfa-team-row" data-team-id="' + t.id + '">' +
+      '<span style="display:flex;gap:2px;width:52px;flex-shrink:0">' + (flags || '<span style="color:var(--muted);font-size:.7rem">—</span>') + '</span>' +
+      '<span style="flex:1"><span style="font-family:\'Barlow Condensed\',sans-serif;font-size:.92rem;font-weight:700;text-transform:uppercase;color:var(--text)">' + label + '</span>' +
+      ' <span style="font-size:.72rem;color:var(--muted)">(' + sub + ')</span></span>' +
+      '<span style="font-family:JetBrains Mono,monospace;font-size:.75rem;color:var(--red);font-weight:700;width:24px;text-align:right">+' + open + '</span>' +
+      '</div>';
+  });
+  teamEl.innerHTML = tHtml;
+
+  teamEl.onclick = function(e){
+    const row = e.target.closest('.nfa-team-row');
+    if(!row || !selectedNFA) return;
+    assignNFAToTeam(+row.dataset.teamId);
+  };
+  teamEl.ondragover = function(e){
+    const row = e.target.closest('.nfa-team-row');
+    if(row){ e.preventDefault(); row.style.background = 'rgba(245,196,0,.12)'; }
+  };
+  teamEl.ondragleave = function(e){
+    const row = e.target.closest('.nfa-team-row');
+    if(row) row.style.background = '';
+  };
+  teamEl.ondrop = function(e){
+    e.preventDefault();
+    const row = e.target.closest('.nfa-team-row');
+    if(!row) return;
+    row.style.background = '';
+    const idx = +e.dataTransfer.getData('text/plain');
+    const name = nfaRiderIndex[idx];
+    if(name){ selectedNFA = name; assignNFAToTeam(+row.dataset.teamId); }
+  };
 }
 
 
@@ -1716,7 +1859,7 @@ function renderDraftTeams(){
 }
 
 
-const TABS=['database','teams','draft','freeagents','race','results'];
+const TABS=['database','teams','nativeFA','draft','freeagents','race','results'];
 function showTab(tab){
   document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
@@ -1724,6 +1867,7 @@ function showTab(tab){
   document.querySelectorAll('.nav-btn')[TABS.indexOf(tab)]?.classList.add('active');
   if(tab==='race'){renderStages();renderRaceTeamPicker();}
   if(tab==='teams'){renderTeams();}
+  if(tab==='nativeFA'){renderNativeFA();}
   if(tab==='draft'){renderDraftUI();}
   if(tab==='freeagents'){renderFreeAgents();}
 }
