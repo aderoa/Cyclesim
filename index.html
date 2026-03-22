@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v2.3</title>
+<title>CycleSim v2.4</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -208,11 +208,12 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v2.3</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v2.4</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
     <button class="nav-btn" onclick="showTab('draft')">Draft <span class="nav-badge" id="nav-draft-badge" style="display:none">✓</span></button>
+    <button class="nav-btn" onclick="showTab('freeagents')">Free Agents <span class="nav-badge" id="nav-fa-count" style="background:var(--accent)">—</span></button>
     <button class="nav-btn" onclick="showTab('race')">Race Builder</button>
     <button class="nav-btn" onclick="showTab('results')">Results</button>
   </nav>
@@ -305,6 +306,23 @@ tbody td{padding:6px 10px}
     <div class="draft-main" id="draft-main">
       <div class="empty-state"><div class="empty-icon">📋</div><div>Run the draft to see full team rosters.</div></div>
     </div>
+  </div>
+</div>
+
+<!-- ═══ FREE AGENTS ══════════════════════════════════════════ -->
+<div id="tab-freeagents" class="tab-content">
+  <div class="toolbar">
+    <input type="text" class="search-input" id="fa-search" placeholder="Search free agents…" oninput="renderFreeAgents()">
+    <select class="form-select" id="fa-sort" onchange="renderFreeAgents()">
+      <option value="avg-desc">Overall ↓</option>
+      <option value="avg-asc">Overall ↑</option>
+      <option value="name-asc">Name A–Z</option>
+      <option value="country-asc">Country A–Z</option>
+    </select>
+    <span class="pill" id="fa-list-count">—</span>
+  </div>
+  <div class="table-wrap" id="fa-wrap">
+    <div class="empty-state"><div class="empty-icon">🎯</div><div>Generate pools first to see free agents.</div></div>
   </div>
 </div>
 
@@ -426,29 +444,29 @@ const GAP_SPD  = {FLA:1.5,MTN:11,MM:8,HIL:5,TTR:4,PRL:2.5,COB:5};
 // TEAM NAMES  (place names per country, ≥ number of teams)
 // ═══════════════════════════════════════════════════════════════
 const TEAM_NAMES = {
-  'France':['Paris','Lyon','Marseille','Bordeaux','Toulouse','Nantes','Strasbourg','Rennes','Grenoble','Montpellier','Nice','Rouen','Toulon','Lille','Reims','Saint-Étienne','Brest','Le Havre','Dijon','Amiens','Angers','Metz','Clermont-Ferrand','Nancy','Perpignan','Caen','Orléans','Tours','Limoges','Pau','Béziers','Bayonne','Ajaccio','Chambéry','Annecy','Colmar','Troyes','Mulhouse','Besançon','Calais','Dunkerque','Valence','Périgueux','Aurillac','Carcassonne','Albi','Rodez','Auxerre','Châlons','Charleville','Épinal','Laval','Chartres'],
+  'France':['Paris','Lyon','Marseille','Bordeaux','Toulouse','Nantes','Strasbourg','Rennes','Grenoble','Montpellier','Nice','Rouen','Toulon','Lille','Reims','Saint-Étienne','Brest','Le Havre','Dijon','Amiens','Angers','Metz','Clermont-Ferrand','Nancy','Perpignan','Caen','Orléans','Tours','Limoges','Pau','Béziers','Bayonne','Ajaccio','Chambéry','Annecy','Colmar','Troyes','Mulhouse','Besançon','Calais','Dunkerque','Valence','Périgueux','Aurillac','Carcassonne','Albi','Rodez','Auxerre','Châlons','Charleville','Épinal','Laval','Chartres','Arras'],
   'Italy':['Roma','Milano','Torino','Napoli','Firenze','Bologna','Venezia','Palermo','Genova','Bari','Catania','Verona','Messina','Padova','Trieste','Taranto','Brescia','Parma','Reggio Calabria','Reggio Emilia','Modena','Prato','Livorno','Cagliari','Perugia','Foggia','Salerno','Rimini','Ferrara','Sassari','Siena','Bergamo','Trento','Udine','Ancona','Pescara','Mantova','Como','Pisa','Arezzo','Lucca','Piacenza'],
-  'Spain':['Madrid','Barcelona','Valencia','Sevilla','Zaragoza','Málaga','Murcia','Palma','Las Palmas','Bilbao','Alicante','Córdoba','Valladolid','Vigo','Gijón','A Coruña','Vitoria','Granada','Elche','Oviedo','Badalona','Cartagena','Terrassa','Jerez','Sabadell','Móstoles','Santa Cruz','Pamplona','Almería','Fuenlabrada','Leganés','Santander','Castellón','Burgos','Albacete'],
+  'Spain':['Madrid','Barcelona','Valencia','Sevilla','Zaragoza','Málaga','Murcia','Palma','Las Palmas','Bilbao','Alicante','Córdoba','Valladolid','Vigo','Gijón','A Coruña','Vitoria','Granada','Elche','Oviedo','Badalona','Cartagena','Terrassa','Jerez','Sabadell','Móstoles','Santa Cruz','Pamplona','Almería','Fuenlabrada','Leganés','Santander','Castellón','Burgos','Albacete','Salamanca'],
   'Belgium':['Bruxelles','Antwerpen','Gent','Charleroi','Liège','Brugge','Namur','Leuven','Mons','Aalst','Mechelen','La Louvière','Kortrijk','Hasselt','Ostende','Sint-Niklaas','Tournai','Genk','Seraing','Roeselare','Mouscron','Beveren','Dendermonde','Beringen','Turnhout','Lokeren','Maasmechelen','Wavre','Verviers','Arlon','Tongeren','Soignies','Huy'],
-  'Netherlands':['Amsterdam','Rotterdam','Den Haag','Utrecht','Eindhoven','Tilburg','Groningen','Almere','Breda','Nijmegen','Enschede','Haarlem','Arnhem','Zaanstad','Amersfoort','Apeldoorn','Den Bosch','Hoofddorp','Zoetermeer','Leiden','Maastricht','Dordrecht','Zwolle','Deventer','Delft','Alkmaar'],
-  'Colombia':['Bogotá','Medellín','Cali','Barranquilla','Cartagena','Cúcuta','Bucaramanga','Pereira','Santa Marta','Ibagué','Pasto','Manizales','Neiva','Soledad','Armenia','Villavicencio','Soacha','Bello','Montería','Valledupar','Sincelejo','Popayán','Palmira','Floridablanca','Itagüí'],
+  'Netherlands':['Amsterdam','Rotterdam','Den Haag','Utrecht','Eindhoven','Tilburg','Groningen','Almere','Breda','Nijmegen','Enschede','Haarlem','Arnhem','Zaanstad','Amersfoort','Apeldoorn','Den Bosch','Hoofddorp','Zoetermeer','Leiden','Maastricht','Dordrecht','Zwolle','Deventer','Delft','Alkmaar','Helmond'],
+  'Colombia':['Bogotá','Medellín','Cali','Barranquilla','Cartagena','Cúcuta','Bucaramanga','Pereira','Santa Marta','Ibagué','Pasto','Manizales','Neiva','Soledad','Armenia','Villavicencio','Soacha','Bello','Montería','Valledupar','Sincelejo','Popayán','Palmira','Floridablanca','Itagüí','Buenaventura'],
   'Australia':['Sydney','Melbourne','Brisbane','Perth','Adelaide','Gold Coast','Canberra','Newcastle','Wollongong','Sunshine Coast','Hobart','Geelong','Townsville','Cairns','Darwin','Toowoomba','Ballarat','Bendigo','Albury','Mackay','Launceston'],
   'United Kingdom':['London','Manchester','Birmingham','Leeds','Glasgow','Sheffield','Edinburgh','Liverpool','Bristol','Cardiff','Leicester','Coventry','Nottingham','Newcastle','Belfast','Southampton','Brighton','Plymouth','Hull'],
   'China':['Beijing','Shanghai','Guangzhou','Shenzhen','Chengdu','Tianjin','Wuhan','Dongguan','Chongqing','Nanjing','Xi\'an','Hangzhou','Shenyang','Harbin','Zhengzhou'],
   'Denmark':['København','Aarhus','Odense','Aalborg','Esbjerg','Randers','Kolding','Horsens','Vejle','Roskilde','Herning','Silkeborg','Helsingør','Næstved','Fredericia'],
   'Germany':['Berlin','Hamburg','München','Köln','Frankfurt','Stuttgart','Düsseldorf','Leipzig','Dortmund','Essen','Bremen','Dresden','Hannover','Nürnberg'],
-  'Argentina':['Buenos Aires','Córdoba','Rosario','Mendoza','San Miguel','La Plata','Mar del Plata','Salta','Santa Fe','San Juan','Resistencia','Tucumán'],
-  'Norway':['Oslo','Bergen','Trondheim','Stavanger','Drammen','Fredrikstad','Porsgrunn','Kristiansand','Ålesund','Tønsberg','Moss'],
-  'New Zealand':['Auckland','Wellington','Christchurch','Hamilton','Tauranga','Napier','Dunedin','Palmerston North','Nelson','Rotorua','Whangarei'],
-  'Japan':['Tokyo','Osaka','Nagoya','Sapporo','Fukuoka','Kobe','Kyoto','Kawasaki','Saitama','Hiroshima','Sendai'],
-  'United States':['New York','Los Angeles','Chicago','Houston','Phoenix','Philadelphia','San Antonio','San Diego','Dallas','San Jose','Austin'],
+  'Argentina':['Buenos Aires','Córdoba','Rosario','Mendoza','San Miguel','La Plata','Mar del Plata','Salta','Santa Fe','San Juan','Resistencia','Tucumán','Neuquén'],
+  'Norway':['Oslo','Bergen','Trondheim','Stavanger','Drammen','Fredrikstad','Porsgrunn','Kristiansand','Ålesund','Tønsberg','Moss','Bodø'],
+  'New Zealand':['Auckland','Wellington','Christchurch','Hamilton','Tauranga','Napier','Dunedin','Palmerston North','Nelson','Rotorua','Whangarei','Invercargill'],
+  'Japan':['Tokyo','Osaka','Nagoya','Sapporo','Fukuoka','Kobe','Kyoto','Kawasaki','Saitama','Hiroshima','Sendai','Chiba'],
+  'United States':['New York','Los Angeles','Chicago','Houston','Phoenix','Philadelphia','San Antonio','San Diego','Dallas','San Jose','Austin','Jacksonville'],
   'Portugal':['Lisboa','Porto','Amadora','Braga','Setúbal','Coimbra','Funchal','Almada','Agualva','Aveiro','Guimarães'],
   'Venezuela':['Caracas','Maracaibo','Valencia','Barquisimeto','Maracay','Barcelona','Maturín','San Cristóbal','Ciudad Guayana'],
   'Czech Republic':['Praha','Brno','Ostrava','Plzeň','Liberec','Olomouc','Ústí nad Labem','Hradec Králové'],
   'Poland':['Warszawa','Kraków','Łódź','Wrocław','Poznań','Gdańsk','Szczecin','Bydgoszcz'],
-  'Switzerland':['Zürich','Genève','Basel','Bern','Lausanne','Winterthur','Luzern'],
-  'Austria':['Wien','Graz','Linz','Salzburg','Innsbruck','Klagenfurt','Villach'],
-  'Russia':['Moskva','Sankt-Peterburg','Novosibirsk','Yekaterinburg','Kazan','Nizhny Novgorod','Chelyabinsk'],
+  'Switzerland':['Zürich','Genève','Basel','Bern','Lausanne','Winterthur','Luzern','St. Gallen'],
+  'Austria':['Wien','Graz','Linz','Salzburg','Innsbruck','Klagenfurt','Villach','Wels'],
+  'Russia':['Moskva','Sankt-Peterburg','Novosibirsk','Yekaterinburg','Kazan','Nizhny Novgorod','Chelyabinsk','Omsk'],
   'Malaysia':['Kuala Lumpur','George Town','Ipoh','Shah Alam','Johor Bahru','Petaling Jaya','Kota Kinabalu'],
   'Guatemala':['Guatemala City','Mixco','Villa Nueva','Quetzaltenango','San Juan Sacatepéquez','Escuintla','Huehuetenango'],
   'Turkey':['Istanbul','Ankara','Izmir','Bursa','Adana','Gaziantep','Konya'],
@@ -757,17 +775,14 @@ function stepCreateTeams(){
 }
 
 // ── STEP 3: Assign native pool riders to teams ──────────────────
-// Distribute native pool to teams: same-country first (round-robin),
-// then geographic neighbors, then global. Exactly 4 per team.
+// Only assigns riders whose country matches the team country.
+// Remaining native pool riders can be manually assigned later.
 function stepAssignNatives(){
   if(!teams.length){alert('Create teams first.');return;}
   if(!nativePool.length){alert('Generate pools first.');return;}
 
-  // Reset all riders from teams
+  // Reset all rosters
   teams.forEach(t=>t.riders=[]);
-
-  // Build a lookup: name → rider object, restricted to native pool only
-  const nativeSet=new Set(nativePool);
   const assigned=new Set();
 
   // Group native pool riders by country
@@ -778,7 +793,7 @@ function stepAssignNatives(){
     if(!byCountry[r.country]) byCountry[r.country]=[];
     byCountry[r.country].push(name);
   });
-  // Shuffle within each country
+  // Shuffle within each country for random assignment
   Object.values(byCountry).forEach(arr=>arr.sort(()=>Math.random()-.5));
 
   // Group teams by country
@@ -788,9 +803,9 @@ function stepAssignNatives(){
     teamsByCountry[t.country].push(t);
   });
 
-  // PASS 1: true nationals, round-robin per country
+  // Round-robin per country: fill up to 4 nationals per team
   for(const [country,ctTeams] of Object.entries(teamsByCountry)){
-    const pool=(byCountry[country]||[]).filter(n=>!assigned.has(n));
+    const pool=(byCountry[country]||[]);
     let pi=0;
     for(let slot=0;slot<4;slot++){
       for(const team of ctTeams){
@@ -803,39 +818,11 @@ function stepAssignNatives(){
     }
   }
 
-  // PASS 2: teams short of 4 → neighbors from native pool
-  const shortTeams=teams.filter(t=>t.riders.length<4).sort((a,b)=>a.riders.length-b.riders.length);
-  for(const team of shortTeams){
-    const region=getRegion(team.country);
-    const neighborCountries=region?REGIONS[region].filter(c=>c!==team.country):[];
-    const neighborPool=nativePool
-      .filter(name=>{
-        const r=allRiders.find(x=>x.name===name);
-        return r&&neighborCountries.includes(r.country)&&!assigned.has(name);
-      })
-      .sort((a,b)=>(allRiders.find(x=>x.name===b)?.avg||0)-(allRiders.find(x=>x.name===a)?.avg||0));
-    for(const name of neighborPool){
-      if(team.riders.length>=4) break;
-      if(!assigned.has(name)){ team.riders.push(name); assigned.add(name); }
-    }
-  }
-
-  // PASS 3: global fallback — any remaining native pool riders, best avg first
-  const globalQueue=nativePool
-    .filter(name=>!assigned.has(name))
-    .sort((a,b)=>(allRiders.find(x=>x.name===b)?.avg||0)-(allRiders.find(x=>x.name===a)?.avg||0));
-  let gi=0;
-  for(const team of teams){
-    while(team.riders.length<4 && gi<globalQueue.length){
-      const name=globalQueue[gi++];
-      if(!assigned.has(name)){ team.riders.push(name); assigned.add(name); }
-    }
-  }
-
   const incomplete=teams.filter(t=>t.riders.length<4).length;
-  console.log(`Native assigned: ${assigned.size}/${nativePool.length} | Short teams: ${incomplete}`);
+  const totalNat=assigned.size;
+  console.log(`Nationals assigned: ${totalNat} | Teams with <4 natives: ${incomplete}`);
 
-  updatePoolStatus(assigned.size);
+  updatePoolStatus(totalNat);
   buildRiderTeamMap();saveTeams();renderTeams();
 }
 
@@ -848,6 +835,8 @@ function updatePoolStatus(nativeAssigned){
   document.getElementById('ps-teams').textContent=`Teams: ${teams.length}`;
   document.getElementById('ps-assigned').textContent=nativeAssigned!=null?`Assigned: ${nativeAssigned}/${nativePool.length}`:'Assigned: —';
   document.getElementById('fa-count-pill').textContent=`${freeAgent.length} free agent${freeAgent.length!==1?'s':''}`;
+  const badge=document.getElementById('nav-fa-count');
+  if(badge) badge.textContent=freeAgent.length||'—';
 }
 
 
@@ -1405,7 +1394,7 @@ function renderDraftTeams(){
 }
 
 
-const TABS=['database','teams','draft','race','results'];
+const TABS=['database','teams','draft','freeagents','race','results'];
 function showTab(tab){
   document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
@@ -1414,6 +1403,41 @@ function showTab(tab){
   if(tab==='race'){renderStages();renderRaceTeamPicker();}
   if(tab==='teams'){renderTeams();}
   if(tab==='draft'){renderDraftUI();}
+  if(tab==='freeagents'){renderFreeAgents();}
+}
+
+function renderFreeAgents(){
+  const badge=document.getElementById('nav-fa-count');
+  if(!freeAgent.length){
+    if(badge) badge.textContent='—';
+    document.getElementById('fa-list-count').textContent='—';
+    document.getElementById('fa-wrap').innerHTML='<div class="empty-state"><div class="empty-icon">🎯</div><div>Generate pools first to see free agents.</div></div>';
+    return;
+  }
+  if(badge) badge.textContent=freeAgent.length;
+  const q=document.getElementById('fa-search').value.toLowerCase();
+  const [sk,sd]=document.getElementById('fa-sort').value.split('-');
+  let riders=freeAgent.map(name=>allRiders.find(x=>x.name===name)).filter(Boolean)
+    .filter(r=>r.name.toLowerCase().includes(q)||r.country.toLowerCase().includes(q));
+  riders.sort((a,b)=>{
+    const va=sk==='avg'?a.avg:a[sk], vb=sk==='avg'?b.avg:b[sk];
+    if(typeof va==='string') return sd==='asc'?va.localeCompare(vb):vb.localeCompare(va);
+    return sd==='asc'?va-vb:vb-va;
+  });
+  document.getElementById('fa-list-count').textContent=`${riders.length} riders`;
+  const rows=riders.map((r,i)=>`
+    <tr>
+      <td class="cell-rank">${i+1}</td>
+      <td class="cell-name">${flagImg(r.country,12)} ${r.name}</td>
+      <td class="cell-country">${r.country}</td>
+      <td class="cell-avg">${r.avg.toFixed(2)}</td>
+      ${ATTRS.map(a=>`<td class="cell-rating">${r[a]}</td>`).join('')}
+    </tr>`).join('');
+  document.getElementById('fa-wrap').innerHTML=`
+    <table><thead><tr>
+      <th>#</th><th>Rider</th><th>Country</th><th>AVG</th>
+      ${ATTRS.map(a=>`<th title="${ATTR_LABELS[a]}">${a}</th>`).join('')}
+    </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 // ═══════════════════════════════════════════════════════════════
