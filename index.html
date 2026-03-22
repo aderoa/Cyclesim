@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v2.5</title>
+<title>CycleSim v2.7</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -91,8 +91,7 @@ tbody td{padding:6px 10px}
 .tlist-avg{font-family:'JetBrains Mono',monospace;font-size:.75rem;color:var(--muted)}
 
 /* ── TEAM GRID ───────────────────────────────────── */
-.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;overflow-y:auto;padding-right:4px;align-content:start}
-.team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;border-left:4px solid var(--muted);transition:border-color .15s}
+.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;overflow-y:auto;padding-right:4px;align-content:start}.team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;border-left:4px solid var(--muted);transition:border-color .15s}
 .team-card:hover{border-color:var(--border2)}
 .team-card-head{padding:9px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
 .team-flag{font-size:1.1rem;line-height:1}
@@ -241,51 +240,92 @@ tbody td{padding:6px 10px}
 <div id="tab-teams" class="tab-content">
   <div class="toolbar">
     <button class="btn btn-accent" id="btn-step1" onclick="stepGeneratePools()">① Generate Pools</button>
-    <button class="btn btn-ghost" id="btn-step2" onclick="stepCreateTeams()" disabled>② Create Teams</button>
-    <button class="btn btn-ghost" id="btn-step3" onclick="stepAssignNatives()" disabled>③ Assign Natives</button>
+    <button class="btn btn-ghost" id="btn-step2" onclick="stepSortByNationality()" disabled>② Sort by Nationality</button>
     <button class="btn btn-danger btn-sm" onclick="confirmGenerate()">↺ Reset All</button>
     <input type="text" class="search-input" id="teams-search" placeholder="Search teams…" oninput="renderTeams()" style="max-width:180px">
     <select class="form-select" id="teams-country-filter" onchange="renderTeams()">
       <option value="">All Countries</option>
     </select>
     <span class="pill" id="teams-count-pill">—</span>
+    <span class="pill" id="nfa-count-pill" style="display:none;color:var(--red);border-color:rgba(232,64,64,.3);background:rgba(232,64,64,.08)">— native FAs</span>
   </div>
 
-  <!-- Pool panels: visible after Step 1 -->
-  <div id="pool-panels" style="display:none;gap:10px;margin-bottom:10px;height:220px">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;height:100%">
+  <!-- Main layout: pools sidebar + teams grid -->
+  <div style="display:grid;grid-template-columns:220px 1fr;gap:10px;height:calc(100vh - 110px)">
+
+    <!-- Left: pool panels stacked -->
+    <div style="display:flex;flex-direction:column;gap:8px;overflow:hidden">
+
       <!-- Native pool -->
-      <div style="display:flex;flex-direction:column;border:1px solid rgba(62,207,110,.3);border-radius:8px;overflow:hidden;background:var(--surface)">
-        <div style="padding:7px 12px;background:rgba(62,207,110,.08);border-bottom:1px solid rgba(62,207,110,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
-          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--green)">① Native Pool</span>
+      <div style="display:flex;flex-direction:column;border:1px solid rgba(62,207,110,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex:4">
+        <div style="padding:6px 12px;background:rgba(62,207,110,.08);border-bottom:1px solid rgba(62,207,110,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--green)">① Native Pool</span>
           <span class="pill" id="ps-native-count" style="color:var(--green);border-color:rgba(62,207,110,.3);background:rgba(62,207,110,.08)">—</span>
         </div>
-        <div id="ps-native-list" style="flex:1;overflow-y:auto;font-size:.78rem"></div>
+        <div id="ps-native-list" style="flex:1;overflow-y:auto;font-size:.76rem"></div>
       </div>
+
       <!-- Draft pool -->
-      <div style="display:flex;flex-direction:column;border:1px solid rgba(77,159,255,.3);border-radius:8px;overflow:hidden;background:var(--surface)">
-        <div style="padding:7px 12px;background:rgba(77,159,255,.08);border-bottom:1px solid rgba(77,159,255,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
-          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue)">② Draft Pool</span>
+      <div style="display:flex;flex-direction:column;border:1px solid rgba(77,159,255,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex:3">
+        <div style="padding:6px 12px;background:rgba(77,159,255,.08);border-bottom:1px solid rgba(77,159,255,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue)">② Draft Pool</span>
           <span class="pill" id="ps-draft-count" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)">—</span>
         </div>
-        <div id="ps-draft-list" style="flex:1;overflow-y:auto;font-size:.78rem"></div>
+        <div id="ps-draft-list" style="flex:1;overflow-y:auto;font-size:.76rem"></div>
       </div>
-      <!-- Free agents -->
-      <div style="display:flex;flex-direction:column;border:1px solid rgba(245,196,0,.3);border-radius:8px;overflow:hidden;background:var(--surface)">
-        <div style="padding:7px 12px;background:rgba(245,196,0,.08);border-bottom:1px solid rgba(245,196,0,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
-          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Free Agents</span>
+
+      <!-- Free agents (pool remainder) -->
+      <div style="display:flex;flex-direction:column;border:1px solid rgba(245,196,0,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex:1;min-height:52px">
+        <div style="padding:6px 12px;background:rgba(245,196,0,.08);border-bottom:1px solid rgba(245,196,0,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Free Agents</span>
           <span class="pill" id="ps-fa-count" style="color:var(--accent);border-color:rgba(245,196,0,.3);background:rgba(245,196,0,.08)">—</span>
         </div>
-        <div id="ps-fa-list" style="flex:1;overflow-y:auto;font-size:.78rem"></div>
+        <div id="ps-fa-list" style="flex:1;overflow-y:auto;font-size:.76rem"></div>
       </div>
-    </div>
-  </div>
 
-  <!-- Teams grid: full width, visible after Step 2 -->
-  <div id="teams-grid" class="teams-grid" style="height:calc(100vh - 115px)">
-    <div class="empty-state" style="grid-column:1/-1">
-      <div class="empty-icon">🚴</div>
-      <div>Use the steps above to generate pools, create teams, and assign riders.</div>
+      <!-- Native Free Agents (post-sort leftovers) -->
+      <div id="nfa-panel" style="display:none;flex-direction:column;border:1px solid rgba(232,64,64,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex:2;min-height:52px">
+        <div style="padding:6px 12px;background:rgba(232,64,64,.08);border-bottom:1px solid rgba(232,64,64,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--red)">Native FAs</span>
+          <span class="pill" id="ps-nfa-count" style="color:var(--red);border-color:rgba(232,64,64,.3);background:rgba(232,64,64,.08)">—</span>
+        </div>
+        <div id="ps-nfa-list" style="flex:1;overflow-y:auto;font-size:.76rem"></div>
+      </div>
+
+    </div>
+
+    <!-- Right: Native FA assignment tool OR teams grid -->
+    <div style="display:flex;flex-direction:column;gap:8px;overflow:hidden">
+
+      <!-- Native FA assignment tool (shown when nativeFAs exist) -->
+      <div id="nfa-tool" style="display:none;flex-direction:column;border:1px solid rgba(232,64,64,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex-shrink:0;max-height:45%">
+        <div style="padding:8px 14px;background:rgba(232,64,64,.08);border-bottom:1px solid rgba(232,64,64,.2);display:flex;align-items:center;gap:10px;flex-shrink:0">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--red)">⚠ Assign Native Free Agents</span>
+          <span style="font-size:.78rem;color:var(--muted)">Click a rider, then click a team slot to assign</span>
+          <span class="pill" id="nfa-remaining" style="margin-left:auto;color:var(--red);border-color:rgba(232,64,64,.3);background:rgba(232,64,64,.08)">—</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;flex:1;overflow:hidden">
+          <!-- Left: unassigned native FAs -->
+          <div style="border-right:1px solid var(--border);overflow-y:auto">
+            <div style="padding:5px 10px;font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border)">Unassigned</div>
+            <div id="nfa-unassigned-list"></div>
+          </div>
+          <!-- Right: teams with open slots -->
+          <div style="overflow-y:auto">
+            <div style="padding:5px 10px;font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border)">Teams with open slots</div>
+            <div id="nfa-team-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Teams grid -->
+      <div id="teams-grid" class="teams-grid" style="flex:1;overflow-y:auto;align-content:start">
+        <div class="empty-state" style="grid-column:1/-1">
+          <div class="empty-icon">🚴</div>
+          <div>Generate pools, then sort by nationality to create teams.</div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -607,9 +647,11 @@ const REGIONS = {
 // STATE
 // ═══════════════════════════════════════════════════════════════
 let allRiders = [];
-let nativePool = [];     // T×4 rider names, locked first
-let draftPool = [];      // T×3 rider names, locked second
-let freeAgent = [];      // remainder (ideally 1)
+let nativePool = [];
+let draftPool = [];
+let freeAgent = [];
+let nativeFreeAgents = [];   // native pool riders who couldn't form a pack of 4
+let selectedNFA = null;
 let teams = [];
 let selectedTeams = new Set();
 let stages = [];
@@ -750,27 +792,25 @@ function saveNewRider(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-// TEAM GENERATION — 3 SEQUENTIAL STEPS
+// TEAM GENERATION — 2 STEPS + NATIVE FA ASSIGNMENT
 // ═══════════════════════════════════════════════════════════════
 function confirmGenerate(){
   if((teams.length||nativePool.length) && !confirm('Reset all pools and teams? This cannot be undone.')) return;
-  // Full reset
-  nativePool=[];draftPool=[];freeAgent=[];teams=[];
-  draftLog=[];draftDone=false;
+  nativePool=[];draftPool=[];freeAgent=[];nativeFreeAgents=[];teams=[];
+  draftLog=[];draftDone=false;selectedNFA=null;
   document.getElementById('nav-draft-badge').style.display='none';
   document.getElementById('draft-reset-btn').style.display='none';
-  document.getElementById('btn-step1').disabled=false;
   document.getElementById('btn-step2').disabled=true;
-  document.getElementById('btn-step3').disabled=true;
-  document.getElementById('pool-status-bar').style.display='none';
+  document.getElementById('nfa-panel').style.display='none';
+  document.getElementById('nfa-tool').style.display='none';
+  document.getElementById('nfa-count-pill').style.display='none';
+  updatePoolStatus();
   buildRiderTeamMap();saveTeams();populateCountryFilters();
   renderTeams();renderRaceTeamPicker();
   document.getElementById('nav-teams-count').textContent='—';
 }
 
-// ── STEP 1: Generate pools ─────────────────────────────────────
-// Shuffle ALL riders randomly. First T×4 = native pool.
-// Next T×3 = draft pool. Remainder = free agents.
+// ── STEP 1: Generate pools — purely random ──────────────────────
 function stepGeneratePools(){
   if(!allRiders.length){alert('Rider database not loaded yet.');return;}
   const T=Math.floor(allRiders.length/7);
@@ -778,70 +818,25 @@ function stepGeneratePools(){
   nativePool=shuffled.slice(0,T*4).map(r=>r.name);
   draftPool=shuffled.slice(T*4,T*4+T*3).map(r=>r.name);
   freeAgent=shuffled.slice(T*4+T*3).map(r=>r.name);
-  console.log(`Pools: T=${T} | Native=${nativePool.length} | Draft=${draftPool.length} | FA=${freeAgent.length}`);
-  updatePoolStatus();
+  nativeFreeAgents=[];teams=[];selectedNFA=null;
   document.getElementById('btn-step2').disabled=false;
-  document.getElementById('btn-step3').disabled=true;
-  teams=[];buildRiderTeamMap();populateCountryFilters();renderTeams();
+  document.getElementById('nfa-panel').style.display='none';
+  document.getElementById('nfa-tool').style.display='none';
+  document.getElementById('nfa-count-pill').style.display='none';
   document.getElementById('nav-teams-count').textContent='—';
-  saveTeams();
-}
-
-// ── STEP 2: Create teams from native pool nationalities ─────────
-// Count riders per country IN THE NATIVE POOL.
-// Hamilton apportionment of T teams across those countries.
-function stepCreateTeams(){
-  if(!nativePool.length){alert('Generate pools first.');return;}
-  const T=Math.floor(allRiders.length/7);
-  const byCountry={};
-  nativePool.forEach(name=>{
-    const r=allRiders.find(x=>x.name===name);
-    if(!r) return;
-    if(!byCountry[r.country]) byCountry[r.country]=0;
-    byCountry[r.country]++;
-  });
-
-  // Hamilton apportionment of T teams based on native pool composition
-  const alloc=Object.entries(byCountry).map(([country,count])=>({
-    country,
-    nTeams: Math.floor(count/4),
-    remainder: count%4,
-  }));
-  let allocated=alloc.reduce((s,a)=>s+a.nTeams,0);
-  [...alloc]
-    .sort((a,b)=>b.remainder-a.remainder||b.nTeams-a.nTeams)
-    .slice(0,T-allocated)
-    .forEach(a=>a.nTeams++);
-
-  teams=[];
-  for(const {country,nTeams} of alloc){
-    if(nTeams===0) continue;
-    const names=TEAM_NAMES[country]||[];
-    for(let i=0;i<nTeams;i++){
-      teams.push({id:teams.length, name:names[i]||`${country} ${i+1}`, country, riders:[]});
-    }
-  }
-
-  console.log(`Teams created: ${teams.length} (target ${T})`);
   updatePoolStatus();
-  document.getElementById('nav-teams-count').textContent=teams.length;
-  document.getElementById('btn-step3').disabled=false;
   buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
   saveTeams();
+  console.log(`T=${T} | Native=${nativePool.length} | Draft=${draftPool.length} | FA=${freeAgent.length}`);
 }
 
-// ── STEP 3: Assign native pool riders to teams ──────────────────
-// Only assigns riders whose country matches the team country.
-// Remaining native pool riders can be manually assigned later.
-function stepAssignNatives(){
-  if(!teams.length){alert('Create teams first.');return;}
+// ── STEP 2: Sort native pool by nationality ─────────────────────
+// Group native pool riders by country. Form packs of exactly 4.
+// Each complete pack → one team. Leftover riders → nativeFreeAgents.
+function stepSortByNationality(){
   if(!nativePool.length){alert('Generate pools first.');return;}
 
-  // Reset all rosters
-  teams.forEach(t=>t.riders=[]);
-  const assigned=new Set();
-
-  // Group native pool riders by country
+  // Group native pool by country (preserve random order within country)
   const byCountry={};
   nativePool.forEach(name=>{
     const r=allRiders.find(x=>x.name===name);
@@ -849,77 +844,160 @@ function stepAssignNatives(){
     if(!byCountry[r.country]) byCountry[r.country]=[];
     byCountry[r.country].push(name);
   });
-  // Shuffle within each country for random assignment
-  Object.values(byCountry).forEach(arr=>arr.sort(()=>Math.random()-.5));
 
-  // Group teams by country
-  const teamsByCountry={};
-  teams.forEach(t=>{
-    if(!teamsByCountry[t.country]) teamsByCountry[t.country]=[];
-    teamsByCountry[t.country].push(t);
-  });
+  teams=[];
+  nativeFreeAgents=[];
 
-  // Round-robin per country: fill up to 4 nationals per team
-  for(const [country,ctTeams] of Object.entries(teamsByCountry)){
-    const pool=(byCountry[country]||[]);
-    let pi=0;
-    for(let slot=0;slot<4;slot++){
-      for(const team of ctTeams){
-        if(pi<pool.length && team.riders.length<4){
-          team.riders.push(pool[pi]);
-          assigned.add(pool[pi]);
-          pi++;
-        }
-      }
+  for(const [country,riders] of Object.entries(byCountry)){
+    const names=TEAM_NAMES[country]||[];
+    let teamIdx=0;
+    // Form packs of 4
+    for(let i=0;i+3<riders.length;i+=4){
+      const pack=riders.slice(i,i+4);
+      teams.push({
+        id:teams.length,
+        name:names[teamIdx]||`${country} ${teamIdx+1}`,
+        country,
+        riders:[...pack]
+      });
+      teamIdx++;
+    }
+    // Remainder riders → native free agents
+    const remainder=riders.length%4;
+    if(remainder>0){
+      nativeFreeAgents.push(...riders.slice(riders.length-remainder));
     }
   }
 
-  const incomplete=teams.filter(t=>t.riders.length<4).length;
-  const totalNat=assigned.size;
-  console.log(`Nationals assigned: ${totalNat} | Teams with <4 natives: ${incomplete}`);
+  console.log(`Teams: ${teams.length} | Native FAs: ${nativeFreeAgents.length}`);
 
-  updatePoolStatus(totalNat);
-  buildRiderTeamMap();saveTeams();renderTeams();
+  document.getElementById('nav-teams-count').textContent=teams.length;
+  updatePoolStatus();
+  buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
+
+  // Show native FA panel and tool if needed
+  if(nativeFreeAgents.length>0){
+    document.getElementById('nfa-panel').style.display='flex';
+    document.getElementById('nfa-tool').style.display='flex';
+    document.getElementById('nfa-count-pill').style.display='inline-block';
+    renderNFATool();
+  } else {
+    document.getElementById('nfa-panel').style.display='none';
+    document.getElementById('nfa-tool').style.display='none';
+    document.getElementById('nfa-count-pill').style.display='none';
+  }
+  saveTeams();
 }
 
-function updatePoolStatus(nativeAssigned){
-  // Show pool panels
-  const panels=document.getElementById('pool-panels');
-  if(panels) panels.style.display='block';
+// ── NATIVE FA ASSIGNMENT TOOL ───────────────────────────────────
+function renderNFATool(){
+  // Update NFA sidebar list
+  const nfaPanel=document.getElementById('ps-nfa-list');
+  const remaining=nativeFreeAgents.filter(n=>!teams.some(t=>t.riders.includes(n)));
+  document.getElementById('ps-nfa-count').textContent=remaining.length;
+  document.getElementById('nfa-remaining').textContent=`${remaining.length} to assign`;
+  const nfaPill=document.getElementById('nfa-count-pill');
+  if(nfaPill) nfaPill.textContent=`${remaining.length} native FAs`;
 
-  // Adjust grid height when panels visible
-  const grid=document.getElementById('teams-grid');
-  if(grid) grid.style.height='calc(100vh - 345px)';
-
-  // Counts
-  document.getElementById('ps-native-count').textContent=nativePool.length;
-  document.getElementById('ps-draft-count').textContent=draftPool.length;
-  document.getElementById('ps-fa-count').textContent=freeAgent.length;
-
-  // Nav badge
-  const badge=document.getElementById('nav-fa-count');
-  if(badge) badge.textContent=freeAgent.length||'—';
-
-  // Pool row helper
-  const poolRow=(name,poolLabel)=>{
+  nfaPanel.innerHTML=remaining.map(name=>{
     const r=allRiders.find(x=>x.name===name);
     if(!r) return '';
-    return `<div style="display:flex;align-items:center;gap:6px;padding:3px 10px;border-bottom:1px solid var(--border)">
-      ${flagImg(r.country,11)}
-      <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">${name}</span>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:.7rem;color:var(--muted)">${r.avg.toFixed(1)}</span>
+    return `<div style="display:flex;align-items:center;gap:5px;padding:3px 10px;border-bottom:1px solid var(--border)">
+      ${flagImg(r.country,10)}
+      <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);font-size:.76rem">${name}</span>
+      <span style="font-family:JetBrains Mono,monospace;font-size:.68rem;color:var(--muted)">${r.avg.toFixed(1)}</span>
     </div>`;
-  };
+  }).join('');
 
-  document.getElementById('ps-native-list').innerHTML=nativePool.map(n=>poolRow(n,'N')).join('');
-  document.getElementById('ps-draft-list').innerHTML=draftPool.map(n=>poolRow(n,'D')).join('');
-  document.getElementById('ps-fa-list').innerHTML=freeAgent.map(n=>poolRow(n,'FA')).join('');
+  // Left panel: unassigned native FAs (clickable to select)
+  const unassignedEl=document.getElementById('nfa-unassigned-list');
+  unassignedEl.innerHTML=remaining.length
+    ? remaining.map(name=>{
+        const r=allRiders.find(x=>x.name===name);
+        if(!r) return '';
+        const sel=selectedNFA===name;
+        return `<div onclick="selectNFA('${esc(name)}')" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:pointer;background:${sel?'rgba(245,196,0,.12)':'transparent'};transition:background .1s">
+          ${flagImg(r.country,11)}
+          <span style="flex:1;font-size:.82rem;color:${sel?'var(--accent)':'var(--text)'};font-weight:${sel?'700':'400'}">${name}</span>
+          <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">${r.avg.toFixed(1)}</span>
+          ${sel?'<span style="color:var(--accent);font-size:.75rem">▶</span>':''}
+        </div>`;
+      }).join('')
+    : '<div style="padding:16px;color:var(--green);font-size:.82rem;text-align:center">✓ All assigned!</div>';
 
-  // Teams count pill
-  document.getElementById('teams-count-pill').textContent=teams.length?`${teams.length} teams`:'—';
+  // Right panel: teams with open slots
+  const openTeams=teams.filter(t=>t.riders.length<4).sort((a,b)=>a.country.localeCompare(b.country));
+  const teamListEl=document.getElementById('nfa-team-list');
+  teamListEl.innerHTML=openTeams.length
+    ? openTeams.map(t=>{
+        const openSlots=4-t.riders.length;
+        const disabled=!selectedNFA;
+        return `<div onclick="${disabled?'':'assignNFAToTeam('+t.id+')'}" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:${disabled?'default':'pointer'};opacity:${disabled?.5:1};transition:background .1s" onmouseenter="this.style.background='rgba(245,196,0,.08)'" onmouseleave="this.style.background='transparent'">
+          ${flagImg(t.country,11)}
+          <span style="flex:1;font-family:'Barlow Condensed',sans-serif;font-size:.88rem;font-weight:700;text-transform:uppercase;color:var(--text)">${t.name}</span>
+          <span style="font-size:.72rem;color:var(--muted)">${t.country}</span>
+          <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--red);min-width:24px;text-align:right">+${openSlots}</span>
+        </div>`;
+      }).join('')
+    : '<div style="padding:16px;color:var(--green);font-size:.82rem;text-align:center">✓ All teams full!</div>';
+
+  // Hide tool if nothing left to assign or all teams full
+  if(remaining.length===0||openTeams.length===0){
+    if(remaining.length===0){
+      document.getElementById('nfa-tool').style.display='none';
+      document.getElementById('nfa-count-pill').style.display='none';
+    }
+  }
 }
 
+function selectNFA(name){
+  selectedNFA=selectedNFA===name?null:name;
+  renderNFATool();
+}
 
+function assignNFAToTeam(teamId){
+  if(!selectedNFA) return;
+  const team=teams.find(t=>t.id===teamId);
+  if(!team||team.riders.length>=4) return;
+  if(team.riders.includes(selectedNFA)) return;
+  team.riders.push(selectedNFA);
+  selectedNFA=null;
+  buildRiderTeamMap();saveTeams();
+  renderNFATool();
+  renderTeams();
+}
+
+function updatePoolStatus(){
+  document.getElementById('ps-native-count').textContent=nativePool.length||'—';
+  document.getElementById('ps-draft-count').textContent=draftPool.length||'—';
+  document.getElementById('ps-fa-count').textContent=freeAgent.length||'None';
+  const badge=document.getElementById('nav-fa-count');
+  if(badge) badge.textContent=freeAgent.length||'—';
+  document.getElementById('teams-count-pill').textContent=teams.length?teams.length+' teams':'—';
+
+  const poolRow=name=>{
+    const r=allRiders.find(x=>x.name===name);
+    if(!r) return '';
+    return '<div style="display:flex;align-items:center;gap:5px;padding:3px 10px;border-bottom:1px solid var(--border)">'+
+      flagImg(r.country,10)+
+      '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);font-size:.76rem">'+name+'</span>'+
+      '<span style="font-family:JetBrains Mono,monospace;font-size:.68rem;color:var(--muted)">'+r.avg.toFixed(1)+'</span>'+
+    '</div>';
+  };
+
+  const nList=document.getElementById('ps-native-list');
+  const dList=document.getElementById('ps-draft-list');
+  const fList=document.getElementById('ps-fa-list');
+  const nfaList=document.getElementById('ps-nfa-list');
+  if(nList) nList.innerHTML=nativePool.map(poolRow).join('');
+  if(dList) dList.innerHTML=draftPool.map(poolRow).join('');
+  if(fList) fList.innerHTML=freeAgent.length?freeAgent.map(poolRow).join(''):'<div style="padding:10px;color:var(--muted);font-size:.76rem;text-align:center">None</div>';
+  if(nfaList){
+    const remaining=nativeFreeAgents.filter(n=>!teams.some(t=>t.riders.includes(n)));
+    document.getElementById('ps-nfa-count').textContent=remaining.length;
+    nfaList.innerHTML=remaining.map(poolRow).join('');
+  }
+}
 function getRegion(country){
   for(const [r,cs] of Object.entries(REGIONS)){if(cs.includes(country)) return r;}
   return null;
@@ -953,23 +1031,26 @@ function strengthColor(avg){
 }
 
 // ── localStorage ─────────────────────────────────────────────
-function saveTeams(){try{localStorage.setItem('cyclesim_teams',JSON.stringify({teams,nativePool,draftPool,freeAgent}));}catch(e){}}
+function saveTeams(){try{localStorage.setItem('cyclesim_teams',JSON.stringify({teams,nativePool,draftPool,freeAgent,nativeFreeAgents}));}catch(e){}}
 function loadSavedTeams(){
   try{
     const raw=localStorage.getItem('cyclesim_teams');
     if(raw){
-      const parsed=JSON.parse(raw);
-      if(Array.isArray(parsed)){teams=parsed;nativePool=[];draftPool=[];freeAgent=[];}
-      else{teams=parsed.teams||[];nativePool=parsed.nativePool||[];draftPool=parsed.draftPool||[];freeAgent=parsed.freeAgent||[];}
-      buildRiderTeamMap();
-      populateCountryFilters();
-      renderTeams();
-      renderRaceTeamPicker();
+      const p=JSON.parse(raw);
+      if(Array.isArray(p)){teams=p;nativePool=[];draftPool=[];freeAgent=[];nativeFreeAgents=[];}
+      else{teams=p.teams||[];nativePool=p.nativePool||[];draftPool=p.draftPool||[];freeAgent=p.freeAgent||[];nativeFreeAgents=p.nativeFreeAgents||[];}
+      buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
       document.getElementById('nav-teams-count').textContent=teams.length||'—';
-      if(nativePool.length) updatePoolStatus(new Set(teams.flatMap(t=>t.riders)).size||null);
-      // Restore button states
-      if(nativePool.length) document.getElementById('btn-step2').disabled=false;
-      if(teams.length) document.getElementById('btn-step3').disabled=false;
+      if(nativePool.length){
+        document.getElementById('btn-step2').disabled=false;
+        updatePoolStatus();
+      }
+      if(nativeFreeAgents.length>0){
+        document.getElementById('nfa-panel').style.display='flex';
+        document.getElementById('nfa-tool').style.display='flex';
+        document.getElementById('nfa-count-pill').style.display='inline-block';
+        renderNFATool();
+      }
       loadSavedDraft();
     }
   }catch(e){}
