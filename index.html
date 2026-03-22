@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v1.8</title>
+<title>CycleSim v1.9</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -208,7 +208,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v1.8</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v1.9</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -689,13 +689,13 @@ function generateTeams(){
   const alloc=countryList.map(([country,pool])=>({
     country, pool,
     nTeams: Math.floor(pool.length/7),
-    remainder: pool.length % 7,
+    remainder: pool.length%7,
   }));
   let allocated=alloc.reduce((s,a)=>s+a.nTeams,0);
-  const extras=T-allocated;
-  // Sort by remainder desc to award extras — don't mutate alloc order permanently
-  [...alloc].sort((a,b)=>b.remainder-a.remainder||b.pool.length-a.pool.length)
-    .slice(0,extras).forEach(a=>a.nTeams++);
+  [...alloc]
+    .sort((a,b)=>b.remainder-a.remainder||b.pool.length-a.pool.length)
+    .slice(0,T-allocated)
+    .forEach(a=>a.nTeams++);
 
   // ── Step 3: Create team objects
   teams=[];
@@ -707,22 +707,23 @@ function generateTeams(){
     }
   }
 
-  // ── Step 4: Assign 4 riders per team — single global assigned set
+  // ── Step 4: Assign exactly 4 riders per team
+  // Use a single global `assigned` Set — the only source of truth.
   const assigned=new Set();
 
-  // Pass 1: true nationals, interleaved (round-robin per country)
-  // Group teams by country first
+  // Pass 1: true nationals — interleaved round-robin per country
   const teamsByCountry={};
   teams.forEach(t=>{
     if(!teamsByCountry[t.country]) teamsByCountry[t.country]=[];
     teamsByCountry[t.country].push(t);
   });
   for(const [country,ctTeams] of Object.entries(teamsByCountry)){
+    // Fresh pool snapshot per country — only unassigned riders
     const pool=(byCountry[country]||[]).filter(n=>!assigned.has(n));
     let pi=0;
     for(let slot=0;slot<4;slot++){
       for(const team of ctTeams){
-        if(pi<pool.length){
+        if(pi<pool.length && team.riders.length<4){
           team.riders.push(pool[pi]);
           assigned.add(pool[pi]);
           pi++;
@@ -731,20 +732,35 @@ function generateTeams(){
     }
   }
 
-  // Pass 2: teams short of 4 → geographic neighbors, best avg first
+  // Pass 2 & 3: fill teams still short of 4
+  // Build a global sorted queue of unassigned riders:
+  //   - geographic neighbors first (sorted by avg desc)
+  //   - then everyone else (global fallback)
+  // Process each team, pulling from queue without replacement.
   for(const team of teams){
     if(team.riders.length>=4) continue;
-    const needed=4-team.riders.length;
-    const neighborPool=getRegionalPool(team.country,assigned)
-      .sort((a,b)=>(allRiders.find(x=>x.name===b)?.avg||0)-(allRiders.find(x=>x.name===a)?.avg||0));
-    for(const name of neighborPool){
+
+    // Build priority queue for this team fresh each time (assigned Set is live)
+    const region=getRegion(team.country);
+    const neighborCountries=region?REGIONS[region].filter(c=>c!==team.country):[];
+
+    // Neighbors first, then global, all sorted by avg desc, all unassigned
+    const neighbors=allRiders
+      .filter(r=>neighborCountries.includes(r.country)&&!assigned.has(r.name))
+      .sort((a,b)=>b.avg-a.avg);
+    const global=allRiders
+      .filter(r=>!neighborCountries.includes(r.country)&&r.country!==team.country&&!assigned.has(r.name))
+      .sort((a,b)=>b.avg-a.avg);
+    const queue=[...neighbors,...global];
+
+    for(const r of queue){
       if(team.riders.length>=4) break;
-      if(!assigned.has(name)){ team.riders.push(name); assigned.add(name); }
+      if(!assigned.has(r.name)){   // re-check: assigned may have grown since queue was built
+        team.riders.push(r.name);
+        assigned.add(r.name);
+      }
     }
   }
-
-  // Safety: remove any accidental duplicates within a team
-  teams.forEach(t=>{ t.riders=[...new Set(t.riders)]; });
 
   // ── Step 5: Draft pool — next T×3 best unassigned by avg
   draftPool=[...allRiders]
@@ -752,6 +768,12 @@ function generateTeams(){
     .sort((a,b)=>b.avg-a.avg)
     .slice(0,T*3)
     .map(r=>r.name);
+
+  // Validate totals
+  const nativeCount=assigned.size;
+  const fa=allRiders.length-nativeCount-draftPool.length;
+  const incompleteTeams=teams.filter(t=>t.riders.length<4).length;
+  console.log(`T=${teams.length} | Native:${nativeCount} | Draft pool:${draftPool.length} | FA:${fa} | Incomplete native:${incompleteTeams}`);
 
   // Reset draft state
   draftLog=[];draftDone=false;
@@ -761,16 +783,16 @@ function generateTeams(){
   buildRiderTeamMap();saveTeams();populateCountryFilters();
   renderTeams();renderRaceTeamPicker();
   document.getElementById('nav-teams-count').textContent=teams.length;
+}
 
-  const fa=allRiders.length-assigned.size-draftPool.length;
-  console.log(`T=${teams.length} | Native assigned:${assigned.size} | Draft pool:${draftPool.length} | FA:${fa}`);
+function getRegion(country){
+  for(const [r,cs] of Object.entries(REGIONS)){if(cs.includes(country)) return r;}
+  return null;
 }
 
 function getRegionalPool(country,assigned){
-  let region=null;
-  for(const [r,cs] of Object.entries(REGIONS)){if(cs.includes(country)){region=r;break;}}
+  const region=getRegion(country);
   const neighborCountries=region?REGIONS[region].filter(c=>c!==country):[];
-  // If no region found, use global pool
   const source=neighborCountries.length
     ?allRiders.filter(r=>neighborCountries.includes(r.country)&&!assigned.has(r.name))
     :allRiders.filter(r=>!assigned.has(r.name));
@@ -1141,37 +1163,43 @@ let draftDone = false;
 function runDraft(){
   if(!teams.length){alert('Generate teams first.');return;}
   if(!draftPool.length){alert('Draft pool is empty. Re-generate teams first.');return;}
-  if(draftDone && !confirm('Draft already completed. Re-running will reset the 3 draft slots. Continue?')) return;
+  if(draftDone && !confirm('Draft already completed. Re-running will reset draft slots. Continue?')) return;
 
-  // Reset draft slots (keep native slots — first 4)
+  // Reset to native-only rosters
   teams.forEach(t=>{ t.riders=t.riders.slice(0,4); });
 
-  // Build already-assigned set (native riders)
+  // Build assigned set from current native rosters
   const assigned=new Set(teams.flatMap(t=>t.riders));
 
-  // Draft pool: T×3 pre-selected riders at generation time, best avg first
-  // Filter out any already assigned to avoid edge cases
+  // Draft pool sorted best avg first, excluding any already assigned (safety check)
   const pool=[...allRiders]
     .filter(r=>draftPool.includes(r.name)&&!assigned.has(r.name))
     .sort((a,b)=>b.avg-a.avg);
 
-  // Draft order: teams sorted by avg, best first — straight for all 3 rounds
+  // Draft order: best avg team first, straight for all rounds
   const draftOrder=[...teams].sort((a,b)=>teamAvg(b)-teamAvg(a));
 
   draftLog=[];
   let pickNum=0;
-  const ROUNDS=3;
   const fa=[...pool];
 
-  for(let round=1;round<=ROUNDS;round++){
+  // Each team needs (7 - current roster size) picks.
+  // Run straight rounds until all teams have 7 riders or pool is exhausted.
+  let round=1;
+  while(fa.length>0){
+    let anyPick=false;
     for(const team of draftOrder){
       if(!fa.length) break;
+      if(team.riders.length>=7) continue;  // team already full
       const pick=fa.shift();
       team.riders.push(pick.name);
       assigned.add(pick.name);
       draftLog.push({round,pick:++pickNum,teamId:team.id,teamName:team.name,teamCountry:team.country,rider:pick.name,avg:pick.avg});
+      anyPick=true;
     }
-    if(!fa.length) break;
+    if(!anyPick) break;  // all teams full
+    round++;
+    if(round>10) break;  // safety cap
   }
 
   draftDone=true;
