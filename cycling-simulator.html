@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cycling Race Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ─── RESET & ROOT ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0e1018;
+  --surface:  #161922;
+  --surface2: #1e2230;
+  --border:   #2c3044;
+  --border2:  #3a3f58;
+  --text:     #d8dae8;
+  --muted:    #7880a0;
+  --accent:   #f5c400;
+  --accent2:  #e08c00;
+  --blue:     #4d9fff;
+  --green:    #3ecf6e;
+  --red:      #e84040;
+
+  --t-flat:   #4d9fff;
+  --t-mtn:    #3ecf6e;
+  --t-mm:     #8bc34a;
+  --t-hil:    #ffca28;
+  --t-ttr:    #ff7c44;
+  --t-prl:    #c678dd;
+  --t-cob:    #a08060;
+}
+
+body {
+  font-family: 'Barlow', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 14px;
+}
+
+/* ─── HEADER ────────────────────────────────────────────────── */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  display: flex;
+  align-items: stretch;
+  gap: 32px;
+}
+.logo {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--accent);
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 0;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.logo span { color: var(--text); font-weight: 400; font-size: 0.85rem; letter-spacing: 0; text-transform: none; margin-left: 6px; color: var(--muted); }
+nav { display: flex; gap: 0; }
+.nav-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 0 18px;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.15s;
+}
+.nav-btn:hover { color: var(--text); }
+.nav-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.nav-badge {
+  display: inline-block;
+  background: var(--accent);
+  color: #000;
+  font-size: 0.65rem;
+  font-weight: 800;
+  border-radius: 8px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* ─── LAYOUT ────────────────────────────────────────────────── */
+.tab-content { display: none; padding: 20px 24px; max-width: 1500px; margin: 0 auto; }
+.tab-content.active { display: block; }
+
+/* ─── TOOLBAR ───────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.search-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  font-size: 0.88rem;
+}
+.search-input:focus { outline: none; border-color: var(--accent); }
+.search-input::placeholder { color: var(--muted); }
+.form-select {
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.form-select:focus { outline: none; border-color: var(--accent); }
+
+/* ─── BUTTONS ───────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn-accent  { background: var(--accent); color: #000; }
+.btn-accent:hover { background: #ffd633; }
+.btn-ghost   { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-ghost:hover { border-color: var(--border2); background: var(--border); }
+.btn-danger  { background: rgba(232,64,64,0.15); color: var(--red); border: 1px solid rgba(232,64,64,0.3); }
+.btn-danger:hover { background: rgba(232,64,64,0.25); }
+.btn-green   { background: rgba(62,207,110,0.15); color: var(--green); border: 1px solid rgba(62,207,110,0.3); }
+.btn-green:hover { background: rgba(62,207,110,0.25); }
+.btn-sm { padding: 5px 10px; font-size: 0.8rem; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ─── CARDS ─────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.card-header {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.card-body { padding: 14px 16px; }
+
+/* ─── DATA TABLE ────────────────────────────────────────────── */
+.table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: auto;
+  max-height: calc(100vh - 175px);
+}
+table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+thead th {
+  background: var(--surface2);
+  color: var(--muted);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 8px 10px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+thead th:hover { color: var(--text); }
+thead th.sort-asc::after { content: ' ▲'; font-size: 0.65rem; color: var(--accent); }
+thead th.sort-desc::after { content: ' ▼'; font-size: 0.65rem; color: var(--accent); }
+tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: var(--surface2); }
+tbody td { padding: 7px 10px; }
+
+.cell-rank { color: var(--muted); font-size: 0.78rem; width: 36px; text-align: right; }
+.cell-name { font-weight: 600; color: #eef; }
+.cell-country { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+.cell-avg {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--accent);
+  text-align: center;
+}
+.cell-rating {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  text-align: center;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.1s;
+  border-radius: 3px;
+}
+.cell-rating:hover { background: rgba(245,196,0,0.12); color: var(--accent); }
+.cell-rating.editing { padding: 2px 4px; }
+.rating-input {
+  width: 38px;
+  text-align: center;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  padding: 1px 2px;
+}
+.custom-badge {
+  display: inline-block;
+  background: rgba(77,159,255,0.15);
+  color: var(--blue);
+  border: 1px solid rgba(77,159,255,0.3);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 5px;
+  text-transform: uppercase;
+}
+
+/* ─── TERRAIN BADGES ────────────────────────────────────────── */
+.tbadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.tbadge-FLA { background: rgba(77,159,255,0.15); color: var(--t-flat); }
+.tbadge-MTN { background: rgba(62,207,110,0.15); color: var(--t-mtn); }
+.tbadge-MM  { background: rgba(139,195,74,0.15);  color: var(--t-mm); }
+.tbadge-HIL { background: rgba(255,202,40,0.15); color: var(--t-hil); }
+.tbadge-TTR { background: rgba(255,124,68,0.15); color: var(--t-ttr); }
+.tbadge-PRL { background: rgba(198,120,221,0.15);color: var(--t-prl); }
+.tbadge-COB { background: rgba(160,128,96,0.15); color: var(--t-cob); }
+
+/* ─── STAGE BUILDER ─────────────────────────────────────────── */
+.stage-list { display: flex; flex-direction: column; gap: 6px; }
+.stage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+.stage-num {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 22px;
+}
+.stage-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  font-size: 0.85rem;
+  padding: 5px 8px;
+}
+.stage-input:focus { outline: none; border-color: var(--accent); }
+.stage-name  { flex: 2; }
+.stage-terrain { flex: 1; min-width: 150px; cursor: pointer; }
+.stage-dist  { width: 68px; text-align: center; }
+.stage-dist-label { font-size: 0.75rem; color: var(--muted); }
+
+/* ─── PARTICIPANT COLUMNS ───────────────────────────────────── */
+.participant-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.plist-wrap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.plist-header {
+  padding: 8px 12px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.plist-header.pool-head  { background: var(--surface2); color: var(--muted); }
+.plist-header.start-head { background: rgba(62,207,110,0.12); color: var(--green); }
+.plist-body { max-height: 320px; overflow-y: auto; }
+.plist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 0.83rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.plist-item:last-child { border-bottom: none; }
+.plist-item:hover { background: var(--surface2); }
+.plist-item .pi-avg {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-left: auto;
+}
+.plist-item .pi-rm { color: var(--red); font-size: 0.75rem; margin-left: 4px; }
+.plist-empty { padding: 16px 12px; color: var(--muted); font-size: 0.83rem; text-align: center; }
+
+/* ─── RESULTS ───────────────────────────────────────────────── */
+.results-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.results-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text);
+  line-height: 1;
+}
+.results-meta { font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+.stage-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.stage-tab-btn {
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.stage-tab-btn:hover { border-color: var(--border2); color: var(--text); }
+.stage-tab-btn.active { background: var(--surface2); border-color: var(--border2); color: var(--text); }
+.stage-tab-btn.gc-tab { border-color: rgba(245,196,0,0.3); color: var(--accent); }
+.stage-tab-btn.gc-tab.active { background: rgba(245,196,0,0.12); border-color: var(--accent); }
+
+.result-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.result-table thead th {
+  background: var(--surface2);
+  color: var(--muted);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  position: sticky;
+  top: 0;
+}
+.result-table tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+.result-table tbody tr:hover { background: var(--surface2); }
+.result-table tbody td { padding: 9px 12px; }
+.rpos { font-family: 'Barlow Condensed', sans-serif; font-size: 1rem; font-weight: 800; text-align: center; width: 44px; }
+.rpos-1 { color: #ffd700; }
+.rpos-2 { color: #c0c8d8; }
+.rpos-3 { color: #cd8f5a; }
+.rpos-n { color: var(--muted); font-size: 0.85rem; }
+.rname { font-weight: 600; color: #dde; }
+.rcountry { color: var(--muted); font-size: 0.82rem; }
+.ravg { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--muted); }
+.rgap { font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; color: var(--muted); }
+.rgap-winner { font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; color: var(--accent); font-weight: 700; }
+.result-wrap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  max-height: calc(100vh - 250px);
+  overflow-y: auto;
+}
+
+/* ─── EMPTY / LOADING ───────────────────────────────────────── */
+.loading-state, .empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--muted);
+}
+.loading-state .spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.empty-icon { font-size: 2.5rem; margin-bottom: 10px; }
+
+/* ─── MODAL ─────────────────────────────────────────────────── */
+.modal-bg {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-bg.open { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 22px 24px;
+  width: 520px;
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+.modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-label { font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.form-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-family: 'Barlow', sans-serif;
+  font-size: 0.88rem;
+  padding: 7px 10px;
+}
+.form-input:focus { outline: none; border-color: var(--accent); }
+.modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+
+/* ─── MISC ──────────────────────────────────────────────────── */
+.pill {
+  display: inline-block;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+.info-bar {
+  background: rgba(245,196,0,0.08);
+  border: 1px solid rgba(245,196,0,0.2);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  color: var(--accent);
+  margin-top: 10px;
+}
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sep { height: 1px; background: var(--border); margin: 12px 0; }
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══════════════════════════════════════════════ -->
+<header>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine</span></div>
+  <nav>
+    <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
+    <button class="nav-btn" onclick="showTab('race')">Race Builder</button>
+    <button class="nav-btn" onclick="showTab('results')">Results</button>
+  </nav>
+</header>
+
+<!-- ═══ DATABASE TAB ════════════════════════════════════════ -->
+<div id="tab-database" class="tab-content active">
+  <div class="toolbar">
+    <input type="text" class="search-input" id="db-search" placeholder="Search by name or country…" oninput="renderDatabase()">
+    <select class="form-select" id="db-sort" onchange="renderDatabase()">
+      <option value="avg-desc">Overall ↓</option>
+      <option value="avg-asc">Overall ↑</option>
+      <option value="name-asc">Name A–Z</option>
+      <option value="country-asc">Country A–Z</option>
+    </select>
+    <button class="btn btn-accent" onclick="openAddModal()">+ Add Rider</button>
+    <span class="pill" id="db-count-pill">Loading…</span>
+  </div>
+  <div class="table-wrap" id="db-wrap">
+    <div class="loading-state"><div class="spinner"></div>Loading rider database…</div>
+  </div>
+</div>
+
+<!-- ═══ RACE BUILDER TAB ═════════════════════════════════════ -->
+<div id="tab-race" class="tab-content">
+  <div class="two-col">
+    <!-- Left column: Race config + stages -->
+    <div>
+      <div class="card">
+        <div class="card-header">⚙ Race Configuration</div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">Race Name</label>
+            <input type="text" class="form-input" id="race-name" placeholder="e.g. Tour des Alpes 2026">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          📍 Stages
+          <span class="pill" id="stage-count-pill">0</span>
+        </div>
+        <div class="card-body">
+          <div class="stage-list" id="stage-list">
+            <div class="empty-state" style="padding:12px">
+              <div style="font-size:0.85rem">No stages yet.</div>
+            </div>
+          </div>
+          <div style="margin-top:10px">
+            <button class="btn btn-ghost btn-sm" onclick="addStage()">+ Add Stage</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column: Participants -->
+    <div>
+      <div class="card">
+        <div class="card-header">
+          🏁 Participants
+          <span class="pill" id="part-count-pill">0 selected</span>
+        </div>
+        <div class="card-body">
+          <div class="toolbar" style="margin-bottom:10px">
+            <input type="text" class="search-input" id="pool-search" placeholder="Search riders…" oninput="renderPool()">
+          </div>
+          <div class="toolbar" style="margin-bottom:10px">
+            <button class="btn btn-ghost btn-sm" onclick="addTopN(10)">Top 10</button>
+            <button class="btn btn-ghost btn-sm" onclick="addTopN(25)">Top 25</button>
+            <button class="btn btn-ghost btn-sm" onclick="addTopN(50)">Top 50</button>
+            <button class="btn btn-ghost btn-sm" onclick="addTopN(9999)">All</button>
+            <button class="btn btn-danger btn-sm" onclick="clearParticipants()">Clear</button>
+          </div>
+          <div class="participant-grid">
+            <div class="plist-wrap">
+              <div class="plist-header pool-head">
+                Available <span class="pill" id="pool-count">0</span>
+              </div>
+              <div class="plist-body" id="pool-list"></div>
+            </div>
+            <div class="plist-wrap">
+              <div class="plist-header start-head">
+                Start List <span class="pill" id="start-count">0</span>
+              </div>
+              <div class="plist-body" id="start-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ RESULTS TAB ══════════════════════════════════════════ -->
+<div id="tab-results" class="tab-content">
+  <div class="results-topbar">
+    <div>
+      <div class="results-title" id="res-race-name">No race simulated yet</div>
+      <div class="results-meta" id="res-race-meta">Set up a race in the builder, then simulate.</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-ghost btn-sm" id="rerun-btn" onclick="simulateRace()" style="display:none">↺ Re-run</button>
+      <button class="btn btn-accent" onclick="simulateRace()">🎲 Simulate Race</button>
+    </div>
+  </div>
+  <div id="stage-tabs" class="stage-tabs"></div>
+  <div id="results-area">
+    <div class="empty-state">
+      <div class="empty-icon">🏔️</div>
+      <div>Configure a race in the Race Builder tab, then hit Simulate.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ADD RIDER MODAL ══════════════════════════════════════ -->
+<div class="modal-bg" id="add-modal">
+  <div class="modal">
+    <div class="modal-title">+ Add Custom Rider</div>
+    <div class="two-col" style="margin-bottom:12px">
+      <div class="form-group">
+        <label class="form-label">Name (Last First)</label>
+        <input type="text" class="form-input" id="nr-name" placeholder="e.g. Roglic Primoz">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Country</label>
+        <input type="text" class="form-input" id="nr-country" placeholder="e.g. Slovenia">
+      </div>
+    </div>
+    <div class="sep"></div>
+    <div style="font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:10px">Ratings (50–99)</div>
+    <div class="modal-grid" id="nr-ratings"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeAddModal()">Cancel</button>
+      <button class="btn btn-accent" onclick="saveNewRider()">Add Rider</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════════
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRTlMXG7en3Be_gAvRkTtZMrUZpUwHa6d4z59H4u36AZXNszm8LwjdIZNueT9FNoIHIvqdOPNGPP4_S/pub?gid=0&single=true&output=csv';
+
+const ATTRS = ['FLA','MTN','MM','HIL','TTR','PRL','COB','SPR','ACC','DHI','ATT','STA','RES','REC'];
+
+const ATTR_LABELS = {
+  FLA:'Flat', MTN:'Mountain', MM:'Med. Mountain', HIL:'Hilly',
+  TTR:'Time Trial', PRL:'Prologue', COB:'Cobblestones',
+  SPR:'Sprint', ACC:'Acceleration', DHI:'Downhill',
+  ATT:'Attack', STA:'Stamina', RES:'Resistance', REC:'Recovery'
+};
+
+const TERRAIN_ICONS = {
+  FLA:'🟦', MTN:'🏔️', MM:'⛰️', HIL:'🟡', TTR:'⏱️', PRL:'🚀', COB:'🪨'
+};
+
+// Terrain weight profiles — sum to 1.0
+const TERRAIN_WEIGHTS = {
+  FLA: { FLA:0.45, SPR:0.20, ACC:0.15, STA:0.10, RES:0.05, COB:0.05 },
+  MTN: { MTN:0.35, MM:0.15, STA:0.20, REC:0.15, ATT:0.10, HIL:0.05 },
+  MM:  { MM:0.30, MTN:0.15, HIL:0.20, ATT:0.15, STA:0.10, REC:0.05, FLA:0.05 },
+  HIL: { HIL:0.35, MM:0.15, ATT:0.15, DHI:0.10, ACC:0.10, STA:0.10, FLA:0.05 },
+  TTR: { TTR:0.55, STA:0.20, RES:0.15, FLA:0.10 },
+  PRL: { PRL:0.40, TTR:0.30, ACC:0.20, STA:0.10 },
+  COB: { COB:0.35, FLA:0.20, STA:0.20, RES:0.15, ATT:0.10 },
+};
+
+// Gaussian noise std dev per terrain (score units)
+const NOISE = { FLA:4, MTN:8, MM:6.5, HIL:5, TTR:3, PRL:3, COB:6 };
+
+// Seconds per score-point gap per 100km
+const GAP_SPD = { FLA:1.5, MTN:11, MM:8, HIL:5, TTR:4, PRL:2.5, COB:5 };
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let allRiders = [];
+let stages = [];
+let participants = [];   // rider names
+let lastResults = null;
+let activeTab = 'stage-0';
+let stageIdSeq = 0;
+let sortKey = 'avg', sortDir = 'desc';
+
+// ═══════════════════════════════════════════════════════════════
+// DATA LOADING & PARSING
+// ═══════════════════════════════════════════════════════════════
+async function loadData() {
+  try {
+    const res = await fetch(CSV_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    allRiders = parseCSV(text);
+    document.getElementById('nav-count').textContent = allRiders.length;
+    document.getElementById('db-count-pill').textContent = `${allRiders.length} riders`;
+    renderDatabase();
+    renderPool();
+  } catch(e) {
+    document.getElementById('db-wrap').innerHTML =
+      `<div class="loading-state" style="color:var(--red)">
+        Failed to load rider database.<br>
+        <small style="color:var(--muted)">${e.message}</small><br><br>
+        <button class="btn btn-ghost btn-sm" onclick="loadData()">↺ Retry</button>
+      </div>`;
+  }
+}
+
+function parseCSV(text) {
+  const lines = text.split('\n');
+  const map = new Map(); // deduplicate by name
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',');
+    if (cols.length < 18) continue;
+    const avg = parseFloat(cols[0]);
+    const name = (cols[2] || '').trim();
+    const country = (cols[3] || '').trim();
+    if (!name || !country || isNaN(avg) || name === 'RIDER') continue;
+    if (cols.slice(4).some(c => c.includes('#N/A'))) continue;
+
+    const ratings = {};
+    ATTRS.forEach((a, j) => { ratings[a] = parseInt(cols[4 + j]) || 50; });
+
+    const rider = { name, country, avg, ...ratings, custom: false };
+    // Keep the higher-rated entry on duplicates
+    if (!map.has(name) || map.get(name).avg < avg) map.set(name, rider);
+  }
+
+  return [...map.values()].sort((a, b) => b.avg - a.avg);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COUNTRY FLAGS
+// ═══════════════════════════════════════════════════════════════
+const CC = {
+  'Slovenia':'SI','Belgium':'BE','Netherlands':'NL','Denmark':'DK','United Kingdom':'GB',
+  'France':'FR','Italy':'IT','Spain':'ES','Germany':'DE','Switzerland':'CH','Norway':'NO',
+  'Colombia':'CO','Australia':'AU','United States':'US','Portugal':'PT','Ecuador':'EC',
+  'Mexico':'MX','Poland':'PL','New Zealand':'NZ','Austria':'AT','Latvia':'LV','Ireland':'IE',
+  'Canada':'CA','Czech Republic':'CZ','Kazakhstan':'KZ','Slovakia':'SK','Rwanda':'RW',
+  'Russia':'RU','South Africa':'ZA','Japan':'JP','China':'CN','India':'IN','Brazil':'BR',
+  'Argentina':'AR','Chile':'CL','Peru':'PE','Venezuela':'VE','Panama':'PA','Costa Rica':'CR',
+  'Guatemala':'GT','Bolivia':'BO','Turkey':'TR','Iran':'IR','Malaysia':'MY','Thailand':'TH',
+  'Indonesia':'ID','Philippines':'PH','Kyrgyzstan':'KG','Uzbekistan':'UZ','Ukraine':'UA',
+  'Lithuania':'LT','Luxembourg':'LU','Sweden':'SE','Finland':'FI','Greece':'GR',
+  'Croatia':'HR','Serbia':'RS','Morocco':'MA','Algeria':'DZ','Ethiopia':'ET','Eritrea':'ER',
+  'Kenya':'KE','Uganda':'UG','DR Congo':'CD','Cameroon':'CM','Ghana':'GH','Ivory Coast':'CI',
+  'Benin':'BJ','Mali':'ML','Burkina Faso':'BF','Zimbabwe':'ZW','Namibia':'NA','Lesotho':'LS',
+  'Guam':'GU','Belize':'BZ','Israel':'IL','Bahrain':'BH','Taiwan':'TW','Vietnam':'VN',
+  'Laos':'LA','Estonia':'EE','Belarus':'BY','Armenia':'AM','Georgia':'GE','Hungary':'HU',
+  'Romania':'RO','Bulgaria':'BG','North Macedonia':'MK','Albania':'AL','Montenegro':'ME',
+  'South Korea':'KR','Saudi Arabia':'SA','UAE':'AE','Qatar':'QA','Senegal':'SN',
+  'Nigeria':'NG','Tunisia':'TN','Egypt':'EG','Kosovo':'XK',
+};
+function flag(country) {
+  const code = CC[country];
+  if (!code) return '🏳️';
+  return [...code].map(c => String.fromCodePoint(c.charCodeAt(0) + 127397)).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DATABASE TAB
+// ═══════════════════════════════════════════════════════════════
+function renderDatabase() {
+  const q = document.getElementById('db-search').value.toLowerCase();
+  const sortVal = document.getElementById('db-sort').value;
+  const [sk, sd] = sortVal.split('-');
+
+  let riders = allRiders.filter(r =>
+    r.name.toLowerCase().includes(q) || r.country.toLowerCase().includes(q)
+  );
+  riders.sort((a, b) => {
+    let va = sk === 'avg' ? a.avg : a[sk];
+    let vb = sk === 'avg' ? b.avg : b[sk];
+    if (typeof va === 'string') return sd === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sd === 'asc' ? va - vb : vb - va;
+  });
+
+  document.getElementById('db-count-pill').textContent = `${riders.length} riders`;
+
+  const rows = riders.map((r, i) => `
+    <tr>
+      <td class="cell-rank">${i + 1}</td>
+      <td class="cell-name">
+        ${r.name}
+        ${r.custom ? '<span class="custom-badge">custom</span>' : ''}
+      </td>
+      <td class="cell-country">${flag(r.country)} ${r.country}</td>
+      <td class="cell-avg">${r.avg.toFixed(2)}</td>
+      ${ATTRS.map(a => `
+        <td class="cell-rating" onclick="editRating(this,'${esc(r.name)}','${a}')" title="${ATTR_LABELS[a]}: click to edit">${r[a]}</td>
+      `).join('')}
+      <td>
+        <button class="btn btn-green btn-sm" onclick="addToStart('${esc(r.name)}')" title="Add to start list">+</button>
+      </td>
+    </tr>
+  `).join('');
+
+  document.getElementById('db-wrap').innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Rider</th>
+          <th>Country</th>
+          <th title="Overall Average">AVG</th>
+          ${ATTRS.map(a => `<th title="${ATTR_LABELS[a]}">${a}</th>`).join('')}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function editRating(cell, name, attr) {
+  const cur = cell.textContent.trim();
+  cell.classList.add('editing');
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.min = 50; inp.max = 99;
+  inp.value = cur; inp.className = 'rating-input';
+  cell.textContent = '';
+  cell.appendChild(inp);
+  inp.focus(); inp.select();
+
+  const commit = () => {
+    const v = Math.min(99, Math.max(50, parseInt(inp.value) || parseInt(cur)));
+    const rider = allRiders.find(r => r.name === name);
+    if (rider) { rider[attr] = v; rider.avg = recalcAvg(rider); }
+    cell.classList.remove('editing');
+    renderDatabase();
+  };
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') commit();
+    if (e.key === 'Escape') { cell.classList.remove('editing'); renderDatabase(); }
+  });
+}
+
+function recalcAvg(rider) {
+  return parseFloat((ATTRS.reduce((s, a) => s + rider[a], 0) / ATTRS.length).toFixed(2));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ADD RIDER MODAL
+// ═══════════════════════════════════════════════════════════════
+function openAddModal() {
+  document.getElementById('nr-name').value = '';
+  document.getElementById('nr-country').value = '';
+  document.getElementById('nr-ratings').innerHTML = ATTRS.map(a => `
+    <div class="form-group">
+      <label class="form-label">${a} — ${ATTR_LABELS[a]}</label>
+      <input type="number" class="form-input" id="nr-${a}" min="50" max="99" value="65">
+    </div>
+  `).join('');
+  document.getElementById('add-modal').classList.add('open');
+  setTimeout(() => document.getElementById('nr-name').focus(), 50);
+}
+function closeAddModal() { document.getElementById('add-modal').classList.remove('open'); }
+
+function saveNewRider() {
+  const name = document.getElementById('nr-name').value.trim();
+  const country = document.getElementById('nr-country').value.trim();
+  if (!name || !country) { alert('Name and country are required.'); return; }
+  if (allRiders.find(r => r.name === name)) { alert(`Rider "${name}" already exists.`); return; }
+
+  const ratings = {};
+  ATTRS.forEach(a => { ratings[a] = Math.min(99, Math.max(50, parseInt(document.getElementById(`nr-${a}`).value) || 65)); });
+  const avg = parseFloat((Object.values(ratings).reduce((s, v) => s + v, 0) / ATTRS.length).toFixed(2));
+
+  allRiders.push({ name, country, avg, ...ratings, custom: true });
+  allRiders.sort((a, b) => b.avg - a.avg);
+  document.getElementById('nav-count').textContent = allRiders.length;
+  closeAddModal();
+  renderDatabase();
+  renderPool();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RACE BUILDER — STAGES
+// ═══════════════════════════════════════════════════════════════
+function addStage() {
+  const n = stages.length + 1;
+  stages.push({ id: stageIdSeq++, name: `Stage ${n}`, terrain: 'FLA', distance: 170 });
+  renderStages();
+}
+
+function removeStage(id) {
+  stages = stages.filter(s => s.id !== id);
+  renderStages();
+}
+
+function renderStages() {
+  document.getElementById('stage-count-pill').textContent = `${stages.length} stage${stages.length !== 1 ? 's' : ''}`;
+  const el = document.getElementById('stage-list');
+
+  if (stages.length === 0) {
+    el.innerHTML = '<div class="empty-state" style="padding:12px;font-size:0.85rem">No stages yet.</div>';
+    return;
+  }
+
+  const terrainOpts = Object.entries(TERRAIN_ICONS).map(([k]) =>
+    `<option value="${k}">${TERRAIN_ICONS[k]} ${ATTR_LABELS[k] || k}</option>`
+  ).join('');
+
+  el.innerHTML = stages.map((s, i) => `
+    <div class="stage-row">
+      <span class="stage-num">${i + 1}</span>
+      <input class="stage-input stage-name" value="${esc(s.name)}"
+        onchange="stages[${i}].name=this.value" placeholder="Stage name">
+      <select class="stage-input stage-terrain"
+        onchange="stages[${i}].terrain=this.value;renderStages()">
+        ${Object.entries(TERRAIN_ICONS).map(([k]) =>
+          `<option value="${k}" ${s.terrain === k ? 'selected' : ''}>${TERRAIN_ICONS[k]} ${ATTR_LABELS[k]||k}</option>`
+        ).join('')}
+      </select>
+      <input class="stage-input stage-dist" type="number" value="${s.distance}"
+        min="5" max="350" onchange="stages[${i}].distance=parseInt(this.value)||100">
+      <span class="stage-dist-label">km</span>
+      <span class="tbadge tbadge-${s.terrain}">${ATTR_LABELS[s.terrain]||s.terrain}</span>
+      <button class="btn btn-danger btn-sm" onclick="removeStage(${s.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RACE BUILDER — PARTICIPANTS
+// ═══════════════════════════════════════════════════════════════
+function renderPool() {
+  const q = (document.getElementById('pool-search')?.value || '').toLowerCase();
+  const available = allRiders.filter(r =>
+    !participants.includes(r.name) &&
+    (r.name.toLowerCase().includes(q) || r.country.toLowerCase().includes(q))
+  );
+  const selected = participants.map(n => allRiders.find(r => r.name === n)).filter(Boolean);
+
+  document.getElementById('pool-count').textContent = available.length;
+  document.getElementById('start-count').textContent = selected.length;
+  document.getElementById('part-count-pill').textContent = `${selected.length} selected`;
+
+  document.getElementById('pool-list').innerHTML = available.length
+    ? available.map(r => `
+        <div class="plist-item" onclick="addToStart('${esc(r.name)}')">
+          <span>${flag(r.country)}</span>
+          <span style="flex:1">${r.name}</span>
+          <span class="pi-avg">${r.avg.toFixed(1)}</span>
+        </div>
+      `).join('')
+    : '<div class="plist-empty">No riders available</div>';
+
+  document.getElementById('start-list').innerHTML = selected.length
+    ? selected.map(r => `
+        <div class="plist-item" onclick="removeFromStart('${esc(r.name)}')">
+          <span>${flag(r.country)}</span>
+          <span style="flex:1">${r.name}</span>
+          <span class="pi-avg">${r.avg.toFixed(1)}</span>
+          <span class="pi-rm">✕</span>
+        </div>
+      `).join('')
+    : '<div class="plist-empty">Click riders to add</div>';
+}
+
+function addToStart(name) {
+  if (!participants.includes(name)) { participants.push(name); renderPool(); }
+}
+function removeFromStart(name) {
+  participants = participants.filter(n => n !== name); renderPool();
+}
+function addTopN(n) {
+  const names = allRiders.slice(0, n).map(r => r.name);
+  participants = [...new Set([...participants, ...names])];
+  renderPool();
+}
+function clearParticipants() { participants = []; renderPool(); }
+
+// ═══════════════════════════════════════════════════════════════
+// SIMULATION ENGINE
+// ═══════════════════════════════════════════════════════════════
+function gauss(std) {
+  let u = 0, v = 0;
+  while (!u) u = Math.random();
+  while (!v) v = Math.random();
+  return std * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function terrainScore(rider, terrain) {
+  const w = TERRAIN_WEIGHTS[terrain];
+  return Object.entries(w).reduce((s, [a, wt]) => s + (rider[a] || 65) * wt, 0);
+}
+
+function simulateRace() {
+  const raceName = document.getElementById('race-name').value.trim() || 'Custom Race';
+
+  if (stages.length === 0) { alert('Add at least one stage first.'); return; }
+  if (participants.length < 2) { alert('Add at least 2 riders to the start list.'); return; }
+
+  const riderList = allRiders.filter(r => participants.includes(r.name));
+
+  // Fatigue: accumulates per rider, mitigated by REC
+  const fatigue = {};
+  riderList.forEach(r => fatigue[r.name] = 0);
+
+  const gcTimes = {};
+  riderList.forEach(r => gcTimes[r.name] = 0);
+
+  const stageResults = stages.map(stage => {
+    // Compute scores with fatigue penalty
+    const scored = riderList.map(rider => {
+      const base = terrainScore(rider, stage.terrain);
+      const fPenalty = fatigue[rider.name] * (1 - rider.REC / 200);
+      const noise = gauss(NOISE[stage.terrain]);
+      return { rider, score: base - fPenalty + noise };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const best = scored[0].score;
+    const gapFactor = GAP_SPD[stage.terrain] * stage.distance / 100;
+
+    const result = scored.map((s, i) => {
+      const gap = Math.max(0, (best - s.score) * gapFactor);
+      // Accumulate fatigue after stage — harder finishers and longer stages add more
+      fatigue[s.rider.name] += (stage.distance / 100) * ((i + 1) / riderList.length) * 0.25;
+      gcTimes[s.rider.name] += gap;
+      return { rider: s.rider, position: i + 1, gap };
+    });
+
+    return { stage, result };
+  });
+
+  const gcResult = riderList
+    .map(r => ({ rider: r, totalGap: gcTimes[r.name] }))
+    .sort((a, b) => a.totalGap - b.totalGap)
+    .map((r, i) => ({ ...r, position: i + 1 }));
+
+  lastResults = { raceName, stageResults, gcResult, riderCount: riderList.length };
+  activeTab = stages.length > 1 ? 'gc' : 'stage-0';
+
+  showTab('results');
+  renderResults();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RESULTS RENDERING
+// ═══════════════════════════════════════════════════════════════
+function fmtGap(sec) {
+  if (sec <= 0) return `<span class="rgap-winner">— WINNER —</span>`;
+  if (sec < 60) return `<span class="rgap">+${Math.round(sec)}"</span>`;
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+  if (sec < 3600) return `<span class="rgap">+${m}:${String(s).padStart(2,'0')}</span>`;
+  const h = Math.floor(sec / 3600), rm = Math.floor((sec % 3600) / 60), rs = Math.round(sec % 60);
+  return `<span class="rgap">+${h}:${String(rm).padStart(2,'0')}:${String(rs).padStart(2,'0')}</span>`;
+}
+
+function posLabel(p) {
+  if (p === 1) return `<span class="rpos rpos-1">🥇</span>`;
+  if (p === 2) return `<span class="rpos rpos-2">🥈</span>`;
+  if (p === 3) return `<span class="rpos rpos-3">🥉</span>`;
+  return `<span class="rpos rpos-n">${p}</span>`;
+}
+
+function renderResults() {
+  if (!lastResults) return;
+  const { raceName, stageResults, gcResult, riderCount } = lastResults;
+  const isMulti = stageResults.length > 1;
+
+  document.getElementById('res-race-name').textContent = raceName;
+  document.getElementById('res-race-meta').textContent =
+    `${stageResults.length} stage${stageResults.length !== 1 ? 's' : ''} · ${riderCount} riders`;
+  document.getElementById('rerun-btn').style.display = 'inline-flex';
+
+  // Stage tabs
+  const tabsHtml = [
+    ...stageResults.map((sr, i) => `
+      <button class="stage-tab-btn ${activeTab === `stage-${i}` ? 'active' : ''}"
+        onclick="switchTab('stage-${i}')">
+        ${TERRAIN_ICONS[sr.stage.terrain]} ${sr.stage.name}
+        <span style="font-size:0.7rem;opacity:0.6;margin-left:3px">${sr.stage.distance}km</span>
+      </button>
+    `),
+    isMulti ? `
+      <button class="stage-tab-btn gc-tab ${activeTab === 'gc' ? 'active' : ''}"
+        onclick="switchTab('gc')">
+        🟡 General Classification
+      </button>` : ''
+  ].join('');
+  document.getElementById('stage-tabs').innerHTML = tabsHtml;
+
+  // Table content
+  let rows;
+  if (activeTab === 'gc') {
+    rows = gcResult.map(r => buildRow(r.position, r.rider, r.totalGap));
+    renderResultTable(rows, 'General Classification — Overall');
+  } else {
+    const idx = parseInt(activeTab.replace('stage-', ''));
+    const sr = stageResults[idx];
+    rows = sr.result.map(r => buildRow(r.position, r.rider, r.gap));
+    renderResultTable(rows,
+      `${sr.stage.name} · ${ATTR_LABELS[sr.stage.terrain]} · ${sr.stage.distance} km`
+    );
+  }
+}
+
+function buildRow(pos, rider, gap) {
+  return `
+    <tr>
+      <td>${posLabel(pos)}</td>
+      <td class="rname">${rider.name}</td>
+      <td class="rcountry">${flag(rider.country)} ${rider.country}</td>
+      <td class="ravg">${rider.avg.toFixed(1)}</td>
+      <td>${fmtGap(gap)}</td>
+    </tr>
+  `;
+}
+
+function renderResultTable(rows, title) {
+  document.getElementById('results-area').innerHTML = `
+    <div class="result-wrap">
+      <table class="result-table">
+        <thead>
+          <tr>
+            <th style="width:48px;text-align:center">#</th>
+            <th>Rider</th>
+            <th>Country</th>
+            <th>OVR</th>
+            <th>Gap</th>
+          </tr>
+        </thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+    </div>
+    <div class="info-bar">
+      💡 Ratings drive probability weights — each run produces different results.
+    </div>
+  `;
+}
+
+function switchTab(tab) { activeTab = tab; renderResults(); }
+
+// ═══════════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+const TABS = ['database', 'race', 'results'];
+function showTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.querySelectorAll('.nav-btn')[TABS.indexOf(tab)]?.classList.add('active');
+  if (tab === 'race') { renderStages(); renderPool(); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════════
+function esc(s) { return s.replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+renderStages();
+loadData();
+</script>
+</body>
+</html>
