@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v5.7</title>
+<title>CycleSim v5.8</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v5.7</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v5.8</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -570,7 +570,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '5.7';
+const CACHE_VERSION = '5.8';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1912,7 +1912,7 @@ const TERRAIN_PROFILE = {
   'United States':{FLA:.3,HIL:.25,MM:.2,MTN:.1,TTR:.15},
   'Canada':       {FLA:.3,HIL:.25,MM:.2,MTN:.1,TTR:.15},
 };
-const DEFAULT_PROFILE = {FLA:.3,HIL:.25,MM:.2,MTN:.1,TTR:.15};
+const DEFAULT_PROFILE = {FLA:.35,HIL:.25,MM:.15,MTN:.15,COB:.10};
 
 function getTerrainProfile(country){
   return TERRAIN_PROFILE[country] || DEFAULT_PROFILE;
@@ -2598,14 +2598,16 @@ function simulateStage(riderList, stage, fatigue, gcTimes){
       .forEach(({gapSeconds, riders})=>riders.forEach(r=>raw.push({rider:r, gap:gapSeconds})));
   }
 
-  // Step 4: assign positions (same gap = same position)
+  // Step 4: assign positions — within each time group, sprint decides order
   raw.sort((a,b)=>a.gap-b.gap);
   const uniqueGaps=[...new Set(raw.map(r=>r.gap))].sort((a,b)=>a-b);
   let pos=1;
   const result=[];
   uniqueGaps.forEach(g=>{
     const grp=raw.filter(r=>r.gap===g);
-    grp.forEach(r=>result.push({rider:r.rider, position:pos, gap:g}));
+    // Sort within group by sprint (highest SPR first)
+    grp.sort((a,b)=>(b.rider.SPR||65)-(a.rider.SPR||65));
+    grp.forEach((r,i)=>result.push({rider:r.rider, position:pos+i, gap:g}));
     pos+=grp.length;
   });
 
@@ -2694,7 +2696,8 @@ function buildTourStages(country, days){
     if(i===ttPos){
       terrain = ttType;
     } else if(i===1){
-      terrain = Math.random()<0.3 ? 'PRL' : 'FLA';
+      // Only use PRL if it's the TT (i.e. ttPos===1), otherwise flat opener
+      terrain = (ttPos===1) ? ttType : 'FLA';
     } else if(i===days){
       // Last stage: flat or GC finish (no TT)
       const prev = stagesArr[stagesArr.length-1].terrain;
