@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v7.5</title>
+<title>CycleSim v7.6</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,14 +225,13 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.5</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.6</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
     <button class="nav-btn" id="nav-btn-nativeFA" onclick="showTab('nativeFA')" style="display:none">Native FA <span class="nav-badge" id="nav-nfa-count" style="background:var(--red)">—</span></button>
-    <button class="nav-btn" id="nav-btn-updates" onclick="showTab('updates')" style="display:none">Updates <span class="nav-badge" id="nav-updates-count" style="background:var(--blue)">—</span></button>
+    <button class="nav-btn" id="nav-btn-updates" onclick="showTab('updates')" style="display:none">Available Riders <span class="nav-badge" id="nav-updates-count" style="background:var(--blue)">—</span></button>
     <button class="nav-btn" onclick="showTab('draft')">Draft <span class="nav-badge" id="nav-draft-badge" style="display:none">✓</span></button>
-    <button class="nav-btn" onclick="showTab('freeagents')">Free Agents <span class="nav-badge" id="nav-fa-count" style="background:var(--accent)">—</span></button>
     <button class="nav-btn" onclick="showTab('race')">Race Builder</button>
     <button class="nav-btn" onclick="showTab('results')">Results</button>
     <button class="nav-btn" id="nav-btn-calendar" onclick="showTab('calendar')">Calendar <span class="nav-badge" id="nav-calendar-count" style="background:var(--blue)">—</span></button>
@@ -288,7 +287,7 @@ tbody td{padding:6px 10px}
       <div style="display:flex;flex-direction:column;border:1px solid rgba(77,159,255,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex:3">
         <div style="padding:6px 12px;background:rgba(77,159,255,.08);border-bottom:1px solid rgba(77,159,255,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue)">② Draft Pool</span>
-          <span class="pill" id="ps-draft-count" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)">—</span>
+          <span class="pill" id="ps-draft-count" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)" id="updates-total-pill">—</span>
         </div>
         <div id="ps-draft-list" style="flex:1;overflow-y:auto;font-size:.76rem"></div>
       </div>
@@ -378,7 +377,7 @@ tbody td{padding:6px 10px}
 <!-- ═══ UPDATES ═══════════════════════════════════════════════ -->
 <div id="tab-updates" class="tab-content">
   <div class="toolbar">
-    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue)">📥 New Riders</span>
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue)">🎯 Available Riders</span>
     <span class="pill" id="updates-pending-pill" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)">—</span>
     <button class="btn btn-accent btn-sm" onclick="addUpdateTeamSlot()">+ Add team slot</button>
     <button class="btn btn-accent btn-sm" onclick="confirmUpdateTeams()" id="btn-confirm-updates" style="display:none">✓ Confirm teams</button>
@@ -424,23 +423,6 @@ tbody td{padding:6px 10px}
     <div class="draft-main" id="draft-main">
       <div class="empty-state"><div class="empty-icon">📋</div><div>Run the draft to see full team rosters.</div></div>
     </div>
-  </div>
-</div>
-
-<!-- ═══ FREE AGENTS ══════════════════════════════════════════ -->
-<div id="tab-freeagents" class="tab-content">
-  <div class="toolbar">
-    <input type="text" class="search-input" id="fa-search" placeholder="Search free agents…" oninput="renderFreeAgents()">
-    <select class="form-select" id="fa-sort" onchange="renderFreeAgents()">
-      <option value="avg-desc">Overall ↓</option>
-      <option value="avg-asc">Overall ↑</option>
-      <option value="name-asc">Name A–Z</option>
-      <option value="country-asc">Country A–Z</option>
-    </select>
-    <span class="pill" id="fa-list-count">—</span>
-  </div>
-  <div class="table-wrap" id="fa-wrap">
-    <div class="empty-state"><div class="empty-icon">🎯</div><div>Generate pools first to see free agents.</div></div>
   </div>
 </div>
 
@@ -570,13 +552,14 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '7.5';
+const CACHE_VERSION = '7.6';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
     if(stored !== CACHE_VERSION){
       // NEVER wipe teams — only clear draft/UI state on version change
       localStorage.removeItem('cyclesim_draft');
+      localStorage.removeItem('cyclesim_pendingPool'); // stale — now computed live
       localStorage.setItem('cyclesim_version', CACHE_VERSION);
       console.log('Cache updated to', CACHE_VERSION, '— teams preserved');
     }
@@ -1583,74 +1566,45 @@ function renderNativeFA(){
 
 // Called after CSV loads. Compares against knownRiders to find new ones.
 function detectNewRiders(){
-  // knownRiders already loaded by loadPendingPool() — don't re-load
-
-  // If no known riders yet (first run), seed from current allRiders
-  if(knownRiders.size === 0){
-    allRiders.forEach(r => knownRiders.add(r.name));
-    saveKnownRiders();
-    return; // nothing "new" on first run
-  }
-
-  // Find truly new riders not in known set
-  const newOnes = allRiders.filter(r => !knownRiders.has(r.name));
-
-  if(newOnes.length === 0) return;
-
-  // Build dedup set from LIVE pendingPool (not from localStorage)
-  const existing = new Set(pendingPool);
-  // Also exclude riders already on teams
-  const onTeam = new Set(teams.flatMap(t=>t.riders));
-  newOnes.forEach(r => {
-    knownRiders.add(r.name); // mark known immediately so re-runs don't duplicate
-    if(!existing.has(r.name) && !onTeam.has(r.name)){
-      pendingPool.push(r.name);
-      existing.add(r.name);
-    }
-  });
-
-  // Note: freeAgents are NOT auto-added here — they go to pendingPool via the Draft flow
-
-  savePendingPool();
-  saveKnownRiders();
-
-  // Show updates tab
-  const completeTeams = Math.floor(pendingPool.length / 7);
-  if(pendingPool.length > 0){
-    const btn = document.getElementById('nav-btn-updates');
-    const badge = document.getElementById('nav-updates-count');
-    if(btn) btn.style.display = '';
-    if(badge) badge.textContent = pendingPool.length;
-    console.log(`Updates: ${newOnes.length} new riders, ${pendingPool.length} pending, ${completeTeams} complete teams possible`);
-  }
+  // Update knownRiders with any new riders from CSV
+  const newOnes=allRiders.filter(r=>!knownRiders.has(r.name));
+  newOnes.forEach(r=>knownRiders.add(r.name));
+  if(newOnes.length>0) saveKnownRiders();
+  // Pool is always computed fresh — no persistence needed
+  computePendingPool();
+  const btn=document.getElementById('nav-btn-updates');
+  const badge=document.getElementById('nav-updates-count');
+  if(btn) btn.style.display=pendingPool.length>0?'':'none';
+  if(badge) badge.textContent=pendingPool.length||'—';
 }
 
 function saveKnownRiders(){
   try { localStorage.setItem('cyclesim_knownRiders', JSON.stringify([...knownRiders])); } catch(e) {}
 }
-function savePendingPool(){
-  try { localStorage.setItem('cyclesim_pendingPool', JSON.stringify(pendingPool)); } catch(e) {}
-}
+function savePendingPool(){ /* no-op: pendingPool computed live */ }
 function loadPendingPool(){
-  try {
-    const s = localStorage.getItem('cyclesim_pendingPool');
-    if(s){
-      const raw = JSON.parse(s);
-      // Deduplicate on load — kill any existing dupes
-      pendingPool = [...new Set(raw)];
-      if(pendingPool.length !== raw.length){
-        savePendingPool(); // save clean version
-        console.log('Deduped pendingPool:', raw.length, '→', pendingPool.length);
-      }
+  try{
+    const k=localStorage.getItem('cyclesim_knownRiders');
+    if(k) knownRiders=new Set(JSON.parse(k));
+  }catch(e){}
+  computePendingPool();
+}
+function computePendingPool(){
+  // pendingPool = all riders NOT currently on any team
+  const onTeam=new Set(teams.flatMap(t=>t.riders));
+  const seen=new Set();
+  pendingPool=[];
+  allRiders.forEach(r=>{
+    if(!onTeam.has(r.name)&&!seen.has(r.name)){
+      pendingPool.push(r.name);
+      seen.add(r.name);
     }
-    const k = localStorage.getItem('cyclesim_knownRiders');
-    if(k) knownRiders = new Set(JSON.parse(k));
-  } catch(e) {}
+  });
 }
 
 // ── RENDER UPDATES TAB ──────────────────────────────────────────
 function renderUpdates(){
-  loadPendingPool();
+  computePendingPool(); // always fresh
   const inSlots = new Set(updateTeamSlots.flatMap(s => s));
   const available = pendingPool.filter(name => !inSlots.has(name));
 
@@ -1986,6 +1940,7 @@ function confirmUpdateTeams(){
   else renderUpdates();
 
   document.getElementById('nav-teams-count').textContent = teams.length;
+  computePendingPool(); // refresh after team creation
   // Inject mid-season races for new teams
   const newTeams = teams.slice(teamsBefore);
   if(newTeams.length && calendar.length){
