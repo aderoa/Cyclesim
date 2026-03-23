@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v4.4</title>
+<title>CycleSim v4.6</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -220,11 +220,12 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v4.4</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v4.6</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
     <button class="nav-btn" id="nav-btn-nativeFA" onclick="showTab('nativeFA')" style="display:none">Native FA <span class="nav-badge" id="nav-nfa-count" style="background:var(--red)">—</span></button>
+    <button class="nav-btn" id="nav-btn-updates" onclick="showTab('updates')" style="display:none">Updates <span class="nav-badge" id="nav-updates-count" style="background:var(--blue)">—</span></button>
     <button class="nav-btn" onclick="showTab('draft')">Draft <span class="nav-badge" id="nav-draft-badge" style="display:none">✓</span></button>
     <button class="nav-btn" onclick="showTab('freeagents')">Free Agents <span class="nav-badge" id="nav-fa-count" style="background:var(--accent)">—</span></button>
     <button class="nav-btn" onclick="showTab('race')">Race Builder</button>
@@ -370,6 +371,28 @@ tbody td{padding:6px 10px}
 </div>
 
 
+<!-- ═══ UPDATES ═══════════════════════════════════════════════ -->
+<div id="tab-updates" class="tab-content">
+  <div class="toolbar">
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue)">📥 New Riders</span>
+    <span class="pill" id="updates-pending-pill" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)">—</span>
+    <button class="btn btn-accent btn-sm" onclick="addUpdateTeamSlot()">+ Add team slot</button>
+    <button class="btn btn-accent btn-sm" onclick="confirmUpdateTeams()" id="btn-confirm-updates" style="display:none">✓ Confirm teams</button>
+    <span style="font-size:.78rem;color:var(--muted)">Drag riders from the pool into team slots · 7 riders per slot · incomplete slots stay in pool</span>
+  </div>
+  <div style="display:grid;grid-template-columns:300px 1fr;gap:10px;height:calc(100vh - 110px)">
+    <div style="display:flex;flex-direction:column;border:1px solid rgba(77,159,255,.3);border-radius:8px;overflow:hidden;background:var(--surface)">
+      <div style="padding:7px 12px;background:rgba(77,159,255,.08);border-bottom:1px solid rgba(77,159,255,.2);font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+        <span>Pending Pool</span><span class="pill" id="updates-pool-count" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)">—</span>
+      </div>
+      <div id="updates-pool-list" style="height:calc(100vh - 165px);overflow-y:auto"></div>
+    </div>
+    <div style="overflow-y:auto;padding-right:4px" id="updates-slots-area">
+      <div class="empty-state" style="margin-top:40px"><div class="empty-icon">📋</div><div>Click <strong>+ Add team slot</strong>, then drag riders from the left panel into the slot.<br><small style="color:var(--muted);font-size:.78rem">Slots with 7 riders can be confirmed as new teams.</small></div></div>
+    </div>
+  </div>
+</div>
+
 <div id="tab-draft" class="tab-content">
   <div class="toolbar">
     <button class="btn btn-accent" id="draft-run-btn" onclick="runDraft()">⚡ Run Free Agent Draft</button>
@@ -510,7 +533,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '4.4';
+const CACHE_VERSION = '4.6';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -734,6 +757,10 @@ function getRegionLabel(country){
 // STATE
 // ═══════════════════════════════════════════════════════════════
 let allRiders = [];
+let knownRiders = new Set();  // rider names at time of last full generation
+let pendingPool = [];         // new riders + free agents awaiting team assignment
+let updateTeamSlots = [];     // team slots being built in the Updates tab
+let selectedUpdateRider = null;
 let nativePool = [];
 let draftPool = [];
 let freeAgent = [];
@@ -762,6 +789,8 @@ async function loadData() {
     renderDatabase();
     clearStaleCache();
     loadSavedTeams();
+    loadPendingPool();
+    detectNewRiders();
   } catch(e) {
     document.getElementById('db-wrap').innerHTML =
       `<div class="loading-state" style="color:var(--red)">Failed to load rider database.<br><small style="color:var(--muted)">${e.message}</small><br><br><button class="btn btn-ghost btn-sm" onclick="loadData()">↺ Retry</button></div>`;
@@ -1486,6 +1515,328 @@ function renderNativeFA(){
 }
 
 
+// ═══════════════════════════════════════════════════════════════
+// UPDATES SYSTEM — detect new riders, form new teams
+// ═══════════════════════════════════════════════════════════════
+
+// Called after CSV loads. Compares against knownRiders to find new ones.
+function detectNewRiders(){
+  // Load known riders from localStorage
+  try {
+    const stored = localStorage.getItem('cyclesim_knownRiders');
+    if(stored) knownRiders = new Set(JSON.parse(stored));
+  } catch(e) {}
+
+  // If no known riders yet (first run), seed from current allRiders
+  if(knownRiders.size === 0){
+    allRiders.forEach(r => knownRiders.add(r.name));
+    saveKnownRiders();
+    return; // nothing "new" on first run
+  }
+
+  // Find truly new riders not in known set
+  const newOnes = allRiders.filter(r => !knownRiders.has(r.name));
+
+  if(newOnes.length === 0) return;
+
+  // Load existing pending pool
+  try {
+    const stored = localStorage.getItem('cyclesim_pendingPool');
+    if(stored) pendingPool = JSON.parse(stored);
+  } catch(e) {}
+
+  // Add new riders to pending pool (avoid dupes)
+  const existing = new Set(pendingPool.map(r => r.name));
+  newOnes.forEach(r => { if(!existing.has(r.name)) pendingPool.push(r.name); });
+
+  // Also add current free agents to pending pool
+  freeAgent.forEach(name => { if(!existing.has(name)) pendingPool.push(name); });
+
+  savePendingPool();
+  saveKnownRiders();
+
+  // Show updates tab
+  const completeTeams = Math.floor(pendingPool.length / 7);
+  if(pendingPool.length > 0){
+    const btn = document.getElementById('nav-btn-updates');
+    const badge = document.getElementById('nav-updates-count');
+    if(btn) btn.style.display = '';
+    if(badge) badge.textContent = pendingPool.length;
+    console.log(`Updates: ${newOnes.length} new riders, ${pendingPool.length} pending, ${completeTeams} complete teams possible`);
+  }
+}
+
+function saveKnownRiders(){
+  try { localStorage.setItem('cyclesim_knownRiders', JSON.stringify([...knownRiders])); } catch(e) {}
+}
+function savePendingPool(){
+  try { localStorage.setItem('cyclesim_pendingPool', JSON.stringify(pendingPool)); } catch(e) {}
+}
+function loadPendingPool(){
+  try {
+    const s = localStorage.getItem('cyclesim_pendingPool');
+    if(s) pendingPool = JSON.parse(s);
+    const k = localStorage.getItem('cyclesim_knownRiders');
+    if(k) knownRiders = new Set(JSON.parse(k));
+  } catch(e) {}
+}
+
+// ── RENDER UPDATES TAB ──────────────────────────────────────────
+function renderUpdates(){
+  loadPendingPool();
+  const inSlots = new Set(updateTeamSlots.flatMap(s => s));
+  const available = pendingPool.filter(name => !inSlots.has(name));
+
+  // Update pills
+  const pill = document.getElementById('updates-pending-pill');
+  const countPill = document.getElementById('updates-pool-count');
+  const possible = Math.floor(available.length / 7);
+  if(pill) pill.textContent = available.length + ' riders · ' + possible + ' team' + (possible!==1?'s':'') + ' possible';
+  if(countPill) countPill.textContent = available.length;
+
+  // Nav badge
+  const badge = document.getElementById('nav-updates-count');
+  if(badge) badge.textContent = available.length || '—';
+  const navBtn = document.getElementById('nav-btn-updates');
+  if(navBtn) navBtn.style.display = pendingPool.length > 0 ? '' : 'none';
+
+  // ── Left: pending pool, grouped by continent > region > country
+  const contOrderU = Object.keys(CONTINENTS).concat(['Other']);
+  const enriched = available.map((name, idx) => {
+    const r = allRiders.find(x => x.name === name) || allRiders.find(x => x.name.trim() === name.trim());
+    const country = r ? r.country : '?';
+    return { name, idx, r, country,
+      avg: r ? r.avg : 0,
+      cont: r ? getContinent(r.country) : 'Other',
+      reg:  r ? getRegionLabel(r.country) : 'Other'
+    };
+  }).sort((a,b) => {
+    const ci = contOrderU.indexOf(a.cont) - contOrderU.indexOf(b.cont); if(ci) return ci;
+    const ri = a.reg.localeCompare(b.reg); if(ri) return ri;
+    const coi = a.country.localeCompare(b.country); if(coi) return coi;
+    return a.name.localeCompare(b.name);
+  });
+
+  let poolHtml = '';
+  let lastCont = null, lastReg = null, lastCountry = null;
+  enriched.forEach(({name, idx, country, avg, cont, reg}) => {
+    if(cont !== lastCont){
+      poolHtml += '<div class="nfa-continent-header">' + cont + '</div>';
+      lastCont = cont; lastReg = null; lastCountry = null;
+    }
+    if(reg !== lastReg){
+      poolHtml += '<div class="nfa-region-header">' + reg.replace(/\./g,' ') + '</div>';
+      lastReg = reg; lastCountry = null;
+    }
+    if(country !== lastCountry){
+      poolHtml += '<div style="padding:2px 12px 2px 18px;font-size:.72rem;font-weight:700;color:var(--muted);background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:5px">' + flagImg(country,10) + ' ' + country + '</div>';
+      lastCountry = country;
+    }
+    const sel = selectedUpdateRider === name;
+    poolHtml += '<div class="nfa-rider-row' + (sel?' nfa-selected':'') + '" data-upd-idx="' + idx + '" draggable="true">' +
+      '<span class="nfa-name" style="padding-left:12px">' + name + '</span>' +
+      '<span class="nfa-avg">' + avg.toFixed(1) + '</span></div>';
+  });
+
+  const poolEl = document.getElementById('updates-pool-list');
+  poolEl.innerHTML = poolHtml || '<div style="padding:16px;color:var(--green);text-align:center;font-size:.85rem">All riders assigned to slots!</div>';
+
+  // Pool events
+  poolEl.onclick = function(e){
+    const row = e.target.closest('.nfa-rider-row');
+    if(!row) return;
+    const name = enriched[+row.dataset.updIdx]?.name;
+    if(name){ selectedUpdateRider = selectedUpdateRider === name ? null : name; renderUpdates(); }
+  };
+  poolEl.ondragstart = function(e){
+    const row = e.target.closest('.nfa-rider-row');
+    if(!row) return;
+    selectedUpdateRider = enriched[+row.dataset.updIdx]?.name;
+    e.dataTransfer.setData('text/plain', row.dataset.updIdx);
+  };
+
+  // ── Right: team slots
+  renderUpdateSlots(enriched);
+
+  // Show confirm button if any slots have 7 riders
+  const full = updateTeamSlots.filter(s => s.length === 7).length;
+  const btn = document.getElementById('btn-confirm-updates');
+  if(btn) btn.style.display = full > 0 ? '' : 'none';
+  if(btn) btn.textContent = '✓ Confirm ' + full + ' team' + (full!==1?'s':'');
+}
+
+function renderUpdateSlots(enriched){
+  const slotsEl = document.getElementById('updates-slots-area');
+  if(!updateTeamSlots.length){
+    slotsEl.innerHTML = '<div class="empty-state" style="margin-top:40px"><div class="empty-icon">📋</div><div>Click <strong>Auto-form teams</strong> or <strong>+ Add slot</strong></div></div>';
+    return;
+  }
+  slotsEl.innerHTML = updateTeamSlots.map((slot, si) => {
+    const riderRows = slot.map((name, ri) => {
+      const r = allRiders.find(x => x.name === name) || allRiders.find(x => x.name.trim() === name.trim());
+      const country = r ? r.country : '?';
+      const avg = r ? r.avg.toFixed(1) : '—';
+      return '<div style="display:flex;align-items:center;gap:6px;padding:4px 12px;border-bottom:1px solid var(--border);font-size:.82rem">' +
+        '<span style="color:var(--muted);font-size:.7rem;width:14px">' + (ri+1) + '</span>' +
+        flagImg(country,11) + '<span style="flex:1">' + name + '</span>' +
+        '<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">' + avg + '</span>' +
+        '<span onclick="removeFromUpdateSlot(' + si + ',' + ri + ')" style="cursor:pointer;color:var(--red);font-size:.75rem;padding:0 4px" title="Remove">✕</span>' +
+        '</div>';
+    }).join('');
+
+    const empty = 7 - slot.length;
+    const emptyRows = Array(empty).fill('<div style="padding:4px 12px;border-bottom:1px dashed var(--border);font-size:.72rem;color:var(--border2);font-style:italic">— empty slot —</div>').join('');
+    const full = slot.length === 7;
+    const color = full ? 'var(--green)' : (slot.length >= 4 ? 'var(--accent)' : 'var(--muted)');
+
+    return '<div style="border:1px solid ' + (full?'rgba(62,207,110,.4)':'var(--border)') + ';border-radius:8px;overflow:hidden;background:var(--surface);margin-bottom:8px"' +
+      ' ondragover="event.preventDefault();this.style.background=\'rgba(77,159,255,.06)\'"' +
+      ' ondragleave="this.style.background=\'\'"' +
+      ' ondrop="dropToUpdateSlot(event,' + si + ');this.style.background=\'\'"' +
+      ' onclick="selectedUpdateRider?addToUpdateSlot(' + si + '):null">' +
+      '<div style="padding:7px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">' +
+        '<span style="font-family:\'Barlow Condensed\',sans-serif;font-size:.85rem;font-weight:700;text-transform:uppercase;color:' + color + '">' +
+          (full ? '✓ ' : '') + 'New Team Slot #' + (si+1) + '</span>' +
+        '<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted);margin-left:auto">' + slot.length + '/7</span>' +
+        '<span onclick="removeUpdateSlot(' + si + ')" style="cursor:pointer;color:var(--red);font-size:.75rem;padding:0 6px" title="Remove slot">✕</span>' +
+      '</div>' +
+      riderRows + emptyRows +
+      '</div>';
+  }).join('');
+}
+
+// ── SLOT MANAGEMENT ─────────────────────────────────────────────
+function addUpdateTeamSlot(){
+  updateTeamSlots.push([]);
+  renderUpdates();
+}
+
+function removeUpdateSlot(si){
+  // Return riders to pool (they're still in pendingPool, just not in slots)
+  updateTeamSlots.splice(si, 1);
+  renderUpdates();
+}
+
+function removeFromUpdateSlot(si, ri){
+  updateTeamSlots[si].splice(ri, 1);
+  selectedUpdateRider = null;
+  renderUpdates();
+}
+
+function addToUpdateSlot(si){
+  if(!selectedUpdateRider) return;
+  const slot = updateTeamSlots[si];
+  if(slot.length >= 7 || slot.includes(selectedUpdateRider)) return;
+  // Remove from other slots first
+  updateTeamSlots.forEach(s => { const i = s.indexOf(selectedUpdateRider); if(i>=0) s.splice(i,1); });
+  slot.push(selectedUpdateRider);
+  selectedUpdateRider = null;
+  renderUpdates();
+}
+
+function dropToUpdateSlot(event, si){
+  event.preventDefault();
+  // selectedUpdateRider is set in ondragstart — use it directly
+  if(!selectedUpdateRider) return;
+  addToUpdateSlot(si);
+}
+
+// ── AUTO-FORM ───────────────────────────────────────────────────
+function autoFormUpdateTeams(){
+  const inSlots = new Set(updateTeamSlots.flatMap(s => s));
+  const available = pendingPool.filter(name => !inSlots.has(name));
+
+  if(available.length < 7){
+    alert('Need at least 7 riders in the pending pool to form a team.');
+    return;
+  }
+
+  const contOrderA = Object.keys(CONTINENTS).concat(['Other']);
+
+  // Group by country
+  const byCountry = {};
+  available.forEach(name => {
+    const r = allRiders.find(x => x.name === name) || allRiders.find(x => x.name.trim() === name.trim());
+    const country = r ? r.country : '?';
+    const cont = r ? getContinent(country) : 'Other';
+    const reg = r ? getRegionLabel(country) : 'Other';
+    if(!byCountry[country]) byCountry[country] = { riders:[], cont, reg };
+    byCountry[country].riders.push(name);
+  });
+
+  // Sort countries by continent > region > country
+  const sortedCountries = Object.entries(byCountry).sort(([ca,a],[cb,b]) => {
+    const ci = contOrderA.indexOf(a.cont) - contOrderA.indexOf(b.cont); if(ci) return ci;
+    const ri = a.reg.localeCompare(b.reg); if(ri) return ri;
+    return ca.localeCompare(cb);
+  });
+
+  const newSlots = [];
+  const usedInAuto = new Set(inSlots);
+
+  // Pass 1: form complete teams from same/nearby countries
+  let currentSlot = [];
+  sortedCountries.forEach(([country, {riders, cont, reg}]) => {
+    riders.forEach(name => {
+      if(usedInAuto.has(name)) return;
+      currentSlot.push(name);
+      usedInAuto.add(name);
+      if(currentSlot.length === 7){
+        newSlots.push(currentSlot);
+        currentSlot = [];
+      }
+    });
+  });
+
+  // Pass 2: any partial slot with riders gets added if non-empty
+  if(currentSlot.length > 0) newSlots.push(currentSlot);
+
+  updateTeamSlots = [...updateTeamSlots, ...newSlots];
+  selectedUpdateRider = null;
+  renderUpdates();
+}
+
+// ── CONFIRM TEAMS ───────────────────────────────────────────────
+function confirmUpdateTeams(){
+  const fullSlots = updateTeamSlots.filter(s => s.length === 7);
+  if(!fullSlots.length){ alert('No complete team slots (7 riders each) to confirm.'); return; }
+
+  // Remove these riders from pending pool
+  const toRemove = new Set(fullSlots.flatMap(s => s));
+  pendingPool = pendingPool.filter(name => !toRemove.has(name));
+
+  // Add to knownRiders
+  toRemove.forEach(name => knownRiders.add(name));
+
+  // Create team objects and resolve identities
+  fullSlots.forEach(slot => {
+    const team = { id: teams.length, name: '', country: '', riders: slot };
+    teams.push(team);
+  });
+
+  // Remove confirmed from updateTeamSlots, keep incomplete
+  updateTeamSlots = updateTeamSlots.filter(s => s.length !== 7);
+
+  resolveTeamIdentities();
+  buildRiderTeamMap();
+  populateCountryFilters();
+  saveTeams();
+  savePendingPool();
+  saveKnownRiders();
+  renderTeams();
+  renderRaceTeamPicker();
+
+  const msg = fullSlots.length + ' team' + (fullSlots.length!==1?'s':'') + ' added! ' +
+    (pendingPool.length > 0 ? pendingPool.length + ' riders still pending.' : 'Pending pool is empty.');
+
+  const pill = document.getElementById('updates-pending-pill');
+  if(pill){ pill.textContent = msg; setTimeout(()=>renderUpdates(), 3000); }
+  else renderUpdates();
+
+  document.getElementById('nav-teams-count').textContent = teams.length;
+}
+
+
 function updatePoolStatus(){
   document.getElementById('ps-native-count').textContent=nativePool.length||'—';
   document.getElementById('ps-draft-count').textContent=draftPool.length||'—';
@@ -2042,7 +2393,7 @@ function renderDraftTeams(){
 }
 
 
-const TABS=['database','teams','nativeFA','draft','freeagents','race','results'];
+const TABS=['database','teams','nativeFA','updates','draft','freeagents','race','results'];
 function showTab(tab){
   document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
@@ -2053,6 +2404,7 @@ function showTab(tab){
   if(tab==='nativeFA'){renderNativeFA();}
   if(tab==='draft'){renderDraftUI();}
   if(tab==='freeagents'){renderFreeAgents();}
+  if(tab==='updates'){renderUpdates();}
 }
 
 function renderFreeAgents(){
