@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v4.6</title>
+<title>CycleSim v4.8</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -203,6 +203,11 @@ tbody td{padding:6px 10px}
 .nfa-team-row{display:flex;align-items:center;gap:6px;padding:7px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
 .nfa-team-row:hover{background:rgba(245,196,0,.06)}
 
+
+.cal-race-row{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.cal-race-row:hover{background:var(--surface2)}
+.cal-race-row.active{background:rgba(245,196,0,.08);border-left:2px solid var(--accent)}
+
 /* ── MODAL ───────────────────────────────────────── */
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:100;align-items:center;justify-content:center}
 .modal-bg.open{display:flex}
@@ -220,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v4.6</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v4.8</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -230,6 +235,7 @@ tbody td{padding:6px 10px}
     <button class="nav-btn" onclick="showTab('freeagents')">Free Agents <span class="nav-badge" id="nav-fa-count" style="background:var(--accent)">—</span></button>
     <button class="nav-btn" onclick="showTab('race')">Race Builder</button>
     <button class="nav-btn" onclick="showTab('results')">Results</button>
+    <button class="nav-btn" id="nav-btn-calendar" onclick="showTab('calendar')" style="display:none">Calendar <span class="nav-badge" id="nav-calendar-count" style="background:var(--blue)">—</span></button>
   </nav>
 </header>
 
@@ -507,6 +513,35 @@ tbody td{padding:6px 10px}
   </div>
 </div>
 
+<!-- ═══ CALENDAR ══════════════════════════════════════════════ -->
+<div id="tab-calendar" class="tab-content">
+  <div class="toolbar">
+    <button class="btn btn-accent" onclick="generateCalendar()" id="btn-gen-calendar">⚡ Generate Calendar</button>
+    <input type="text" class="search-input" id="cal-search" placeholder="Search races…" oninput="renderCalendar()" style="max-width:200px">
+    <select class="form-select" id="cal-filter" onchange="calFilter=this.value;renderCalendar()">
+      <option value="all">All races</option>
+      <option value="grand_tour">Grand Tours</option>
+      <option value="monument">Monuments</option>
+      <option value="national_tour">National Tours</option>
+      <option value="city_classic">City Classics</option>
+      <option value="city_tour">City Tours</option>
+    </select>
+    <span class="pill" id="cal-count-pill">—</span>
+  </div>
+  <div style="display:grid;grid-template-columns:340px 1fr;gap:10px;height:calc(100vh - 110px)">
+    <div style="display:flex;flex-direction:column;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">
+      <div style="padding:6px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);flex-shrink:0">Race List</div>
+      <div id="cal-race-list" style="flex:1;overflow-y:auto">
+        <div class="empty-state" style="padding:40px"><div class="empty-icon">📅</div><div>Click <strong>Generate Calendar</strong> to build the full season.</div></div>
+      </div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)" id="cal-race-detail">
+      <div class="empty-state" style="margin-top:60px"><div class="empty-icon">🏆</div><div>Select a race to see details and simulate</div></div>
+    </div>
+  </div>
+</div>
+
+
 <!-- ═══ ADD RIDER MODAL ══════════════════════════════════════ -->
 <div class="modal-bg" id="add-modal">
   <div class="modal">
@@ -533,7 +568,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '4.6';
+const CACHE_VERSION = '4.8';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -791,6 +826,7 @@ async function loadData() {
     loadSavedTeams();
     loadPendingPool();
     detectNewRiders();
+    loadCalendar();
   } catch(e) {
     document.getElementById('db-wrap').innerHTML =
       `<div class="loading-state" style="color:var(--red)">Failed to load rider database.<br><small style="color:var(--muted)">${e.message}</small><br><br><button class="btn btn-ghost btn-sm" onclick="loadData()">↺ Retry</button></div>`;
@@ -1837,6 +1873,292 @@ function confirmUpdateTeams(){
 }
 
 
+// ═══════════════════════════════════════════════════════════════
+// CALENDAR SYSTEM
+// ═══════════════════════════════════════════════════════════════
+
+let calendar = [];          // all generated races
+let calFilter = 'all';      // current filter
+let calSelectedRace = null; // race being viewed/simulated
+
+// Country terrain profiles — weights for [FLA, MTN, MM, HIL, TTR, COB]
+const TERRAIN_PROFILE = {
+  // Flat countries
+  'Netherlands':  {FLA:.5,HIL:.2,TTR:.15,COB:.15},
+  'Belgium':      {FLA:.3,HIL:.2,COB:.3,TTR:.1,MM:.1},
+  'Denmark':      {FLA:.5,HIL:.25,TTR:.2,COB:.05},
+  'Luxembourg':   {FLA:.2,HIL:.4,MM:.25,TTR:.15},
+  'Germany':      {FLA:.3,HIL:.3,MM:.2,TTR:.15,MTN:.05},
+  'United Kingdom':{FLA:.35,HIL:.35,COB:.1,TTR:.2},
+  'Ireland':      {FLA:.3,HIL:.4,MM:.2,TTR:.1},
+  // Mountain countries
+  'Colombia':     {MTN:.4,MM:.35,HIL:.15,TTR:.1},
+  'Ecuador':      {MTN:.45,MM:.3,HIL:.15,TTR:.1},
+  'Bolivia':      {MTN:.5,MM:.3,HIL:.1,TTR:.1},
+  'Switzerland':  {MTN:.35,MM:.3,HIL:.2,TTR:.15},
+  'Austria':      {MTN:.35,MM:.3,HIL:.2,TTR:.15},
+  'Slovenia':     {MTN:.3,MM:.35,HIL:.2,TTR:.15},
+  'Kazakhstan':   {FLA:.3,HIL:.2,MM:.3,MTN:.1,TTR:.1},
+  // Mixed
+  'France':       {FLA:.25,HIL:.2,MM:.2,MTN:.2,TTR:.15},
+  'Italy':        {HIL:.25,MM:.25,MTN:.2,FLA:.15,TTR:.15},
+  'Spain':        {HIL:.25,MM:.25,MTN:.2,FLA:.2,TTR:.1},
+  'Portugal':     {HIL:.3,MM:.25,FLA:.25,TTR:.2},
+  'Norway':       {MM:.3,MTN:.2,HIL:.25,FLA:.15,TTR:.1},
+  'Sweden':       {FLA:.35,HIL:.3,MM:.2,TTR:.15},
+  'Australia':    {FLA:.3,HIL:.3,MM:.2,TTR:.2},
+  'United States':{FLA:.3,HIL:.25,MM:.2,MTN:.1,TTR:.15},
+  'Canada':       {FLA:.3,HIL:.25,MM:.2,MTN:.1,TTR:.15},
+};
+const DEFAULT_PROFILE = {FLA:.3,HIL:.25,MM:.2,MTN:.1,TTR:.15};
+
+function getTerrainProfile(country){
+  return TERRAIN_PROFILE[country] || DEFAULT_PROFILE;
+}
+
+function weightedTerrain(profile){
+  const entries = Object.entries(profile);
+  const total = entries.reduce((s,[,w])=>s+w,0);
+  let r = Math.random()*total;
+  for(const [t,w] of entries){ r-=w; if(r<=0) return t; }
+  return entries[entries.length-1][0];
+}
+
+function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function randDist(terrain){
+  const dists = {FLA:[180,240],MTN:[140,190],MM:[150,200],HIL:[160,210],TTR:[20,55],PRL:[5,12],COB:[200,280]};
+  const [lo,hi]=dists[terrain]||[150,200];
+  return randInt(lo,hi);
+}
+
+// ── GENERATE CALENDAR ───────────────────────────────────────────
+function generateCalendar(){
+  if(!teams.length){ alert('Generate teams first.'); return; }
+  calendar = [];
+  let id = 0;
+
+  // ── 1. GRAND TOURS (fixed)
+  const grandTours = [
+    { name:"Giro d'Italia", country:'Italy', stages: buildGrandTourStages('Italy') },
+    { name:"Tour de France", country:'France', stages: buildGrandTourStages('France') },
+    { name:"Vuelta a España", country:'Spain', stages: buildGrandTourStages('Spain') },
+  ];
+  grandTours.forEach(gt => {
+    calendar.push({ id:id++, type:'grand_tour', name:gt.name, country:gt.country, stages:gt.stages });
+  });
+
+  // ── 2. MONUMENTS (fixed, 1-day)
+  const monuments = [
+    { name:'Milano-San Remo',       country:'Italy',   terrain:'HIL',  distance:298 },
+    { name:'Tour of Flanders',      country:'Belgium', terrain:'COB',  distance:272 },
+    { name:'Paris-Roubaix',         country:'France',  terrain:'COB',  distance:257 },
+    { name:'Liège-Bastogne-Liège',  country:'Belgium', terrain:'MTN',  distance:258 },
+    { name:'Il Giro di Lombardia',  country:'Italy',   terrain:'MTN',  distance:253 },
+  ];
+  monuments.forEach(m => {
+    calendar.push({ id:id++, type:'monument', name:m.name, country:m.country,
+      stages:[{ name:m.name, terrain:m.terrain, distance:m.distance }] });
+  });
+
+  // ── 3. NATIONAL TOURS (one per country with teams, except France/Spain/Italy)
+  const gtCountries = new Set(['France','Spain','Italy']);
+  const countriesWithTeams = [...new Set(teams.map(t=>t.country).filter(c=>c&&c!=='Unassigned'&&c!=='Empty'))];
+
+  countriesWithTeams.filter(c=>!gtCountries.has(c)).forEach(country => {
+    const days = randInt(5,10);
+    const stages = buildTourStages(country, days);
+    calendar.push({ id:id++, type:'national_tour',
+      name: 'Tour de ' + country, country, stages });
+  });
+
+  // ── 4. CITY RACES — one per team city
+  // Half classics (1 day), half tours (3-7 days)
+  const cityRaces = [];
+  teams.forEach(team => {
+    if(!team.name||team.name==='Empty'||!team.country) return;
+    cityRaces.push({ city:team.name, country:team.country });
+  });
+
+  // Deduplicate cities
+  const seenCities = new Set();
+  const uniqueCities = cityRaces.filter(c=>{ if(seenCities.has(c.city)) return false; seenCities.add(c.city); return true; });
+
+  uniqueCities.forEach((c, i) => {
+    if(i % 2 === 0){
+      // Classic (1 day)
+      const profile = getTerrainProfile(c.country);
+      const terrain = weightedTerrain(profile);
+      const dist = randDist(terrain);
+      calendar.push({ id:id++, type:'city_classic',
+        name: 'Gran Premio ' + c.city, country:c.country, city:c.city,
+        stages:[{ name:'Gran Premio '+c.city, terrain, distance:dist }] });
+    } else {
+      // Tour (3-7 days)
+      const days = randInt(3,7);
+      const stages = buildTourStages(c.country, days);
+      calendar.push({ id:id++, type:'city_tour',
+        name: 'Tour de ' + c.city, country:c.country, city:c.city, stages });
+    }
+  });
+
+  saveCalendar();
+  renderCalendar();
+  document.getElementById('nav-btn-calendar').style.display='';
+  document.getElementById('nav-calendar-count').textContent=calendar.length;
+  console.log(`Calendar: ${calendar.length} races generated`);
+}
+
+function buildGrandTourStages(country){
+  const profile = getTerrainProfile(country);
+  const stages = [];
+  // 21 stages: prologue, flat stages, hilly stages, mountain stages, TTs
+  stages.push({ name:'Stage 1 – Prologue', terrain:'PRL', distance:randDist('PRL') });
+  for(let i=2;i<=21;i++){
+    let terrain;
+    if(i<=5 || (i>=10&&i<=12)) terrain='FLA';
+    else if(i===7||i===14) terrain='TTR';
+    else terrain=weightedTerrain(profile);
+    stages.push({ name:'Stage '+i, terrain, distance:randDist(terrain) });
+  }
+  return stages;
+}
+
+function buildTourStages(country, days){
+  const profile = getTerrainProfile(country);
+  const stages = [];
+  for(let i=1;i<=days;i++){
+    let terrain;
+    if(i===1 && days>=5) terrain = Math.random()<.5?'PRL':'FLA';
+    else if(i===days && days>=4) terrain = Math.random()<.4?'TTR':weightedTerrain(profile);
+    else terrain = weightedTerrain(profile);
+    stages.push({ name:'Stage '+i, terrain, distance:randDist(terrain) });
+  }
+  return stages;
+}
+
+// ── SAVE / LOAD ─────────────────────────────────────────────────
+function saveCalendar(){
+  try{ localStorage.setItem('cyclesim_calendar', JSON.stringify(calendar)); }catch(e){}
+}
+function loadCalendar(){
+  try{
+    const s = localStorage.getItem('cyclesim_calendar');
+    if(s){ calendar=JSON.parse(s); if(calendar.length){ document.getElementById('nav-btn-calendar').style.display=''; document.getElementById('nav-calendar-count').textContent=calendar.length; } }
+  }catch(e){}
+}
+
+// ── RENDER CALENDAR ─────────────────────────────────────────────
+const RACE_TYPE_LABEL = {
+  grand_tour:'Grand Tour', monument:'Monument',
+  national_tour:'National Tour', city_classic:'Classic', city_tour:'Stage Race'
+};
+const RACE_TYPE_COLOR = {
+  grand_tour:'var(--accent)', monument:'var(--red)',
+  national_tour:'var(--green)', city_classic:'var(--blue)', city_tour:'#c678dd'
+};
+
+function renderCalendar(){
+  const searchEl = document.getElementById('cal-search');
+  const q = (searchEl ? searchEl.value : '').toLowerCase();
+  let races = calendar;
+  if(calFilter !== 'all') races = races.filter(r=>r.type===calFilter);
+  if(q) races = races.filter(r=>r.name.toLowerCase().includes(q)||r.country.toLowerCase().includes(q));
+
+  // Sort: grand tours first, monuments, then national, then city
+  const order = {grand_tour:0,monument:1,national_tour:2,city_classic:3,city_tour:4};
+  races = [...races].sort((a,b)=>(order[a.type]-order[b.type])||a.name.localeCompare(b.name));
+
+  document.getElementById('cal-count-pill').textContent = races.length + ' races';
+
+  // Group by type
+  const groups = {};
+  races.forEach(r=>{ if(!groups[r.type]) groups[r.type]=[]; groups[r.type].push(r); });
+
+  let html = '';
+  Object.entries(order).forEach(([type])=>{
+    if(!groups[type]) return;
+    const label = RACE_TYPE_LABEL[type];
+    const color = RACE_TYPE_COLOR[type];
+    html += `<div style="margin-bottom:4px;padding:6px 12px;font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${color};background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1">${label} <span style="opacity:.6">(${groups[type].length})</span></div>`;
+    groups[type].forEach(race=>{
+      const stages = race.stages.length;
+      const terrainBadges = race.stages.slice(0,3).map(s=>`<span class="tbadge tbadge-${s.terrain}" style="font-size:.65rem;padding:1px 5px">${s.terrain}</span>`).join('');
+      html += `<div class="cal-race-row" data-race-id="${race.id}" onclick="openRace(${race.id})">
+        <span style="width:18px;height:18px;border-radius:3px;background:${color};opacity:.8;flex-shrink:0"></span>
+        <span style="flex:1">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:.92rem;font-weight:700;text-transform:uppercase;color:var(--text)">${race.name}</span>
+          <span style="font-size:.75rem;color:var(--muted);margin-left:8px">${flagImg(race.country,10)} ${race.country}</span>
+        </span>
+        <span style="display:flex;gap:3px;align-items:center">${terrainBadges}</span>
+        <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted);width:40px;text-align:right">${stages===1?'1 day':stages+' st.'}</span>
+      </div>`;
+    });
+  });
+
+  document.getElementById('cal-race-list').innerHTML = html || '<div class="empty-state" style="padding:40px">No races match.</div>';
+
+  // Race detail panel
+  renderRaceDetail();
+}
+
+function openRace(id){
+  calSelectedRace = calendar.find(r=>r.id===id)||null;
+  renderRaceDetail();
+}
+
+function renderRaceDetail(){
+  const el = document.getElementById('cal-race-detail');
+  if(!calSelectedRace){ el.innerHTML = '<div class="empty-state" style="margin-top:60px"><div class="empty-icon">🏆</div><div>Select a race to see details and simulate</div></div>'; return; }
+  const race = calSelectedRace;
+  const color = RACE_TYPE_COLOR[race.type];
+
+  const stageRows = race.stages.map((s,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid var(--border);font-size:.82rem">
+      <span style="color:var(--muted);font-size:.72rem;width:20px">${i+1}</span>
+      <span class="tbadge tbadge-${s.terrain}" style="font-size:.68rem">${s.terrain}</span>
+      <span style="flex:1;color:var(--text)">${s.name}</span>
+      <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">${s.distance}km</span>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px">
+      <div style="flex:1">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.4rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${color}">${race.name}</div>
+        <div style="font-size:.8rem;color:var(--muted);margin-top:2px">${flagImg(race.country,11)} ${race.country} · ${RACE_TYPE_LABEL[race.type]} · ${race.stages.length===1?'1-day classic':race.stages.length+' stages'}</div>
+      </div>
+      <button class="btn btn-accent" onclick="loadRaceIntoBuilder(${race.id})">📋 Race Builder</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;height:calc(100% - 72px)">
+      <div style="border-right:1px solid var(--border);overflow-y:auto">
+        <div style="padding:5px 12px;font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border)">Stages (${race.stages.length})</div>
+        ${stageRows}
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px">
+        <div style="color:var(--muted);font-size:.85rem;text-align:center">Load this race into the Race Builder to select teams and simulate.</div>
+        <button class="btn btn-accent" onclick="loadRaceIntoBuilder(${race.id})">📋 Load into Race Builder</button>
+      </div>
+    </div>`;
+}
+
+function simulateCalendarRace(raceId){ loadRaceIntoBuilder(raceId); }
+
+function loadRaceIntoBuilder(raceId){
+  const race = calendar.find(r=>r.id===raceId);
+  if(!race) return;
+  // Load stages into Race Builder
+  stageIdSeq = 0;
+  stages = race.stages.map((s,i)=>({id:stageIdSeq++, name:s.name, terrain:s.terrain, distance:s.distance}));
+  // Set race name if field exists
+  const nameEl = document.getElementById('race-name');
+  if(nameEl) nameEl.value = race.name;
+  // Clear team selection so user picks fresh
+  selectedTeams.clear();
+  showTab('race');
+  renderStages();
+  renderRaceTeamPicker();
+}
+
+
 function updatePoolStatus(){
   document.getElementById('ps-native-count').textContent=nativePool.length||'—';
   document.getElementById('ps-draft-count').textContent=draftPool.length||'—';
@@ -2393,7 +2715,7 @@ function renderDraftTeams(){
 }
 
 
-const TABS=['database','teams','nativeFA','updates','draft','freeagents','race','results'];
+const TABS=['database','teams','nativeFA','updates','draft','freeagents','race','results','calendar'];
 function showTab(tab){
   document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
@@ -2405,6 +2727,7 @@ function showTab(tab){
   if(tab==='draft'){renderDraftUI();}
   if(tab==='freeagents'){renderFreeAgents();}
   if(tab==='updates'){renderUpdates();}
+  if(tab==='calendar'){renderCalendar();}
 }
 
 function renderFreeAgents(){
