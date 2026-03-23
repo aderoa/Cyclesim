@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v7.1</title>
+<title>CycleSim v7.3</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.1</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.3</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -238,6 +238,7 @@ tbody td{padding:6px 10px}
     <button class="nav-btn" id="nav-btn-calendar" onclick="showTab('calendar')">Calendar <span class="nav-badge" id="nav-calendar-count" style="background:var(--blue)">—</span></button>
     <button class="nav-btn" onclick="showTab('uci');renderUciRankings()">UCI Ranking</button>
     <button class="nav-btn" onclick="showTab('country')">Countries</button>
+    <button class="nav-btn" id="nav-btn-market" onclick="showTab('market');renderMarket()">💼 Market</button>
   </nav>
 </header>
 
@@ -569,7 +570,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '7.1';
+const CACHE_VERSION = '7.3';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1850,9 +1851,94 @@ function autoFormUpdateTeams(){
 }
 
 // ── CONFIRM TEAMS ───────────────────────────────────────────────
+// ── MID-SEASON RACE INJECTION ────────────────────────────────────
+function injectMidSeasonRaces(newTeams){
+  if(!calendar.length) return; // no calendar yet — will be generated normally
+  const hasSeason = seasonSim && seasonSim.currentDay > 0;
+  const minDay = hasSeason ? seasonSim.currentDay : 0;
+
+  // Max existing race id
+  let nextId = calendar.reduce((m,r)=>Math.max(m,r.id),0) + 1;
+
+  const gtCountries = new Set(['France','Spain','Italy']);
+  const existingCountries = new Set(calendar.filter(r=>r.type==='national_tour').map(r=>r.country));
+  const existingCities = new Set(calendar.filter(r=>r.type==='city_classic'||r.type==='city_tour').map(r=>r.name.replace(/^(GP |Tour de |Gran Premio |Ronde van )/,'')));
+
+  const newRaces = [];
+
+  newTeams.forEach(team=>{
+    const country = team.country;
+    const city = team.name;
+    if(!country || country==='Unassigned') return;
+
+    // National tour for new country (if not GT country and not already there)
+    if(!gtCountries.has(country) && !existingCountries.has(country)){
+      const days = randInt(5,10);
+      const stagesArr = buildTourStages(country, days);
+      const startDay = randInt(minDay+1, Math.max(minDay+2, 348-days));
+      const race = {
+        id: nextId++, type:'national_tour',
+        name:'Tour de '+country, country, stages:stagesArr,
+        startDay
+      };
+      newRaces.push(race);
+      existingCountries.add(country);
+    }
+
+    // City race (classic or stage race)
+    if(!existingCities.has(city)){
+      const isClassic = Math.random()<0.5;
+      if(isClassic){
+        const profile = getTerrainProfile(country);
+        const terrain = weightedTerrain(profile);
+        const dist = randDist(terrain);
+        const startDay = randInt(minDay+1, 348);
+        const race = {
+          id:nextId++, type:'city_classic',
+          name:'GP '+city, country, stages:[{name:'GP '+city, terrain, distance:dist}],
+          startDay
+        };
+        newRaces.push(race);
+      } else {
+        const stageCt = randInt(3,7);
+        const stagesArr = buildTourStages(country, stageCt);
+        const startDay = randInt(minDay+1, Math.max(minDay+2, 348-stageCt));
+        const race = {
+          id:nextId++, type:'city_tour',
+          name:'Tour de '+city, country, stages:stagesArr,
+          startDay
+        };
+        newRaces.push(race);
+      }
+      existingCities.add(city);
+    }
+  });
+
+  if(!newRaces.length) return;
+
+  // Assign categories to new races using existing world teams for ranking
+  assignCategories(newRaces.concat(calendar));
+  // But only update the new races' categories
+  newRaces.forEach(r=>{
+    const existing = calendar.find(c=>c.id===r.id);
+    if(!existing) calendar.push(r);
+  });
+
+  // Re-assign categories globally so rankings stay consistent
+  assignCategories(calendar);
+
+  saveCalendar();
+  renderCalendar();
+
+  const msg = `${newRaces.length} new race${newRaces.length!==1?'s':''} added to calendar${hasSeason?' after day '+seasonSim.currentDay:''}.`;
+  console.log(msg);
+  return newRaces.length;
+}
+
 function confirmUpdateTeams(){
   const fullSlots = updateTeamSlots.filter(s => s.length === 7);
   if(!fullSlots.length){ alert('No complete team slots (7 riders each) to confirm.'); return; }
+  const teamsBefore = teams.length;
 
   // Remove these riders from pending pool
   const toRemove = new Set(fullSlots.flatMap(s => s));
@@ -1887,6 +1973,16 @@ function confirmUpdateTeams(){
   else renderUpdates();
 
   document.getElementById('nav-teams-count').textContent = teams.length;
+  // Inject mid-season races for new teams
+  const newTeams = teams.slice(teamsBefore);
+  if(newTeams.length && calendar.length){
+    const added = injectMidSeasonRaces(newTeams);
+    if(added){
+      const pill2 = document.getElementById('updates-pending-pill');
+      const prev = pill2?.textContent||'';
+      if(pill2) pill2.textContent = prev + ' · ' + added + ' new races added to calendar';
+    }
+  }
 }
 
 
@@ -2891,6 +2987,240 @@ function runNextStage(){
 
 
 
+
+// ═══════════════════════════════════════════════════════════════
+// TRANSFER MARKET
+// ═══════════════════════════════════════════════════════════════
+// market = { riders:[{name, fromTeamId}], pendingSlots:{teamId:[]} }
+// Season pauses when market is open — simulateSeasonDay blocked
+
+let transferMarket = null;
+let marketDragRider = null; // name being dragged
+
+function loadTransferMarket(){
+  try{ const s=localStorage.getItem('cyclesim_market'); if(s) transferMarket=JSON.parse(s); } catch(e){}
+}
+function saveTransferMarket(){
+  if(transferMarket) localStorage.setItem('cyclesim_market', JSON.stringify(transferMarket));
+  else localStorage.removeItem('cyclesim_market');
+}
+
+// Called after every 7th simulated day
+function checkTransferMarket(){
+  if(transferMarket) return; // already open
+  if(!seasonSim) return;
+  const day = seasonSim.currentDay;
+  // Trigger every 7 days: day 7,14,21,...
+  if(day===0 || day%7!==0) return;
+
+  // Riders currently racing in active stage races — exclude them
+  const inRace = new Set();
+  Object.values(seasonSim.activeRaces||{}).forEach(({rs})=>{
+    if(rs && rs.activeRiders) rs.activeRiders.forEach(r=>inRace.add(r.name));
+  });
+
+  // 0.5% of total riders, min 5 max 30
+  const eligible = allRiders.filter(r=>!inRace.has(r.name) && riderTeamMap[r.name]!=null);
+  const count = Math.max(5, Math.min(30, Math.round(allRiders.length * 0.005)));
+  // Pick randomly
+  const picked = [...eligible].sort(()=>Math.random()-0.5).slice(0,count);
+  if(!picked.length) return;
+
+  // Build market
+  const marketRiders = picked.map(r=>({
+    name:r.name,
+    fromTeamId: riderTeamMap[r.name]
+  }));
+
+  // Teams losing riders → need replacements
+  const pendingSlots = {};
+  marketRiders.forEach(({fromTeamId})=>{
+    if(fromTeamId==null) return;
+    if(!pendingSlots[fromTeamId]) pendingSlots[fromTeamId]=[];
+    pendingSlots[fromTeamId].push(null); // one open slot per departing rider
+  });
+
+  transferMarket = { riders:marketRiders, pendingSlots, day };
+  saveTransferMarket();
+  showTransferMarket();
+}
+
+function showTransferMarket(){
+  showTab('market');
+  renderMarket();
+}
+
+function renderMarket(){
+  const wrap = document.getElementById('market-wrap');
+  if(!wrap) return;
+
+  if(!transferMarket){
+    wrap.innerHTML=`<div class="empty-state"><div class="empty-icon">💼</div>
+      <div>No active transfer market. Simulate at least 7 days to trigger the first window.</div></div>`;
+    return;
+  }
+
+  const {riders, pendingSlots} = transferMarket;
+
+  // Which riders haven't been assigned yet
+  const assignedNames = new Set(
+    Object.values(pendingSlots).flatMap(slots=>slots.filter(Boolean))
+  );
+  const unassigned = riders.filter(r=>!assignedNames.has(r.name));
+  const totalSlots = Object.values(pendingSlots).reduce((s,arr)=>s+arr.length,0);
+  const filledSlots = Object.values(pendingSlots).reduce((s,arr)=>s+arr.filter(Boolean).length,0);
+  const allFilled = filledSlots === totalSlots;
+
+  wrap.innerHTML=`
+    <div style="display:grid;grid-template-columns:320px 1fr;gap:12px;height:calc(100vh - 130px)">
+
+      <!-- LEFT: Market riders pool -->
+      <div style="display:flex;flex-direction:column;border:1px solid rgba(245,196,0,.3);border-radius:8px;overflow:hidden;background:var(--surface)">
+        <div style="padding:8px 14px;background:rgba(245,196,0,.08);border-bottom:1px solid rgba(245,196,0,.2);font-family:'Barlow Condensed',sans-serif;font-size:.85rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);display:flex;justify-content:space-between;align-items:center">
+          <span>Transfer Pool</span>
+          <span class="pill" style="color:var(--accent);border-color:rgba(245,196,0,.3);background:rgba(245,196,0,.08)">${unassigned.length} available</span>
+        </div>
+        <div id="market-pool" style="flex:1;overflow-y:auto"
+          ondragover="event.preventDefault()"
+          ondrop="marketDropToPool(event)">
+          ${unassigned.map(mr=>{
+            const r = allRiders.find(x=>x.name===mr.name);
+            const fromTeam = teams.find(t=>t.id===mr.fromTeamId);
+            if(!r) return '';
+            return `<div class="nfa-rider-row" draggable="true"
+              id="mkt-rider-${r.name.replace(/\s/g,'_')}"
+              ondragstart="marketDragStart(event,'${r.name.replace(/'/g,"\\'")}')">
+              <span class="nfa-flag">${flagImg(r.country,12)}</span>
+              <span class="nfa-name">${r.name}</span>
+              <span class="nfa-avg">${r.avg.toFixed(1)}</span>
+              <span style="font-size:.68rem;color:var(--red);font-family:'Barlow Condensed',sans-serif;margin-left:4px">${fromTeam?fromTeam.name:''}</span>
+            </div>`;
+          }).join('')}
+          ${unassigned.length===0?'<div style="padding:20px;text-align:center;color:var(--green);font-size:.82rem">✓ All riders assigned</div>':''}
+        </div>
+      </div>
+
+      <!-- RIGHT: Teams with open slots -->
+      <div style="overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+        ${Object.entries(pendingSlots).map(([teamId, slots])=>{
+          const team = teams.find(t=>t.id===+teamId);
+          if(!team) return '';
+          return `<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">
+            <div style="padding:7px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:'Barlow Condensed',sans-serif;font-size:.88rem;font-weight:700;text-transform:uppercase;display:flex;align-items:center;gap:8px">
+              ${flagImg(team.country,12)}
+              <span style="color:var(--text)">${team.name}</span>
+              <span class="pill" style="font-size:.65rem">${slots.filter(Boolean).length}/${slots.length} filled</span>
+            </div>
+            <div>
+              ${slots.map((assigned,slotIdx)=>assigned
+                ? `<div class="nfa-rider-row" style="background:rgba(62,207,110,.06)"
+                    draggable="true"
+                    ondragstart="marketDragStart(event,'${assigned.replace(/'/g,"\\'")}')">
+                    <span style="font-size:.72rem;color:var(--green)">✓</span>
+                    <span class="nfa-flag">${flagImg(allRiders.find(x=>x.name===assigned)?.country||'',12)}</span>
+                    <span class="nfa-name">${assigned}</span>
+                    <span class="nfa-avg">${allRiders.find(x=>x.name===assigned)?.avg.toFixed(1)||''}</span>
+                    <span style="font-size:.68rem;color:var(--muted);margin-left:auto;cursor:pointer" onclick="marketUnassign('${teamId}',${slotIdx})">✕</span>
+                  </div>`
+                : `<div style="padding:7px 14px;font-size:.75rem;color:var(--muted);font-style:italic;border-top:1px dashed var(--border);background:rgba(245,196,0,.03)"
+                    ondragover="event.preventDefault()"
+                    ondrop="marketDropToSlot(event,'${teamId}',${slotIdx})">
+                    Drop rider here…
+                  </div>`
+              ).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
+      <button class="btn btn-accent" onclick="confirmTransfers()" ${allFilled?'':'disabled'}>
+        ✓ Confirm Transfers & Continue Season
+      </button>
+      ${!allFilled?`<span style="color:var(--muted);font-size:.82rem">${totalSlots-filledSlots} slot${totalSlots-filledSlots!==1?'s':''} still open</span>`:''}
+    </div>`;
+}
+
+function marketDragStart(e, name){
+  marketDragRider = name;
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function marketDropToSlot(e, teamId, slotIdx){
+  e.preventDefault();
+  if(!marketDragRider || !transferMarket) return;
+  const name = marketDragRider;
+  const {riders, pendingSlots} = transferMarket;
+
+  // Must be a market rider
+  if(!riders.some(r=>r.name===name)) return;
+
+  // Remove from any existing slot
+  Object.values(pendingSlots).forEach(slots=>{
+    const i=slots.indexOf(name); if(i>=0) slots[i]=null;
+  });
+
+  // Assign
+  const slots = pendingSlots[teamId];
+  if(slots && slotIdx<slots.length) slots[slotIdx]=name;
+
+  marketDragRider=null;
+  saveTransferMarket();
+  renderMarket();
+}
+
+function marketDropToPool(e){
+  e.preventDefault();
+  if(!marketDragRider || !transferMarket) return;
+  // Remove from any slot
+  Object.values(transferMarket.pendingSlots).forEach(slots=>{
+    const i=slots.indexOf(marketDragRider); if(i>=0) slots[i]=null;
+  });
+  marketDragRider=null;
+  saveTransferMarket();
+  renderMarket();
+}
+
+function marketUnassign(teamId, slotIdx){
+  if(!transferMarket) return;
+  transferMarket.pendingSlots[teamId][slotIdx]=null;
+  saveTransferMarket();
+  renderMarket();
+}
+
+function confirmTransfers(){
+  if(!transferMarket) return;
+  const {riders, pendingSlots} = transferMarket;
+
+  // Remove departing riders from their old teams
+  riders.forEach(({name, fromTeamId})=>{
+    const t=teams.find(x=>x.id===fromTeamId);
+    if(t){ t.riders=t.riders.filter(n=>n!==name); }
+  });
+
+  // Add assigned riders to new teams
+  Object.entries(pendingSlots).forEach(([teamId, slots])=>{
+    const team=teams.find(t=>t.id===+teamId);
+    if(!team) return;
+    slots.filter(Boolean).forEach(name=>{
+      if(!team.riders.includes(name)) team.riders.push(name);
+    });
+  });
+
+  // Rebuild map + save
+  buildRiderTeamMap();
+  saveTeams();
+
+  transferMarket=null;
+  saveTransferMarket();
+
+  showTab('calendar');
+  renderSeasonPanel();
+  renderCalendar();
+}
+
+
 // ═══════════════════════════════════════════════════════════════
 // SEASON SIMULATION
 // ═══════════════════════════════════════════════════════════════
@@ -3017,6 +3347,7 @@ function initSeason(){
 // ── SIMULATE ONE DAY ────────────────────────────────────────────
 function simulateSeasonDay(){
   if(!seasonSim){ alert('Start season first.'); return; }
+  if(transferMarket){ showTransferMarket(); alert('Complete the transfer window before continuing.'); return; }
   if(seasonSim.currentDay > 348){ alert('Season complete!'); return; }
 
   const day = seasonSim.currentDay;
@@ -3076,7 +3407,8 @@ function simulateSeasonDay(){
   seasonSim.currentDay++;
   saveSeasonState();
   saveUciPoints();
-  renderSeasonPanel();
+  checkTransferMarket();
+  if(!transferMarket) renderSeasonPanel();
 }
 
 // ── RENDER SEASON PANEL ─────────────────────────────────────────
@@ -3102,6 +3434,7 @@ function renderSeasonPanel(){
       ${!isComplete?`<button class="btn btn-accent" onclick="simulateSeasonDay()">▶ Simulate Day</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="simulateSeasonWeek()">▶▶ Week</button>
       <span class="pill">${activeCount} race${activeCount!==1?'s':''} in progress</span>
+      ${transferMarket?'<button class="btn btn-accent btn-sm" onclick="showTransferMarket()">💼 Transfer Window Open!</button>':''}
       <button class="btn btn-danger btn-sm" onclick="initSeason()" style="margin-left:auto">↺ Reset</button>
     </div>
     ${renderDayLog()}`;
@@ -3842,8 +4175,20 @@ function esc(s){return s.replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 renderStages();
 loadUciPoints();
   loadSeasonState();
+  loadTransferMarket();
   loadData();
 </script>
+<!-- ═══ TRANSFER MARKET ══════════════════════════════════════════ -->
+<div id="tab-market" class="tab-content">
+  <div class="toolbar">
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">💼 Transfer Market</span>
+    <span id="market-week-label" style="font-size:.82rem;color:var(--muted)">Opens every 7 days during the season</span>
+  </div>
+  <div id="market-wrap">
+    <div class="empty-state"><div class="empty-icon">💼</div><div>No active transfer market.</div></div>
+  </div>
+</div>
+
 <!-- ═══ COUNTRY RANKINGS ════════════════════════════════════════ -->
 <div id="tab-country" class="tab-content">
   <div class="toolbar">
