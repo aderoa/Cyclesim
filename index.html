@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v6.3</title>
+<title>CycleSim v6.4</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v6.3</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v6.4</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -566,7 +566,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '6.3';
+const CACHE_VERSION = '6.4';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2511,10 +2511,9 @@ function simulateStage(riderList, stage, fatigue, gcTimes){
     const result=scored.map((s,i)=>{
       const gap=Math.max(0,(best-s.score)*ttGapPt);
       fatigue[s.rider.name]=(fatigue[s.rider.name]||0)+(dist/100)*0.15;
-      gcTimes[s.rider.name]=(gcTimes[s.rider.name]||0)+gap;
       return{rider:s.rider,position:i+1,gap};
     });
-    return{stage,result,abandoned};
+    return{stage,result,abandoned,breakaway:false};
   }
 
   // ── Road stage parameters
@@ -2611,13 +2610,12 @@ function simulateStage(riderList, stage, fatigue, gcTimes){
     pos+=grp.length;
   });
 
-  // ── Fatigue + GC
-  result.forEach(({rider,position,gap})=>{
+  // ── Fatigue only (GC accumulated externally from stage results)
+  result.forEach(({rider,position})=>{
     fatigue[rider.name]=(fatigue[rider.name]||0)+(dist/100)*(position/active.length)*0.12;
-    gcTimes[rider.name]=(gcTimes[rider.name]||0)+gap;
   });
 
-  return{stage,result,abandoned};
+  return{stage,result,abandoned,breakaway:breakawayWon};
 }
 
 
@@ -2787,9 +2785,17 @@ function runNextStage(){
   rs.activeRiders=rs.activeRiders.filter(r=>!abandonedNames.has(r.name));
   rs.currentStageIndex++;
 
+  // GC = sum of stage gaps from actual results (original riders, not varied)
+  const gcAccum={};
+  rs.riderList.forEach(r=>gcAccum[r.name]=0);
+  rs.stageResults.forEach(({result})=>{
+    result.forEach(({rider,gap})=>{
+      if(gcAccum[rider.name]!=null) gcAccum[rider.name]+=gap;
+    });
+  });
   const gcResult=rs.riderList
-    .filter(r=>rs.fatigue[r.name]!==null && rs.gcTimes[r.name]!==undefined)
-    .map(r=>({rider:r,totalGap:rs.gcTimes[r.name]}))
+    .filter(r=>rs.fatigue[r.name]!==null)
+    .map(r=>({rider:r,totalGap:gcAccum[r.name]??0}))
     .sort((a,b)=>a.totalGap-b.totalGap)
     .map((r,i)=>({...r,position:i+1}));
 
@@ -2801,7 +2807,7 @@ function runNextStage(){
     totalStages:rs.totalStages,
     complete:rs.currentStageIndex>=stages.length
   };
-  activeResultTab=rs.stageResults.length>1?'gc':'stage-0';
+  activeResultTab='stage-'+(rs.stageResults.length-1);
   showTab('results');
   renderResults();
 }
@@ -2847,7 +2853,7 @@ function renderResults(){
   const tabsHtml=[
     ...stageResults.map((sr,i)=>`
       <button class="stage-tab-btn ${activeResultTab===`stage-${i}`?'active':''}" onclick="switchResultTab('stage-${i}')">
-        ${T_ICONS[sr.stage.terrain]} ${sr.stage.name}
+        ${T_ICONS[sr.stage.terrain]} ${sr.stage.name}${sr.breakaway?' 🏇':''}
         <span style="font-size:.68rem;opacity:.55;margin-left:3px">${sr.stage.distance}km</span>
       </button>`),
     isMulti?`<button class="stage-tab-btn gc-tab ${activeResultTab==='gc'?'active':''}" onclick="switchResultTab('gc')">🟡 General Classification</button>`:''
@@ -2867,15 +2873,18 @@ function renderResults(){
 }
 
 function buildResultRow(pos,rider,gap,isWinner){
-  const teamName=getTeamName(rider.name);
+  const teamId=riderTeamMap[rider.name];
+  const team=teamId!=null?teams.find(t=>t.id===teamId):null;
+  const teamCell=team
+    ?flagImg(team.country,11)+' <span class="rteam">'+team.name+'</span>'
+    :'<span style="color:var(--muted)">—</span>';
   const gapCell = isWinner ? '<span class="rgap-winner">— WINNER —</span>'
     : gap<=0 ? '<span style="color:var(--muted);font-size:.78rem">s.t.</span>'
     : fmtGap(gap);
   return`<tr>
     <td>${posLabel(pos)}</td>
     <td class="rname">${flagImg(rider.country,12)} ${rider.name}</td>
-    <td class="rcountry">${rider.country}</td>
-    <td class="rteam">${teamName}</td>
+    <td class="rteam-cell">${teamCell}</td>
     <td class="ravg">${rider.avg.toFixed(1)}</td>
     <td>${gapCell}</td>
   </tr>`;
@@ -2887,7 +2896,7 @@ function renderResultTable(rows,subtitle,abandoned){
       <table class="result-table">
         <thead><tr>
           <th style="width:48px;text-align:center">#</th>
-          <th>Rider</th><th>Country</th><th>Team</th><th>OVR</th><th>Gap</th>
+          <th>Rider</th><th>Team</th><th>OVR</th><th>Gap</th>
         </tr></thead>
         <tbody>${rows.join('')}</tbody>
       </table>
