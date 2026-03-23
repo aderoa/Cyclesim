@@ -504,8 +504,9 @@ tbody td{padding:6px 10px}
       <div class="results-meta" id="res-race-meta">Set up a race in Race Builder, then simulate.</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn btn-ghost btn-sm" id="rerun-btn" onclick="simulateRace()" style="display:none">↺ Re-run</button>
-      <button class="btn btn-accent" onclick="simulateRace()">🎲 Simulate Race</button>
+      <button class="btn btn-ghost btn-sm" id="rerun-btn" onclick="simulateRace()" style="display:none">↺ Restart</button>
+      <button class="btn btn-accent" id="next-stage-btn" onclick="simulateNextStage()" style="display:none">▶ Next Stage</button>
+      <button class="btn btn-accent" onclick="simulateRace()">🎲 Simulate</button>
     </div>
   </div>
   <div id="stage-tabs" class="stage-tabs"></div>
@@ -1973,6 +1974,43 @@ function assignRaceDates(cal){
   });
 }
 
+// ── UCI CATEGORY ASSIGNMENT ──────────────────────────────────────
+function assignCategories(cal){
+  const countryTeamCount={};
+  teams.forEach(t=>{ if(t.country) countryTeamCount[t.country]=(countryTeamCount[t.country]||0)+1; });
+
+  const natTours=cal.filter(r=>r.type==='national_tour')
+    .sort((a,b)=>(countryTeamCount[b.country]||0)-(countryTeamCount[a.country]||0));
+  const cityTours=cal.filter(r=>r.type==='city_tour')
+    .sort((a,b)=>(countryTeamCount[b.country]||0)-(countryTeamCount[a.country]||0));
+  const cityClassics=cal.filter(r=>r.type==='city_classic')
+    .sort((a,b)=>(countryTeamCount[b.country]||0)-(countryTeamCount[a.country]||0));
+
+  natTours.slice(0,10).forEach(r=>r.category='2.UWT');
+  cityTours.slice(0,5).forEach(r=>r.category='2.UWT');
+  natTours.slice(10,40).forEach(r=>r.category='2.HC');
+  cityTours.slice(5,35).forEach(r=>r.category='2.HC');
+  natTours.slice(40).forEach(r=>r.category='2.1');
+  cityTours.slice(35,235).forEach(r=>r.category='2.1');
+  cityTours.slice(235).forEach(r=>r.category='2.2');
+
+  cityClassics.slice(0,10).forEach(r=>r.category='1.UWT');
+  cityClassics.slice(10,40).forEach(r=>r.category='1.HC');
+  cityClassics.slice(40,240).forEach(r=>r.category='1.1');
+  cityClassics.slice(240).forEach(r=>r.category='1.2');
+
+  cal.filter(r=>r.type==='monument').forEach(r=>r.category='monument');
+  cal.filter(r=>r.name==="Tour de France").forEach(r=>r.category='GT.A');
+  cal.filter(r=>r.name==="Giro d'Italia"||r.name==="Vuelta a España").forEach(r=>r.category='GT.B');
+}
+
+const UCI_CAT_COLOR={
+  'GT.A':'#ffd700','GT.B':'#ffb700',
+  '2.UWT':'#4d9fff','2.HC':'#7bc0ff','2.1':'#aad8ff','2.2':'#cce8ff',
+  '1.UWT':'#ff6b6b','1.HC':'#ff9b9b','1.1':'#ffbfbf','1.2':'#ffdede',
+  'monument':'#e84040'
+};
+
 function generateCalendar(){
   if(!teams.length){ alert('Generate teams first — go to the Teams tab and complete pool generation.'); return; }
   if(calendar.length && !confirm('Regenerate the full calendar? This will replace the current one.')) return;
@@ -2043,6 +2081,7 @@ function generateCalendar(){
     }
   });
 
+  assignCategories(calendar);
   assignRaceDates(calendar);
   saveCalendar();
   renderCalendar();
@@ -2092,7 +2131,7 @@ function renderCalendar(){
     const color = RACE_TYPE_COLOR[race.type]||'var(--muted)';
     const terrainBadges = race.stages.slice(0,3).map(s=>`<span class="tbadge tbadge-${s.terrain}" style="font-size:.65rem;padding:1px 5px">${s.terrain}</span>`).join('');
     html += `<div class="cal-race-row" data-race-id="${race.id}" onclick="openRace(${race.id})">
-        <span style="width:18px;height:18px;border-radius:3px;background:${color};opacity:.8;flex-shrink:0"></span>
+        <span style="min-width:46px;padding:1px 5px;border-radius:3px;background:${UCI_CAT_COLOR[race.category]||color};font-family:'Barlow Condensed',sans-serif;font-size:.65rem;font-weight:800;color:#000;text-align:center;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${race.category||''}</span>
         <span style="flex:1">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.92rem;font-weight:700;text-transform:uppercase;color:var(--text)">${race.name}</span>
           <span style="font-size:.75rem;color:var(--muted);margin-left:8px">${flagImg(race.country,10)} ${race.country}</span>
@@ -2132,7 +2171,7 @@ function renderRaceDetail(){
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px">
       <div style="flex:1">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.4rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${color}">${race.name}</div>
-        <div style="font-size:.8rem;color:var(--muted);margin-top:2px">${flagImg(race.country,11)} ${race.country} &nbsp;·&nbsp; ${RACE_TYPE_LABEL[race.type]} &nbsp;·&nbsp; ${race.stages.length===1?'1-day classic':race.stages.length+' stages'}${race.startDay!=null ? ' &nbsp;·&nbsp; <span style="color:var(--blue)">'+raceDateStr(race)+'</span>' : ''}</div>
+        <div style="font-size:.8rem;color:var(--muted);margin-top:2px">${flagImg(race.country,11)} ${race.country} &nbsp;·&nbsp; ${RACE_TYPE_LABEL[race.type]} &nbsp;·&nbsp; ${race.stages.length===1?'1-day classic':race.stages.length+' stages'}${race.category?' &nbsp;·&nbsp; <b>'+race.category+'</b>':''}${race.startDay!=null ? ' &nbsp;·&nbsp; <span style="color:var(--blue)">'+raceDateStr(race)+'</span>' : ''}</div>
       </div>
       <button class="btn btn-accent" onclick="loadRaceIntoBuilder(${race.id})">📋 Race Builder</button>
     </div>
@@ -2511,7 +2550,13 @@ function simulateStage(riderList, stage, fatigue, gcTimes){
       if(gapFromPrev > groupW){
         // New group
         groups.push({gapSeconds: groupGap, riders: [...curGroup]});
-        groupGap = baseGapSeconds + dropFromLeader * secPerPt;
+        // Bottom riders lose more time on climbs
+        const rankSoFar = groups.reduce((s,g)=>s+g.riders.length,0)+curGroup.length;
+        const pct = rankSoFar / (riderList.length||100);
+        const mult = (terrain==='MTN'||terrain==='MM'||terrain==='HIL')
+          ? (pct<0.3?1 : pct<0.7?1+(pct-0.3)*2 : 1+(pct-0.3)*4)
+          : 1;
+        groupGap = baseGapSeconds + dropFromLeader * secPerPt * mult;
         curGroup = [rider];
       } else {
         curGroup.push(rider);
@@ -2666,6 +2711,31 @@ function buildTourStages(country, days){
 }
 
 // ── MAIN SIMULATE RACE ──────────────────────────────────────────
+
+// ── Race-level state ─────────────────────────────────────────────
+let raceState = null;
+
+function makeVariance(riders, pct){
+  const v={};
+  const attrs=['FLA','MTN','MM','HIL','TTR','PRL','COB','SPR','ACC','DHI','ATT','STA','RES','REC'];
+  riders.forEach(r=>{
+    v[r.name]={};
+    attrs.forEach(a=>{ v[r.name][a]=(Math.random()-0.5)*2*pct; });
+  });
+  return v;
+}
+
+function applyVariance(rider, rv, sv){
+  const out={...rider};
+  const attrs=['FLA','MTN','MM','HIL','TTR','PRL','COB','SPR','ACC','DHI','ATT','STA','RES','REC'];
+  attrs.forEach(a=>{
+    if(out[a]==null) return;
+    out[a]=Math.max(40,Math.min(99, out[a]*(1+(rv[rider.name]?.[a]||0)+(sv?.[rider.name]?.[a]||0))));
+  });
+  return out;
+}
+
+// Start race: first stage only
 function simulateRace(){
   const raceName=document.getElementById('race-name').value.trim()||'Custom Race';
   if(!stages.length){alert('Add at least one stage first.');return;}
@@ -2675,38 +2745,60 @@ function simulateRace(){
   for(const id of selectedTeams){
     const team=teams.find(t=>t.id===id);
     if(!team) continue;
-    team.riders.forEach(n=>{
-      const r=allRiders.find(x=>x.name===n);
-      if(r) riderList.push({...r}); // copy to avoid mutation
-    });
+    team.riders.forEach(n=>{const r=allRiders.find(x=>x.name===n);if(r)riderList.push({...r});});
   }
   if(riderList.length<2){alert('Need at least 2 riders.');return;}
 
-  const fatigue={};
-  riderList.forEach(r=>fatigue[r.name]=0);
-  const gcTimes={};
-  riderList.forEach(r=>gcTimes[r.name]=0);
+  raceState={
+    raceName, riderList,
+    fatigue: Object.fromEntries(riderList.map(r=>[r.name,0])),
+    gcTimes: Object.fromEntries(riderList.map(r=>[r.name,0])),
+    stageResults:[], allAbandoned:[],
+    activeRiders:[...riderList],
+    currentStageIndex:0,
+    raceVariance: makeVariance(riderList, 0.10),
+    totalStages: stages.length
+  };
+  runNextStage();
+}
 
-  const stageResults=[];
-  let activeRiders=[...riderList];
-  const allAbandoned=[];
+// Continue race: simulate next stage
+function simulateNextStage(){
+  if(!raceState){simulateRace();return;}
+  if(raceState.currentStageIndex>=stages.length){alert('Race complete!');return;}
+  runNextStage();
+}
 
-  for(const stage of stages){
-    const res=simulateStage(activeRiders, stage, fatigue, gcTimes);
-    stageResults.push(res);
-    // Remove abandoned from active list
-    res.abandoned.forEach(r=>{allAbandoned.push({rider:r,stage:stage.name});});
-    activeRiders=activeRiders.filter(r=>fatigue[r.name]!==null);
-  }
+function runNextStage(){
+  const rs=raceState;
+  const stage=stages[rs.currentStageIndex];
 
-  // GC: only finishers
-  const gcResult=[...activeRiders]
-    .map(r=>({rider:r,totalGap:gcTimes[r.name]}))
+  // Stage-level variance (±10% on top of race variance)
+  const stageVariance=makeVariance(rs.activeRiders, 0.10);
+  const variedRiders=rs.activeRiders.map(r=>applyVariance(r, rs.raceVariance, stageVariance));
+
+  const res=simulateStage(variedRiders, stage, rs.fatigue, rs.gcTimes);
+  rs.stageResults.push(res);
+  const abandonedNames=new Set(res.abandoned.map(r=>r.name));
+  res.abandoned.forEach(r=>rs.allAbandoned.push({rider:r,stage:stage.name}));
+  rs.activeRiders=rs.activeRiders.filter(r=>!abandonedNames.has(r.name));
+  rs.currentStageIndex++;
+
+  const gcResult=rs.riderList
+    .filter(r=>rs.fatigue[r.name]!==null && rs.gcTimes[r.name]!==undefined)
+    .map(r=>({rider:r,totalGap:rs.gcTimes[r.name]}))
     .sort((a,b)=>a.totalGap-b.totalGap)
     .map((r,i)=>({...r,position:i+1}));
 
-  lastResults={raceName,stageResults,gcResult,riderCount:riderList.length,teamCount:selectedTeams.size,abandoned:allAbandoned};
-  activeResultTab=stages.length>1?'gc':'stage-0';
+  lastResults={
+    raceName:rs.raceName, stageResults:rs.stageResults, gcResult,
+    riderCount:rs.riderList.length, teamCount:selectedTeams.size,
+    abandoned:rs.allAbandoned,
+    currentStage:rs.currentStageIndex,
+    totalStages:rs.totalStages,
+    complete:rs.currentStageIndex>=stages.length
+  };
+  activeResultTab=rs.stageResults.length>1?'gc':'stage-0';
   showTab('results');
   renderResults();
 }
@@ -2738,10 +2830,15 @@ function getTeamName(riderName){
 
 function renderResults(){
   if(!lastResults) return;
-  const{raceName,stageResults,gcResult,riderCount,teamCount,abandoned=[]}=lastResults;
+  const{raceName,stageResults,gcResult,riderCount,teamCount,abandoned=[],currentStage,totalStages,complete}=lastResults;
+  const nextBtn=document.getElementById('next-stage-btn');
+  const rerunBtn=document.getElementById('rerun-btn');
+  if(nextBtn) nextBtn.style.display=(totalStages>1&&!complete)?'':'none';
+  if(nextBtn&&totalStages>1&&!complete) nextBtn.textContent='▶ Stage '+(currentStage+1)+' of '+totalStages;
+  if(rerunBtn) rerunBtn.style.display='';
   const isMulti=stageResults.length>1;
   document.getElementById('res-race-name').textContent=raceName;
-  document.getElementById('res-race-meta').textContent=`${stageResults.length} stage${stageResults.length!==1?'s':''} · ${teamCount} teams · ${riderCount} riders`;
+  document.getElementById('res-race-meta').textContent=`Stage ${currentStage||stageResults.length} of ${totalStages||stageResults.length} · ${teamCount} teams · ${riderCount} riders${complete?' · ✓ Finished':''}`;
   document.getElementById('rerun-btn').style.display='inline-flex';
 
   const tabsHtml=[
