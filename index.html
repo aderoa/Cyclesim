@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v7.0</title>
+<title>CycleSim v7.1</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.0</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.1</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -237,6 +237,7 @@ tbody td{padding:6px 10px}
     <button class="nav-btn" onclick="showTab('results')">Results</button>
     <button class="nav-btn" id="nav-btn-calendar" onclick="showTab('calendar')">Calendar <span class="nav-badge" id="nav-calendar-count" style="background:var(--blue)">—</span></button>
     <button class="nav-btn" onclick="showTab('uci');renderUciRankings()">UCI Ranking</button>
+    <button class="nav-btn" onclick="showTab('country')">Countries</button>
   </nav>
 </header>
 
@@ -530,7 +531,8 @@ tbody td{padding:6px 10px}
   <div style="display:grid;grid-template-columns:340px 1fr;gap:10px;height:calc(100vh - 110px)">
     <div style="display:flex;flex-direction:column;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">
       <div style="padding:6px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);flex-shrink:0">Race List</div>
-      <div id="cal-race-list" style="flex:1;overflow-y:auto">
+      <div id="season-panel" style="border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:10px"></div>
+  <div id="cal-race-list" style="flex:1;overflow-y:auto">
         <div class="empty-state" style="padding:40px"><div class="empty-icon">📅</div><div>Click <strong>Generate Calendar</strong> to build the full season.</div></div>
       </div>
     </div>
@@ -567,7 +569,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '7.0';
+const CACHE_VERSION = '7.1';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2888,6 +2890,287 @@ function runNextStage(){
 
 
 
+
+// ═══════════════════════════════════════════════════════════════
+// SEASON SIMULATION
+// ═══════════════════════════════════════════════════════════════
+
+let seasonSim = null;
+// seasonSim = {
+//   currentDay: 0,        // 0-348
+//   activeRaces: {},      // raceId → {race, rs} where rs = raceState-like object
+//   dayLog: [],           // [{raceId, raceName, stageNum, result, complete}]
+// }
+
+let countryPoints = {};   // { 'France': 1250, 'Belgium': 800, ... }
+
+function loadSeasonState(){
+  try{
+    const s = localStorage.getItem('cyclesim_season');
+    if(s) seasonSim = JSON.parse(s);
+    const c = localStorage.getItem('cyclesim_country');
+    if(c) countryPoints = JSON.parse(c);
+  } catch(e){ seasonSim=null; countryPoints={}; }
+}
+
+function saveSeasonState(){
+  try{
+    if(seasonSim) localStorage.setItem('cyclesim_season', JSON.stringify(seasonSim));
+    localStorage.setItem('cyclesim_country', JSON.stringify(countryPoints));
+  } catch(e){ console.warn('Season state too large, pruning logs'); 
+    // Prune day log if too big
+    if(seasonSim) seasonSim.dayLog=seasonSim.dayLog.slice(-50);
+    try{ localStorage.setItem('cyclesim_season', JSON.stringify(seasonSim)); } catch(e2){}
+  }
+}
+
+// Build a fresh raceState for a race (self-contained, no globals)
+function buildSeasonRaceState(race){
+  const riderList = [];
+  // Save/restore selectedTeams without touching globals permanently
+  const prevSelected = new Set(selectedTeams);
+  autoSelectTeamsForRace(race);
+  for(const id of selectedTeams){
+    const team = teams.find(t=>t.id===id);
+    if(!team) continue;
+    team.riders.forEach(n=>{
+      const r = allRiders.find(x=>x.name===n);
+      if(r) riderList.push({...r});
+    });
+  }
+  selectedTeams = prevSelected; // restore
+  if(riderList.length < 2) return null;
+
+  return {
+    raceName: race.name,
+    riderList,
+    fatigue: Object.fromEntries(riderList.map(r=>[r.name, 0])),
+    gcTimes: Object.fromEntries(riderList.map(r=>[r.name, 0])),
+    stageResults: [],
+    allAbandoned: [],
+    activeRiders: riderList.map(r=>({...r})),
+    currentStageIndex: 0,
+    raceVariance: makeVariance(riderList, 0.10),
+    totalStages: race.stages.length,
+    teamCount: selectedTeams.size || 25,
+  };
+}
+
+// Run one stage of a season race, return stage result summary
+function runSeasonStage(race, rs){
+  const stage = race.stages[rs.currentStageIndex];
+  if(!stage) return null;
+
+  const stageVariance = makeVariance(rs.activeRiders, 0.10);
+  const variedRiders = rs.activeRiders.map(r=>applyVariance(r, rs.raceVariance, stageVariance));
+
+  const res = simulateStage(variedRiders, stage, rs.fatigue, rs.gcTimes);
+  rs.stageResults.push(res);
+
+  const abandonedNames = new Set(res.abandoned.map(r=>r.name));
+  res.abandoned.forEach(r=>rs.allAbandoned.push({rider:r, stage:stage.name}));
+  rs.activeRiders = rs.activeRiders.filter(r=>!abandonedNames.has(r.name));
+  rs.currentStageIndex++;
+
+  return {stage, result:res.result, breakaway:res.breakaway, abandoned:res.abandoned};
+}
+
+// Build GC from accumulated stage results
+function buildSeasonGC(rs){
+  const gcAccum = {};
+  rs.riderList.forEach(r=>gcAccum[r.name]=0);
+  rs.stageResults.forEach(({result})=>{
+    result.forEach(({rider,gap})=>{
+      if(gcAccum[rider.name]!=null) gcAccum[rider.name]+=gap;
+    });
+  });
+  return rs.riderList
+    .filter(r=>rs.fatigue[r.name]!==null)
+    .map(r=>({rider:r, totalGap:gcAccum[r.name]??0}))
+    .sort((a,b)=>a.totalGap-b.totalGap)
+    .map((r,i)=>({...r,position:i+1}));
+}
+
+function awardCountryPoints(race, gcResult){
+  const cat = race.category;
+  if(!cat || !UCI_POINTS[cat]) return;
+  const table = UCI_POINTS[cat];
+  const isStageRace = !!table.gc;
+  const country = race.country;
+  if(!countryPoints[country]) countryPoints[country]=0;
+  const pts = isStageRace ? (table.gc?.[0]||0) : (table.finish?.[0]||0);
+  countryPoints[country] += pts;
+}
+
+// ── SEASON INIT ─────────────────────────────────────────────────
+function initSeason(){
+  if(!calendar.length){ alert('Generate a calendar first.'); return; }
+  if(seasonSim && !confirm('Reset season and start over?')) return;
+  seasonSim = { currentDay:0, activeRaces:{}, dayLog:[] };
+  countryPoints = {};
+  uciPoints = {};
+  saveUciPoints();
+  saveSeasonState();
+  renderSeasonPanel();
+}
+
+// ── SIMULATE ONE DAY ────────────────────────────────────────────
+function simulateSeasonDay(){
+  if(!seasonSim){ alert('Start season first.'); return; }
+  if(seasonSim.currentDay > 348){ alert('Season complete!'); return; }
+
+  const day = seasonSim.currentDay;
+  const date = fmtDate(day);
+  const dayEvents = [];
+
+  // 1. Initialize new races starting today
+  calendar.filter(r=>r.startDay===day).forEach(race=>{
+    const rs = buildSeasonRaceState(race);
+    if(!rs) return;
+    seasonSim.activeRaces[race.id] = {race, rs};
+  });
+
+  // 2. Run today's stage for every active race
+  const toFinish = [];
+  Object.entries(seasonSim.activeRaces).forEach(([id, {race,rs}])=>{
+    const raceId = parseInt(id);
+    // Which stage runs today?
+    const expectedStage = day - race.startDay; // 0-indexed
+    if(rs.currentStageIndex !== expectedStage) return; // not their day
+
+    const stageRes = runSeasonStage(race, rs);
+    if(!stageRes) return;
+
+    const complete = rs.currentStageIndex >= race.stages.length;
+    const gcResult = complete || race.stages.length===1 ? buildSeasonGC(rs) : null;
+
+    dayEvents.push({
+      raceId, raceName:race.name, category:race.category||'',
+      country:race.country,
+      stageNum:rs.currentStageIndex,
+      totalStages:race.stages.length,
+      stageName:stageRes.stage.name,
+      terrain:stageRes.stage.terrain,
+      stageWinner:stageRes.result?.[0]?.rider?.name||'—',
+      breakaway:stageRes.breakaway,
+      complete,
+      gcLeader: gcResult?.[0]?.rider?.name||null,
+      gcResult
+    });
+
+    if(complete){
+      // Award UCI + country points
+      const lrForPoints = {
+        gcResult, stageResults:rs.stageResults,
+        race, riderList:rs.riderList
+      };
+      awardRacePoints(race, lrForPoints);
+      awardCountryPoints(race, gcResult);
+      toFinish.push(raceId);
+    }
+  });
+
+  toFinish.forEach(id=>delete seasonSim.activeRaces[id]);
+
+  seasonSim.dayLog.push({day, date, events:dayEvents});
+  seasonSim.currentDay++;
+  saveSeasonState();
+  saveUciPoints();
+  renderSeasonPanel();
+}
+
+// ── RENDER SEASON PANEL ─────────────────────────────────────────
+function renderSeasonPanel(){
+  const panel = document.getElementById('season-panel');
+  if(!panel) return;
+
+  if(!seasonSim){
+    panel.innerHTML=`<div style="display:flex;align-items:center;gap:10px;padding:8px 0">
+      <button class="btn btn-accent" onclick="initSeason()">🏁 Start Season Simulation</button>
+      <span style="color:var(--muted);font-size:.82rem">Simulate the full calendar day by day</span>
+    </div>`;
+    return;
+  }
+
+  const isComplete = seasonSim.currentDay > 348;
+  const dayDate = isComplete ? 'Season Complete' : fmtDate(seasonSim.currentDay)+' 2026';
+  const activeCount = Object.keys(seasonSim.activeRaces).length;
+
+  panel.innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap">
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:800;color:var(--accent)">${dayDate}</span>
+      ${!isComplete?`<button class="btn btn-accent" onclick="simulateSeasonDay()">▶ Simulate Day</button>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="simulateSeasonWeek()">▶▶ Week</button>
+      <span class="pill">${activeCount} race${activeCount!==1?'s':''} in progress</span>
+      <button class="btn btn-danger btn-sm" onclick="initSeason()" style="margin-left:auto">↺ Reset</button>
+    </div>
+    ${renderDayLog()}`;
+}
+
+function renderDayLog(){
+  if(!seasonSim||!seasonSim.dayLog.length) return '';
+  // Show last 3 days
+  const recent = seasonSim.dayLog.slice(-3).reverse();
+  return recent.map(({date,events})=>{
+    if(!events.length) return `<div style="padding:4px 0;color:var(--muted);font-size:.78rem">${date} — Rest day</div>`;
+    const evHTML = events.map(ev=>{
+      const catColor = UCI_CAT_COLOR[ev.category]||'var(--muted)';
+      const stageInfo = ev.totalStages>1
+        ? `Stage ${ev.stageNum}/${ev.totalStages}`
+        : '1-day';
+      const winnerLine = ev.complete && ev.gcResult
+        ? `<span style="color:var(--green)"> · GC: ${ev.gcLeader}</span>`
+        : `<span style="color:var(--muted)"> · ${ev.stageWinner}${ev.breakaway?' 🏇':''}</span>`;
+      const finBadge = ev.complete?'<span style="color:var(--green);font-weight:700"> ✓</span>':'';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:.82rem;border-bottom:1px solid var(--border)">
+        <span style="min-width:46px;padding:1px 5px;border-radius:3px;background:${catColor};font-family:'Barlow Condensed',sans-serif;font-size:.62rem;font-weight:800;color:#000;text-align:center">${ev.category||'—'}</span>
+        <span style="font-weight:700;color:var(--text)">${ev.raceName}</span>
+        <span class="pill" style="font-size:.65rem">${stageInfo}</span>
+        ${winnerLine}${finBadge}
+      </div>`;
+    }).join('');
+    return `<div style="margin-top:6px">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:3px 0">${date}</div>
+      ${evHTML}
+    </div>`;
+  }).join('');
+}
+
+function simulateSeasonWeek(){
+  for(let i=0;i<7;i++){
+    if(!seasonSim||seasonSim.currentDay>348) break;
+    simulateSeasonDay();
+  }
+}
+
+// ── COUNTRY RANKINGS ────────────────────────────────────────────
+function renderCountryRankings(){
+  const wrap = document.getElementById('country-wrap');
+  if(!wrap) return;
+  const sorted = Object.entries(countryPoints).sort((a,b)=>b[1]-a[1]);
+  if(!sorted.length){
+    wrap.innerHTML='<div class="empty-state"><div class="empty-icon">🌍</div><div>Simulate races to build country rankings.</div></div>';
+    return;
+  }
+  const rows = sorted.map(([country,pts],i)=>`
+    <tr>
+      <td class="cell-rank">${i+1}</td>
+      <td style="padding:7px 12px;font-weight:600">${flagImg(country,14)} ${country}</td>
+      <td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">${teams.filter(t=>t.country===country).length} teams</td>
+      <td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">${pts.toLocaleString()}</td>
+    </tr>`).join('');
+  wrap.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:.87rem">
+    <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
+      <th style="width:48px;padding:8px 10px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">#</th>
+      <th style="padding:8px 10px;text-align:left;font-family:'Barlow Condensed',sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">Country</th>
+      <th style="padding:8px 10px;text-align:left;font-family:'Barlow Condensed',sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">Teams</th>
+      <th style="padding:8px 10px;text-align:right;padding-right:16px;font-family:'Barlow Condensed',sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">Points</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+
 // ═══════════════════════════════════════════════════════════════
 // UCI POINTS SYSTEM
 // ═══════════════════════════════════════════════════════════════
@@ -3558,8 +3841,21 @@ function esc(s){return s.replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 // ═══════════════════════════════════════════════════════════════
 renderStages();
 loadUciPoints();
+  loadSeasonState();
   loadData();
 </script>
+<!-- ═══ COUNTRY RANKINGS ════════════════════════════════════════ -->
+<div id="tab-country" class="tab-content">
+  <div class="toolbar">
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">🌍 Country Rankings</span>
+    <span style="font-size:.82rem;color:var(--muted)">Points from races held in each country</span>
+    <button class="btn btn-danger btn-sm" onclick="if(confirm('Reset country points?')){countryPoints={};saveSeasonState();renderCountryRankings()}" style="margin-left:auto">Reset</button>
+  </div>
+  <div class="table-wrap" id="country-wrap">
+    <div class="empty-state"><div class="empty-icon">🌍</div><div>Simulate races to build country rankings.</div></div>
+  </div>
+</div>
+
 <!-- ═══ UCI RANKINGS ═══════════════════════════════════════════ -->
 <div id="tab-uci" class="tab-content">
   <div class="toolbar">
