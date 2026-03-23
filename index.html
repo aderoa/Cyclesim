@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v6.8</title>
+<title>CycleSim v6.9</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v6.8</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v6.9</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -566,7 +566,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '6.8';
+const CACHE_VERSION = '6.9';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2932,12 +2932,24 @@ function computeClassifications(stageResults, riderList){
     if(!result||!result.length) return;
     const terrain=stage.terrain;
     const isTT=terrain==='TTR'||terrain==='PRL';
-    if(isTT) return; // no classifications on TT
+    // ── Points/Mountains/Sprints only on road stages; Teams counts all stages
+    if(!isTT){
+
+    // Motivation: top-5 in each classification push harder for those prizes
+    const topPts  = new Set(Object.entries(pts).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([n])=>n));
+    const topMtn  = new Set(Object.entries(mtn).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([n])=>n));
+    const topInter= new Set(Object.entries(inter).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([n])=>n));
+    const ptsB  = r => topPts.has(r.name)  ? 8 : 0;
+    const mtnB  = r => topMtn.has(r.name)  ? 7 : 0;
+    const intB  = r => topInter.has(r.name)? 6 : 0;
 
     // ── Points classification
     const isFlat=terrain==='FLA';
     const finPts=isFlat?POINTS_SPRINT.flat_fin:POINTS_SPRINT.finish;
-    result.slice(0,finPts.length).forEach(({rider},i)=>{
+    // Re-sort finish by sprint + motivation for points jersey
+    const finOrder=[...result].sort((a,b)=>
+      ((b.rider.SPR||65)+ptsB(b.rider)+gauss(3)) - ((a.rider.SPR||65)+ptsB(a.rider)+gauss(3)));
+    finOrder.slice(0,finPts.length).forEach(({rider},i)=>{
       if(pts[rider.name]!=null) pts[rider.name]+=finPts[i];
     });
 
@@ -2945,7 +2957,9 @@ function computeClassifications(stageResults, riderList){
     // Simulate sprint at ~50% of stage by SPR score with noise
     const hasSprint = terrain==='FLA'||terrain==='HIL'||terrain==='COB';
     if(hasSprint){
-      const sprintOrder=[...result].sort((a,b)=>(b.rider.SPR||65)-(a.rider.SPR||65)+gauss(4)*3);
+      const sprintOrder=[...result].sort((a,b)=>
+        ((b.rider.SPR||65)+ptsB(b.rider)+intB(b.rider)+gauss(4)*3) -
+        ((a.rider.SPR||65)+ptsB(a.rider)+intB(a.rider)+gauss(4)*3));
       POINTS_SPRINT.intermed.forEach((p,i)=>{
         const r=sprintOrder[i];
         if(r&&inter[r.rider.name]!=null) inter[r.rider.name]+=p;
@@ -2964,8 +2978,8 @@ function computeClassifications(stageResults, riderList){
       const atw = cat<=2 ? 0.25 : 0.45;
       const mmw = 1 - mtw - atw;
       const komOrder=[...result].sort((a,b)=>
-        ((b.rider.MTN||65)*mtw+(b.rider.ATT||65)*atw+(b.rider.MM||65)*mmw+gauss(noise))-
-        ((a.rider.MTN||65)*mtw+(a.rider.ATT||65)*atw+(a.rider.MM||65)*mmw+gauss(noise))
+        ((b.rider.MTN||65)*mtw+(b.rider.ATT||65)*atw+(b.rider.MM||65)*mmw+mtnB(b.rider)+gauss(noise))-
+        ((a.rider.MTN||65)*mtw+(a.rider.ATT||65)*atw+(a.rider.MM||65)*mmw+mtnB(a.rider)+gauss(noise))
       );
       komPts.forEach((p,i)=>{
         const r=komOrder[i];
@@ -2973,7 +2987,9 @@ function computeClassifications(stageResults, riderList){
       });
     });
 
-    // ── Teams classification: best 3 finishers per team, sum their stage gaps
+    } // end if(!isTT)
+
+    // ── Teams classification: best 3 finishers per team (all stage types)
     const teamsInStage={};
     result.forEach(({rider,gap})=>{
       const tid=riderTeam[rider.name];
@@ -3103,7 +3119,7 @@ function renderResults(){
 
   const classifTabs=['points','mountains','intermed','teams'];
   let rows;
-  if(classifTabs.includes(activeResultTab)&&isMulti){
+  if(classifTabs.includes(activeResultTab)){
     const classif=computeClassifications(stageResults,lastResults.riderList||gcResult.map(r=>r.rider));
     renderClassification(classif,activeResultTab);
     return;
@@ -3141,8 +3157,9 @@ function renderResultTable(rows,subtitle,abandoned,headers){
     <div class="result-wrap">
       <table class="result-table">
         <thead><tr>
-          <th style="width:48px;text-align:center">#</th>
-          ${(headers||['Rider','Team','OVR','Gap']).map(h=>`<th>${h}</th>`).join('')}
+          ${(headers||['#','Rider','Team','OVR','Gap']).map((h,i)=>i===0
+            ?`<th style="width:48px;text-align:center">${h}</th>`
+            :`<th>${h}</th>`).join('')}
         </tr></thead>
         <tbody>${rows.join('')}</tbody>
       </table>
