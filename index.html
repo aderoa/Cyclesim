@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v6.9</title>
+<title>CycleSim v7.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v6.9</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.0</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -236,6 +236,7 @@ tbody td{padding:6px 10px}
     <button class="nav-btn" onclick="showTab('race')">Race Builder</button>
     <button class="nav-btn" onclick="showTab('results')">Results</button>
     <button class="nav-btn" id="nav-btn-calendar" onclick="showTab('calendar')">Calendar <span class="nav-badge" id="nav-calendar-count" style="background:var(--blue)">—</span></button>
+    <button class="nav-btn" onclick="showTab('uci');renderUciRankings()">UCI Ranking</button>
   </nav>
 </header>
 
@@ -566,7 +567,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '6.9';
+const CACHE_VERSION = '7.0';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2872,13 +2873,160 @@ function runNextStage(){
     abandoned:rs.allAbandoned,
     currentStage:rs.currentStageIndex,
     totalStages:rs.totalStages,
-    complete:rs.currentStageIndex>=stages.length
+    complete:rs.currentStageIndex>=stages.length,
+    race:calSelectedRace
   };
+  // Award UCI points on race completion
+  if(rs.currentStageIndex>=stages.length && calSelectedRace){
+    awardRacePoints(calSelectedRace, lastResults);
+  }
   activeResultTab='stage-'+(rs.stageResults.length-1);
   showTab('results');
   renderResults();
 }
 
+
+
+
+// ═══════════════════════════════════════════════════════════════
+// UCI POINTS SYSTEM
+// ═══════════════════════════════════════════════════════════════
+// Points scale per category (GC/finish positions 1-20, then stage wins)
+// Based on real UCI WorldTour points tables
+
+const UCI_POINTS = {
+  // Stage races — GC final
+  'GT.A': {
+    gc:    [3000,2000,1500,1200,800,600,400,300,200,150,100,80,60,50,40,30,20,10,5,2],
+    stage: [100,70,50,40,30,20,14,10,6,4],
+    tt:    [15,12,9,7,5,3,2,1],
+  },
+  'GT.B': {
+    gc:    [2000,1600,1200,960,640,480,320,240,160,120,80,64,48,40,32,24,16,8,4,2],
+    stage: [80,56,40,32,24,16,11,8,5,3],
+    tt:    [12,9,7,5,4,2,1],
+  },
+  '2.UWT': {
+    gc:    [600,500,400,325,250,200,160,120,80,50,40,30,20,15,10,5,3,2,1],
+    stage: [40,30,22,16,12,8,6,4,2,1],
+    tt:    [8,6,4,3,2,1],
+  },
+  '2.HC': {
+    gc:    [300,250,215,175,145,120,95,70,50,30,22,15,10,7,5,4,3,2,1],
+    stage: [20,15,12,9,7,5,3,2,1],
+    tt:    [5,3,2,1],
+  },
+  '2.1': {
+    gc:    [100,85,70,60,50,40,30,20,12,8,5,4,3,2,1],
+    stage: [10,8,6,5,4,3,2,1],
+    tt:    [3,2,1],
+  },
+  '2.2': {
+    gc:    [40,32,24,18,14,10,8,6,4,2,1],
+    stage: [5,4,3,2,1],
+    tt:    [1],
+  },
+  // One-day races — finish positions
+  'monument': {
+    finish:[1250,750,500,400,325,280,250,200,160,130,110,90,70,55,40,30,20,10,5,2],
+  },
+  '1.UWT': {
+    finish:[400,300,230,175,130,100,75,50,35,25,20,15,10,6,4,3,2,1],
+  },
+  '1.HC': {
+    finish:[200,160,120,95,70,50,40,30,20,14,10,7,4,3,2,1],
+  },
+  '1.1': {
+    finish:[70,55,40,30,22,16,11,7,5,3,2,1],
+  },
+  '1.2': {
+    finish:[20,14,10,7,5,3,2,1],
+  },
+};
+
+// Persistent UCI points store: riderName → total points
+let uciPoints = {};
+
+function loadUciPoints(){
+  try{ uciPoints = JSON.parse(localStorage.getItem('cyclesim_uci')||'{}'); } catch(e){ uciPoints={}; }
+}
+function saveUciPoints(){
+  localStorage.setItem('cyclesim_uci', JSON.stringify(uciPoints));
+}
+function awardUciPoints(riderName, pts){
+  if(!pts||pts<=0) return;
+  uciPoints[riderName] = (uciPoints[riderName]||0) + pts;
+}
+
+// Award points after a race completes
+function awardRacePoints(race, lastResults){
+  const cat = race?.category;
+  if(!cat || !UCI_POINTS[cat]) return;
+  const table = UCI_POINTS[cat];
+  const isStageRace = !!table.gc;
+
+  if(isStageRace){
+    // GC final standings
+    if(lastResults.gcResult && table.gc){
+      lastResults.gcResult.forEach((r,i)=>{
+        const pts = table.gc[i];
+        if(pts) awardUciPoints(r.rider.name, pts);
+      });
+    }
+    // Stage wins (each stage top finishers)
+    lastResults.stageResults.forEach(({stage,result})=>{
+      if(!result||!result.length) return;
+      const isTT = stage.terrain==='TTR'||stage.terrain==='PRL';
+      const stagePts = isTT ? table.tt : table.stage;
+      if(!stagePts) return;
+      result.slice(0, stagePts.length).forEach((r,i)=>{
+        if(stagePts[i]) awardUciPoints(r.rider.name, stagePts[i]);
+      });
+    });
+  } else {
+    // One-day race
+    const finPts = table.finish;
+    if(!finPts||!lastResults.gcResult) return;
+    lastResults.gcResult.slice(0, finPts.length).forEach((r,i)=>{
+      if(finPts[i]) awardUciPoints(r.rider.name, finPts[i]);
+    });
+  }
+  saveUciPoints();
+}
+
+// Render UCI rankings tab
+function renderUciRankings(){
+  const sorted = Object.entries(uciPoints)
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0,200);
+  if(!sorted.length){
+    document.getElementById('uci-wrap').innerHTML='<div class="empty-state"><div class="empty-icon">🏆</div><div>Simulate races to earn UCI points.</div></div>';
+    return;
+  }
+  const rows = sorted.map(([name,pts],i)=>{
+    const rider = allRiders.find(r=>r.name===name);
+    const teamId = riderTeamMap[name];
+    const team = teamId!=null?teams.find(t=>t.id===teamId):null;
+    return `<tr>
+      <td class="cell-rank">${i+1}</td>
+      <td class="cell-name">${rider?flagImg(rider.country,12)+' ':''} ${name}</td>
+      <td class="rteam-cell">${team?flagImg(team.country,11)+' <span class="rteam">'+team.name+'</span>':'—'}</td>
+      <td class="cell-avg">${rider?rider.avg.toFixed(1):'—'}</td>
+      <td style="font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">${pts.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('uci-wrap').innerHTML=`
+    <table style="width:100%;border-collapse:collapse;font-size:.87rem">
+      <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
+        <th style="width:48px;padding:8px 10px;text-align:center;font-family:Barlow Condensed,sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">#</th>
+        <th style="padding:8px 10px;text-align:left;font-family:Barlow Condensed,sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">Rider</th>
+        <th style="padding:8px 10px;text-align:left;font-family:Barlow Condensed,sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">Team</th>
+        <th style="padding:8px 10px;text-align:left;font-family:Barlow Condensed,sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">OVR</th>
+        <th style="padding:8px 10px;text-align:right;padding-right:16px;font-family:Barlow Condensed,sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">UCI Pts</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
 
 
 // ═══════════════════════════════════════════════════════════════
@@ -3099,7 +3247,7 @@ function renderResults(){
   if(rerunBtn) rerunBtn.style.display='';
   const isMulti=stageResults.length>1;
   document.getElementById('res-race-name').textContent=raceName;
-  document.getElementById('res-race-meta').textContent=`Stage ${currentStage||stageResults.length} of ${totalStages||stageResults.length} · ${teamCount} teams · ${riderCount} riders${complete?' · ✓ Finished':''}`;
+  document.getElementById('res-race-meta').textContent=`Stage ${currentStage||stageResults.length} of ${totalStages||stageResults.length} · ${teamCount} teams · ${riderCount} riders${complete?' · ✓ Finished — UCI points awarded':''}`;
   document.getElementById('rerun-btn').style.display='inline-flex';
 
   const tabsHtml=[
@@ -3409,7 +3557,18 @@ function esc(s){return s.replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 // INIT
 // ═══════════════════════════════════════════════════════════════
 renderStages();
-loadData();
+loadUciPoints();
+  loadData();
 </script>
+<!-- ═══ UCI RANKINGS ═══════════════════════════════════════════ -->
+<div id="tab-uci" class="tab-content">
+  <div class="toolbar">
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">🏆 UCI World Ranking</span>
+    <button class="btn btn-danger btn-sm" onclick="if(confirm('Reset all UCI points?')){uciPoints={};saveUciPoints();renderUciRankings()}">Reset</button>
+  </div>
+  <div class="table-wrap" id="uci-wrap">
+    <div class="empty-state"><div class="empty-icon">🏆</div><div>Simulate races to earn UCI points.</div></div>
+  </div>
+</div>
 </body>
 </html>
