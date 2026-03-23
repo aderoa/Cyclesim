@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v6.1</title>
+<title>CycleSim v6.2</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v6.1</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v6.2</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -565,7 +565,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '6.1';
+const CACHE_VERSION = '6.2';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2428,6 +2428,12 @@ function selectTopTeams(n){
   sorted.forEach(t=>selectedTeams.add(t.id));
   renderRaceTeamPicker();
 }
+function selectRandomTeams(n){
+  const shuffled=[...teams].sort(()=>Math.random()-0.5);
+  selectedTeams=new Set(shuffled.slice(0,Math.min(n,teams.length)).map(t=>t.id));
+  renderRaceTeamPicker();
+}
+
 function selectAllFilteredTeams(){
   const cf=document.getElementById('race-country-filter').value;
   const q=(document.getElementById('race-team-search')?.value||'').toLowerCase();
@@ -2477,7 +2483,7 @@ function simulateStage(riderList, stage, fatigue, gcTimes){
   const isTT=terrain==='TTR'||terrain==='PRL';
   const isCOB=terrain==='COB';
 
-  // ── ABANDONS (2% normal, 5% cobbles, 1% if top-25 GC)
+  // ── Abandon check
   const gcRanking=Object.entries(gcTimes).sort((a,b)=>a[1]-b[1]).map(([n])=>n);
   const top25=new Set(gcRanking.slice(0,25));
   const abandoned=[];
@@ -2489,20 +2495,17 @@ function simulateStage(riderList, stage, fatigue, gcTimes){
   });
   if(active.length<2) return{stage,result:[],abandoned};
 
-  // ── SCORE helper: raw strength for terrain + noise + fatigue penalty
-  function scoreRider(r, tf){
+  // ── Score helper
+  function scoreRider(r){
     const fp=(fatigue[r.name]||0)*(1-r.REC/200);
-    if(tf==='FLA') return (r.SPR||65)*0.65+(r.ACC||65)*0.20+(r.STA||65)*0.15+gauss(3)-fp;
-    return terrainScore(r,tf)-fp+gauss(NOISE[tf]);
+    if(terrain==='FLA') return (r.SPR||65)*0.65+(r.ACC||65)*0.20+(r.STA||65)*0.15+gauss(3)-fp;
+    return terrainScore(r,terrain)-fp+gauss(NOISE[terrain]);
   }
 
-  // ── TIME TRIALS
-  // Each rider gets an individual time. Worst rider loses ~5-8 min on 40km ITT.
-  // gapPerPt: seconds per score point of difference from leader
+  // ── Time Trials: individual times, no groups
   if(isTT){
-    const ttGapPt = terrain==='PRL' ? 4 : 20; // PRL short=less spread, ITT=big spread
-    const scored=active.map(r=>({rider:r,score:scoreRider(r,terrain)}))
-      .sort((a,b)=>b.score-a.score);
+    const ttGapPt=terrain==='PRL'?4:20;
+    const scored=active.map(r=>({rider:r,score:scoreRider(r)})).sort((a,b)=>b.score-a.score);
     const best=scored[0].score;
     const result=scored.map((s,i)=>{
       const gap=Math.max(0,(best-s.score)*ttGapPt);
@@ -2513,122 +2516,106 @@ function simulateStage(riderList, stage, fatigue, gcTimes){
     return{stage,result,abandoned};
   }
 
-  // ── ROAD STAGE
-  // Step 1: score everyone
-  const gcTop=new Set(gcRanking.slice(0,Math.floor(active.length*0.3)));
+  // ── Road stage parameters
+  // Seconds lost per score point between groups
+  const secPerPt={FLA:1,MTN:18,MM:12,HIL:8,COB:12}[terrain]||6;
+  // Max score diff to stay in same group
+  const groupW={FLA:10,MTN:0.8,MM:1.0,HIL:1.0,COB:1.0}[terrain]||1.5;
+  // Hard cap: maximum seconds any rider can lose on a single stage
+  const maxGap={FLA:300,MTN:2700,MM:1800,HIL:900,COB:1500}[terrain]||1800;
+  // Front group hard cap
+  const hilBunch=Math.random()<0.10;
+  const frontCap={
+    FLA:active.length,
+    MTN:randInt(5,12),
+    MM:randInt(8,20),
+    HIL:hilBunch?active.length:randInt(8,25),
+    COB:randInt(6,15),
+  }[terrain]||active.length;
+  // Grupetto: bottom % ride together to time cut
+  const grupettoFrac={MTN:0.35,MM:0.28,COB:0.28,HIL:0.18}[terrain]||0;
+  const grupettoN=Math.floor(active.length*grupettoFrac);
+  const hardTerrain=terrain==='MTN'||terrain==='MM'||isCOB||terrain==='HIL';
 
-  // Step 2: breakaway attempt
-  let escapees=[], peloton=active, breakawayWon=false;
+  // ── Breakaway attempt
+  const gcTop=new Set(gcRanking.slice(0,Math.floor(active.length*0.3)));
+  let escapees=[],peloton=active,breakawayWon=false;
   if(Math.random()<(BREAKAWAY_CHANCE[terrain]||0.10)){
-    const cands=active.map(r=>({rider:r,att:(r.ATT||65)*(gcTop.has(r.name)?0.3:1)+gauss(8)}))
-      .sort((a,b)=>b.att-a.att);
-    const sz=randInt(1, terrain==='FLA'?3:terrain==='COB'?5:8);
+    const cands=active.map(r=>({rider:r,att:(r.ATT||65)*(gcTop.has(r.name)?0.3:1)+gauss(8)})).sort((a,b)=>b.att-a.att);
+    const sz=randInt(1,terrain==='FLA'?3:terrain==='COB'?5:8);
     const breakers=cands.slice(0,sz).map(c=>c.rider);
     const escStr=breakers.reduce((s,r)=>s+(r.FLA||65)+(r.STA||65),0)/breakers.length;
     const pelStr=active.reduce((s,r)=>s+(r.STA||65)+(r.REC||65),0)/active.length;
     if(Math.random()<Math.max(0.1,Math.min(0.85,0.3+(escStr-pelStr)/100))){
-      escapees=breakers;
-      peloton=active.filter(r=>!escapees.some(e=>e.name===r.name));
-      breakawayWon=true;
+      escapees=breakers; peloton=active.filter(r=>!escapees.some(e=>e.name===r.name)); breakawayWon=true;
     }
   }
 
-  // Step 3: build time sheet
-  // Key insight: gaps within a group are 0. Gaps BETWEEN groups are meaningful.
-  // Seconds per score point between groups:
-  const secPerPt = {FLA:1, MTN:20, MM:14, HIL:10, COB:14}[terrain] || 6;
-  // How close in score = same group (score points):
-  const groupW = {FLA:10, MTN:0.8, MM:1.0, HIL:1.0, COB:1.0}[terrain] || 1.5;
-
-  function splitIntoGroups(riders, baseGapSeconds){
-    // Score riders, sort, assign to groups
-    const scored = riders.map(r=>({rider:r, score:scoreRider(r,terrain)}))
-      .sort((a,b)=>b.score-a.score);
-    const groups = []; // [{gapSeconds, riders[]}]
-    let curGroup = [], leaderScore = null, groupGap = baseGapSeconds;
-
-    scored.forEach(({rider, score})=>{
-      if(leaderScore===null){
-        leaderScore = score;
-        curGroup.push(rider);
-        return;
-      }
-      const dropFromLeader = leaderScore - score;
-      // Check gap from previous rider in group
-      const prevScore = curGroup.length>0 ? scored[scored.indexOf(scored.find(s=>s.rider===curGroup[curGroup.length-1]))].score : leaderScore;
-      const gapFromPrev = (scored.find(s=>s.rider===curGroup[curGroup.length-1])?.score||leaderScore) - score;
-
-      if(gapFromPrev > groupW){
-        // New group
-        groups.push({gapSeconds: groupGap, riders: [...curGroup]});
-        // Bottom riders lose more time on climbs
-        const rankSoFar = groups.reduce((s,g)=>s+g.riders.length,0)+curGroup.length;
-        const pct = rankSoFar / (riderList.length||100);
-        const mult = (terrain==='MTN'||terrain==='MM'||terrain==='HIL')
-          ? (pct<0.3?1 : pct<0.7?1+(pct-0.3)*2 : 1+(pct-0.3)*4)
-          : 1;
-        groupGap = baseGapSeconds + dropFromLeader * secPerPt * mult;
-        curGroup = [rider];
-      } else {
-        curGroup.push(rider);
-      }
+  // ── Split riders into groups
+  function splitIntoGroups(riders, baseGap){
+    const scored=riders.map(r=>({rider:r,score:scoreRider(r)})).sort((a,b)=>b.score-a.score);
+    // Reserve grupetto riders
+    const core=grupettoN>0?scored.slice(0,-grupettoN):scored;
+    const grupettoRiders=grupettoN>0?scored.slice(-grupettoN):[];
+    const groups=[];
+    let curGroup=[],leaderScore=null,groupGap=baseGap;
+    core.forEach(({rider,score},idx)=>{
+      if(leaderScore===null){leaderScore=score;curGroup.push(rider);return;}
+      const dropFromLeader=leaderScore-score;
+      const gapFromPrev=(core[idx-1]?.score??leaderScore)-score;
+      const hitCap=groups.length===0&&curGroup.length>=frontCap;
+      if(gapFromPrev>groupW||hitCap){
+        groups.push({gap:groupGap,riders:[...curGroup]});
+        const rankPct=groups.reduce((s,g)=>s+g.riders.length,0)/(riders.length||1);
+        const mult=hardTerrain?(rankPct<0.25?1:rankPct<0.6?1+(rankPct-0.25)*2.5:1+(rankPct-0.25)*5):1;
+        groupGap=Math.min(maxGap, baseGap+dropFromLeader*secPerPt*mult);
+        curGroup=[rider];
+      } else { curGroup.push(rider); }
     });
-    if(curGroup.length) groups.push({gapSeconds: groupGap, riders: curGroup});
+    if(curGroup.length) groups.push({gap:groupGap,riders:curGroup});
+    // Grupetto arrives together, 3-15 min behind last group
+    if(grupettoRiders.length>0){
+      const lastGap=groups[groups.length-1]?.gap??baseGap;
+      const extraDelay={MTN:randInt(180,900),MM:randInt(120,600),COB:randInt(120,480),HIL:randInt(60,300)}[terrain]||randInt(120,600);
+      const grupGap=Math.min(maxGap, lastGap+extraDelay);
+      groups.push({gap:grupGap,riders:grupettoRiders.map(s=>s.rider)});
+    }
     return groups;
   }
 
-  const raw = []; // {rider, gap}
-
+  // ── Build raw result
+  const raw=[];
   if(breakawayWon){
-    // Score escapees for stage win
-    const escScored = escapees.map(r=>({
-      rider:r,
-      score: terrain==='FLA'?(r.SPR||65)*0.7+(r.ATT||65)*0.3+gauss(4):terrainScore(r,terrain)+gauss(NOISE[terrain])
-    })).sort((a,b)=>b.score-a.score);
-
-    // Gaps within breakaway: small (seconds)
-    let escGap=0, prevS=null;
-    escScored.forEach(({rider,score})=>{
-      if(prevS!==null){ const d=(prevS-score)*2; if(d>2) escGap+=d; }
-      raw.push({rider, gap:escGap});
-      prevS=score;
-    });
-
-    // Peloton gets a realistic gap behind breakaway
-    // Flat: 30s-2min. Hilly: 1-4min. MTN: 2-8min
-    const minGap = {FLA:30, HIL:60, MM:90, MTN:120, COB:45}[terrain]||60;
-    const maxGap = {FLA:120, HIL:240, MM:360, MTN:480, COB:180}[terrain]||240;
-    const pelotonBaseGap = randInt(minGap, maxGap);
-
-    // Peloton splits internally based on terrain
-    splitIntoGroups(peloton, pelotonBaseGap)
-      .forEach(({gapSeconds, riders})=>riders.forEach(r=>raw.push({rider:r, gap:gapSeconds})));
+    const escScored=escapees.map(r=>({rider:r,score:terrain==='FLA'?(r.SPR||65)*0.7+(r.ATT||65)*0.3+gauss(4):terrainScore(r,terrain)+gauss(NOISE[terrain])})).sort((a,b)=>b.score-a.score);
+    let escGap=0,prevS=null;
+    escScored.forEach(({rider,score})=>{if(prevS!==null){const d=(prevS-score)*2;if(d>2)escGap+=d;}raw.push({rider,gap:escGap});prevS=score;});
+    const minG={FLA:30,HIL:60,MM:90,MTN:120,COB:45}[terrain]||60;
+    const maxG={FLA:120,HIL:240,MM:360,MTN:480,COB:180}[terrain]||240;
+    const pelBase=randInt(minG,maxG);
+    splitIntoGroups(peloton,pelBase).forEach(({gap,riders})=>riders.forEach(r=>raw.push({rider:r,gap:Math.min(maxGap,gap)})));
   } else {
-    // All riders in peloton/field — split by terrain score
-    splitIntoGroups(active, 0)
-      .forEach(({gapSeconds, riders})=>riders.forEach(r=>raw.push({rider:r, gap:gapSeconds})));
+    splitIntoGroups(active,0).forEach(({gap,riders})=>riders.forEach(r=>raw.push({rider:r,gap:Math.min(maxGap,gap)})));
   }
 
-  // Step 4: assign positions — within each time group, sprint decides order
+  // ── Assign positions — sprint wins ties within group
   raw.sort((a,b)=>a.gap-b.gap);
   const uniqueGaps=[...new Set(raw.map(r=>r.gap))].sort((a,b)=>a-b);
   let pos=1;
   const result=[];
   uniqueGaps.forEach(g=>{
     const grp=raw.filter(r=>r.gap===g);
-    // Sort within group by sprint (highest SPR first)
     grp.sort((a,b)=>(b.rider.SPR||65)-(a.rider.SPR||65));
-    grp.forEach((r,i)=>result.push({rider:r.rider, position:pos+i, gap:g}));
+    grp.forEach((r,i)=>result.push({rider:r.rider,position:pos+i,gap:g}));
     pos+=grp.length;
   });
 
-  // Step 5: fatigue + accumulate GC times
+  // ── Fatigue + GC
   result.forEach(({rider,position,gap})=>{
     fatigue[rider.name]=(fatigue[rider.name]||0)+(dist/100)*(position/active.length)*0.12;
     gcTimes[rider.name]=(gcTimes[rider.name]||0)+gap;
   });
 
-  return{stage, result, abandoned};
+  return{stage,result,abandoned};
 }
 
 
