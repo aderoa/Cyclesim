@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v6.4</title>
+<title>CycleSim v6.5</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v6.4</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v6.5</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -566,7 +566,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '6.4';
+const CACHE_VERSION = '6.5';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2201,6 +2201,73 @@ function renderRaceDetail(){
 
 function simulateCalendarRace(raceId){ loadRaceIntoBuilder(raceId); }
 
+// ── AUTO TEAM SELECTION FOR RACES ──────────────────────────────
+function autoSelectTeamsForRace(race){
+  if(!teams.length) return;
+  const cat = race.category || '';
+  const country = race.country;
+  const region = getRegionLabel(country);
+
+  // Sort all teams by avg desc
+  const byAvg = [...teams].filter(t=>t.riders.length>0)
+    .sort((a,b)=>teamAvg(b)-teamAvg(a));
+
+  // National teams: same country first, then same region
+  function getNationalTeams(n){
+    const countryTeams = byAvg.filter(t=>t.country===country);
+    if(countryTeams.length>=n) return countryTeams.slice(0,n);
+    const regionTeams = byAvg.filter(t=>t.country!==country && getRegionLabel(t.country)===region);
+    return [...countryTeams,...regionTeams].slice(0,n);
+  }
+
+  function pickRandom(pool, n){
+    const shuffled=[...pool].sort(()=>Math.random()-0.5);
+    return shuffled.slice(0,Math.min(n,shuffled.length));
+  }
+
+  function exclude(pool, excluded){
+    const ids=new Set(excluded.map(t=>t.id));
+    return pool.filter(t=>!ids.has(t.id));
+  }
+
+  let selected=[];
+
+  if(cat==='GT.A'||cat==='GT.B'||cat==='monument'){
+    const top20=byAvg.slice(0,20);
+    const national5=getNationalTeams(5).filter(t=>!top20.some(x=>x.id===t.id));
+    selected=[...top20,...national5.slice(0,5)];
+
+  }else if(cat==='1.UWT'||cat==='2.UWT'){
+    const top15=byAvg.slice(0,15);
+    const national5=getNationalTeams(5).filter(t=>!top15.some(x=>x.id===t.id));
+    const pool=exclude(byAvg.slice(0,35),top15);
+    const random5=pickRandom(exclude(pool,national5),5);
+    selected=[...top15,...national5.slice(0,5),...random5];
+
+  }else if(cat==='1.HC'||cat==='2.HC'){
+    const national5=getNationalTeams(5);
+    const pool=exclude(byAvg.slice(0,55),national5);
+    const random20=pickRandom(pool,20);
+    selected=[...national5,...random20];
+
+  }else if(cat==='1.1'||cat==='2.1'){
+    const nationalPool=getNationalTeams(20);
+    const random12=pickRandom(nationalPool,12);
+    const worldPool=exclude(byAvg,random12);
+    const random13=pickRandom(worldPool,13);
+    selected=[...random12,...random13];
+
+  }else{ // 1.2, 2.2, default
+    const nationalPool=getNationalTeams(25);
+    const random15=pickRandom(nationalPool,15);
+    const worldPool=exclude(byAvg,random15);
+    const random10=pickRandom(worldPool,10);
+    selected=[...random15,...random10];
+  }
+
+  selectedTeams=new Set(selected.map(t=>t.id));
+}
+
 function loadRaceIntoBuilder(raceId){
   const race = calendar.find(r=>r.id===raceId);
   if(!race) return;
@@ -2210,8 +2277,8 @@ function loadRaceIntoBuilder(raceId){
   // Set race name if field exists
   const nameEl = document.getElementById('race-name');
   if(nameEl) nameEl.value = race.name;
-  // Clear team selection so user picks fresh
-  selectedTeams.clear();
+  // Auto-select teams based on race category
+  autoSelectTeamsForRace(race);
   showTab('race');
   renderStages();
   renderRaceTeamPicker();
