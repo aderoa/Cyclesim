@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v5.2</title>
+<title>CycleSim v5.4</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v5.2</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v5.4</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -457,6 +457,7 @@ tbody td{padding:6px 10px}
           <div class="form-group">
             <label class="form-label">Race Name</label>
             <input type="text" class="form-input" id="race-name" placeholder="e.g. Tour des Alpes 2026">
+          <button class="btn btn-accent" style="margin-top:8px;width:100%" onclick="simulateRace()">🎲 Simulate Race</button>
           </div>
         </div>
       </div>
@@ -568,7 +569,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '5.2';
+const CACHE_VERSION = '5.4';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1936,14 +1937,14 @@ function randDist(terrain){
 const SEASON_START = new Date(2026,0,1);
 const SEASON_END   = new Date(2026,11,15);
 const FIXED_DATES = {
-  "Milano-San Remo":      82,  // March 23
-  "Tour of Flanders":     95,  // April 5
-  "Paris-Roubaix":       102,  // April 12
-  "Liege-Bastogne-Liege":116,  // April 26
-  "Giro d'Italia":       129,  // May 9 (21 stages)
-  "Tour de France":      185,  // July 4 (21 stages)
-  "Il Giro di Lombardia":276,  // Oct 3
-  "Vuelta a Espana":     227,  // Aug 15 (21 stages)
+  "Milano-San Remo":        82,
+  "Tour of Flanders":       95,
+  "Paris-Roubaix":         102,
+  "Liège-Bastogne-Liège": 116,
+  "Giro d'Italia":          129,
+  "Tour de France":         185,
+  "Il Giro di Lombardia":   276,
+  "Vuelta a España":       227,
 };
 function raceStartDay(race){ return race.startDay; }
 function dayToDate(day){
@@ -1959,34 +1960,16 @@ function raceDateStr(race){
   return s+' – '+fmtDate(race.startDay+race.stages.length-1)+' 2026';
 }
 function assignRaceDates(cal){
-  const occupied=[]; // {s,e} day ranges
-  function isFree(start,dur){
-    const end=start+dur-1;
-    if(end>=349) return false;
-    return !occupied.some(r=>!(end<r.s||start>r.e));
-  }
-  function claimDay(start,dur){ occupied.push({s:start,e:start+dur-1}); }
-  function findDay(dur,lo,hi){
-    for(let i=0;i<80;i++){
-      const d=randInt(lo,Math.max(lo,hi-dur));
-      if(isFree(d,dur)) return d;
-    }
-    for(let d=lo;d<=hi-dur;d++) if(isFree(d,dur)) return d;
-    return -1;
-  }
-
-  // Fixed races
+  // Fixed races get their real-life day
   cal.forEach(r=>{
     const fd=FIXED_DATES[r.name];
-    if(fd!=null){ r.startDay=fd; claimDay(fd,r.stages.length); }
+    if(fd!=null){ r.startDay=fd; }
   });
 
-  // Random races
-  const windows={national_tour:[20,260],city_classic:[0,340],city_tour:[0,340]};
-  cal.filter(r=>r.startDay==null).sort(()=>Math.random()-0.5).forEach(r=>{
-    const [lo,hi]=windows[r.type]||[0,340];
-    const d=findDay(r.stages.length,lo,hi);
-    if(d>=0){ r.startDay=d; claimDay(d,r.stages.length); }
+  // All other races: random day, only constraint is race must finish by Dec 15 (day 348)
+  cal.filter(r=>r.startDay==null).forEach(r=>{
+    const maxStart = 348 - (r.stages.length - 1);
+    r.startDay = randInt(0, maxStart);
   });
 }
 
@@ -2837,7 +2820,7 @@ function renderResults(){
   let rows;
   if(activeResultTab==='gc'){
     rows=gcResult.map((r,i)=>buildResultRow(r.position,r.rider,r.totalGap,i===0));
-    renderResultTable(rows,'General Classification — Overall');
+    renderResultTable(rows,'General Classification — Overall',lastResults.abandoned||[]);
   } else {
     const idx=parseInt(activeResultTab.replace('stage-',''));
     const sr=stageResults[idx];
@@ -2860,7 +2843,7 @@ function buildResultRow(pos,rider,gap,isWinner){
     <td>${gapCell}</td>
   </tr>`;
 }
-function renderResultTable(rows,subtitle){
+function renderResultTable(rows,subtitle,abandoned){
   document.getElementById('results-area').innerHTML=`
     <div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">${subtitle}</div>
     <div class="result-wrap">
