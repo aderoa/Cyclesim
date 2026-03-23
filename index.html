@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v7.3</title>
+<title>CycleSim v7.4</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.3</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.4</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -570,7 +570,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '7.3';
+const CACHE_VERSION = '7.4';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -966,9 +966,11 @@ function saveNewRider(){
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
-const T            = 696;
-const NATIVE_SIZE  = T * 4;   // 2360
-const DRAFT_SIZE   = T * 3;   // 1770
+// T is computed dynamically when pools are generated (floor(allRiders.length / 7))
+// These are placeholders — actual values computed in stepGeneratePools()
+let T            = 696;
+let NATIVE_SIZE  = T * 4;
+let DRAFT_SIZE   = T * 3;
 // free agents = allRiders.length - NATIVE_SIZE - DRAFT_SIZE
 
 // ── RESET ───────────────────────────────────────────────────────
@@ -992,6 +994,12 @@ function confirmGenerate(){
 // ── STEP 1: Generate pools — purely random, fixed sizes ─────────
 // This step ONLY assigns riders to pools. No teams. No nationality.
 function stepGeneratePools(){
+  // Recompute T based on current rider count: floor(riders / 7) teams
+  T = Math.floor(allRiders.length / 7);
+  NATIVE_SIZE = T * 4;
+  DRAFT_SIZE  = T * 3;
+  console.log('Pool sizes: T='+T+' NATIVE='+NATIVE_SIZE+' DRAFT='+DRAFT_SIZE+' riders='+allRiders.length);
+
   if(!allRiders.length){alert('Rider database not loaded yet.');return;}
   const shuffled=[...allRiders].sort(()=>Math.random()-.5);
   nativePool = shuffled.slice(0, NATIVE_SIZE).map(r=>r.name);
@@ -1593,18 +1601,24 @@ function detectNewRiders(){
 
   if(newOnes.length === 0) return;
 
-  // Load existing pending pool
-  try {
-    const stored = localStorage.getItem('cyclesim_pendingPool');
-    if(stored) pendingPool = JSON.parse(stored);
-  } catch(e) {}
+  // Build dedup set from LIVE pendingPool (not from localStorage)
+  const existing = new Set(pendingPool);
+  // Also exclude riders already on teams
+  const onTeam = new Set(teams.flatMap(t=>t.riders));
+  newOnes.forEach(r => {
+    if(!existing.has(r.name) && !onTeam.has(r.name)){
+      pendingPool.push(r.name);
+      existing.add(r.name);
+    }
+  });
 
-  // Add new riders to pending pool (avoid dupes)
-  const existing = new Set(pendingPool.map(r => r.name));
-  newOnes.forEach(r => { if(!existing.has(r.name)) pendingPool.push(r.name); });
-
-  // Also add current free agents to pending pool
-  freeAgent.forEach(name => { if(!existing.has(name)) pendingPool.push(name); });
+  // Add free agents that aren't already pending or on a team
+  freeAgent.forEach(name => {
+    if(!existing.has(name) && !onTeam.has(name)){
+      pendingPool.push(name);
+      existing.add(name);
+    }
+  });
 
   savePendingPool();
   saveKnownRiders();
