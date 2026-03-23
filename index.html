@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v5.5</title>
+<title>CycleSim v5.6</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v5.5</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v5.6</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -569,7 +569,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '5.5';
+const CACHE_VERSION = '5.6';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2086,20 +2086,12 @@ function renderCalendar(){
 
   document.getElementById('cal-count-pill').textContent = races.length + ' races';
 
-  // Group by type
-  const groups = {};
-  races.forEach(r=>{ if(!groups[r.type]) groups[r.type]=[]; groups[r.type].push(r); });
-
   let html = '';
-  Object.entries(order).forEach(([type])=>{
-    if(!groups[type]) return;
-    const label = RACE_TYPE_LABEL[type];
-    const color = RACE_TYPE_COLOR[type];
-    html += `<div style="margin-bottom:4px;padding:6px 12px;font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${color};background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1">${label} <span style="opacity:.6">(${groups[type].length})</span></div>`;
-    groups[type].forEach(race=>{
-      const stages = race.stages.length;
-      const terrainBadges = race.stages.slice(0,3).map(s=>`<span class="tbadge tbadge-${s.terrain}" style="font-size:.65rem;padding:1px 5px">${s.terrain}</span>`).join('');
-      html += `<div class="cal-race-row" data-race-id="${race.id}" onclick="openRace(${race.id})">
+  races.forEach(race=>{
+    const stages = race.stages.length;
+    const color = RACE_TYPE_COLOR[race.type]||'var(--muted)';
+    const terrainBadges = race.stages.slice(0,3).map(s=>`<span class="tbadge tbadge-${s.terrain}" style="font-size:.65rem;padding:1px 5px">${s.terrain}</span>`).join('');
+    html += `<div class="cal-race-row" data-race-id="${race.id}" onclick="openRace(${race.id})">
         <span style="width:18px;height:18px;border-radius:3px;background:${color};opacity:.8;flex-shrink:0"></span>
         <span style="flex:1">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.92rem;font-weight:700;text-transform:uppercase;color:var(--text)">${race.name}</span>
@@ -2109,7 +2101,6 @@ function renderCalendar(){
         <span style="display:flex;gap:3px;align-items:center">${terrainBadges}</span>
         <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted);width:40px;text-align:right">${stages===1?'1 day':stages+' st.'}</span>
       </div>`;
-    });
   });
 
   document.getElementById('cal-race-list').innerHTML = html || '<div class="empty-state" style="padding:40px">No races match.</div>';
@@ -2484,20 +2475,27 @@ function simulateStage(riderList, stage, fatigue, gcTimes){
   }
 
   // ── GROUP BUILDING
-  // Threshold in seconds: score diff * gapF < thresh → same group
-  const THRESH = {FLA:3,MTN:8,MM:6,HIL:5,COB:4}[terrain]||5;
+  // Groups form based on score proximity. Riders within groupThresh of leader = same group.
+  // groupThresh is a SCORE difference (not seconds). Then gap in seconds = scoreDiff * gapF.
+  // FLA: big bunch sprint, very tight groups. MTN: more splits but still grouped climbing.
+  // groupThresh in score points:
+  const groupThresh = {FLA:6, MTN:2.5, MM:3, HIL:3.5, COB:4}[terrain] || 3;
+  // gapPerPoint: seconds between riders with 1 score point difference
+  const gapPerPt = {FLA:0.5, MTN:4, MM:3, HIL:2, COB:2, TTR:3, PRL:1.5}[terrain] || 2;
 
-  function buildGroups(riders, baseGap, gapScale){
-    const scale=gapScale||1;
+  function buildGroups(riders, baseGap){
     const scored=riders.map(r=>({rider:r,score:scoreRider(r,terrain)}))
       .sort((a,b)=>b.score-a.score);
-    const groups=[]; // [{gap, members[]}]
-    let curGap=baseGap, curGroup=[], prevScore=null;
+    const groups=[];
+    let curGap=baseGap, curGroup=[], leaderScore=null, prevScore=null;
     scored.forEach(({rider,score})=>{
-      const delta=prevScore!==null?(prevScore-score)*gapF*scale:0;
-      if(prevScore!==null && delta>THRESH){
+      if(leaderScore===null) leaderScore=score;
+      const gapFromLeaderGroup = (leaderScore - score) * gapPerPt;
+      const gapFromPrev = prevScore!==null ? (prevScore - score) * gapPerPt : 0;
+      // New group if rider is more than groupThresh*gapPerPt seconds behind prev group leader
+      if(curGroup.length>0 && gapFromPrev > groupThresh*gapPerPt){
         groups.push({gap:curGap, members:curGroup});
-        curGap+=delta;
+        curGap = baseGap + gapFromLeaderGroup;
         curGroup=[];
       }
       curGroup.push(rider);
