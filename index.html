@@ -232,7 +232,7 @@ tbody td{padding:6px 10px}
     <button class="nav-btn" id="nav-btn-nativeFA" onclick="showTab('nativeFA')" style="display:none">Native FA <span class="nav-badge" id="nav-nfa-count" style="background:var(--red)">—</span></button>
     <button class="nav-btn" id="nav-btn-updates" onclick="showTab('updates')" style="display:none">Available Riders <span class="nav-badge" id="nav-updates-count" style="background:var(--blue)">—</span></button>
     <button class="nav-btn" onclick="showTab('draft')">Draft <span class="nav-badge" id="nav-draft-badge" style="display:none">✓</span></button>
-    <button class="nav-btn" onclick="showTab('race')">Race Builder</button>
+    <button class="nav-btn" id="nav-btn-race" onclick="showTab('race')">Race Setup</button>
     <button class="nav-btn" onclick="showTab('results')">Results</button>
     <button class="nav-btn" id="nav-btn-calendar" onclick="showTab('calendar')">Calendar <span class="nav-badge" id="nav-calendar-count" style="background:var(--blue)">—</span></button>
     <button class="nav-btn" onclick="showTab('uci');renderUciRankings()">UCI Ranking</button>
@@ -428,51 +428,10 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ RACE BUILDER ═════════════════════════════════════════ -->
 <div id="tab-race" class="tab-content">
-  <div class="two-col">
-    <!-- Left: race config + stages -->
-    <div>
-      <div class="card">
-        <div class="card-header">⚙ Race Configuration</div>
-        <div class="card-body">
-          <div class="form-group">
-            <label class="form-label">Race Name</label>
-            <input type="text" class="form-input" id="race-name" placeholder="e.g. Tour des Alpes 2026">
-          <button class="btn btn-accent" style="margin-top:8px;width:100%" onclick="simulateRace()">🎲 Simulate Race</button>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header">📍 Stages <span class="pill" id="stage-count-pill">0</span></div>
-        <div class="card-body">
-          <div class="stage-list" id="stage-list"><div class="empty-state" style="padding:10px;font-size:.85rem">No stages yet.</div></div>
-          <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="addStage()">+ Add Stage</button></div>
-        </div>
-      </div>
-    </div>
-    <!-- Right: team selector -->
-    <div>
-      <div class="card">
-        <div class="card-header">🏁 Teams in Race <span class="pill" id="race-team-count">0 selected</span></div>
-        <div class="card-body">
-          <div class="toolbar" style="margin-bottom:8px">
-            <input type="text" class="search-input" id="race-team-search" placeholder="Search teams…" oninput="renderRaceTeamPicker()">
-            <select class="form-select" id="race-country-filter" onchange="renderRaceTeamPicker()">
-              <option value="">All Countries</option>
-            </select>
-          </div>
-          <div class="toolbar" style="margin-bottom:8px">
-            <button class="btn btn-ghost btn-sm" onclick="selectTopTeams(10)">Top 10</button>
-            <button class="btn btn-ghost btn-sm" onclick="selectTopTeams(20)">Top 20</button>
-            <button class="btn btn-accent btn-sm" onclick="selectRandomTeams(25)">🎲 Random 25</button>
-            <button class="btn btn-ghost btn-sm" onclick="selectAllFilteredTeams()">All Visible</button>
-            <button class="btn btn-danger btn-sm" onclick="clearTeamSelection()">Clear</button>
-          </div>
-          <div id="race-team-grid" class="team-select-grid">
-            <div class="empty-state" style="grid-column:1/-1;font-size:.83rem">Generate teams first.</div>
-          </div>
-          <div class="info-bar" id="race-rider-count" style="display:none"></div>
-        </div>
-      </div>
+  <div id="race-setup-wrap">
+    <div class="empty-state" style="margin-top:80px">
+      <div class="empty-icon">🏁</div>
+      <div>Start the season from the Calendar tab to begin racing.</div>
     </div>
   </div>
 </div>
@@ -482,12 +441,10 @@ tbody td{padding:6px 10px}
   <div class="results-topbar">
     <div>
       <div class="results-title" id="res-race-name">No race simulated yet</div>
-      <div class="results-meta" id="res-race-meta">Set up a race in Race Builder, then simulate.</div>
+      <div class="results-meta" id="res-race-meta">Start the season from the Calendar tab.</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn btn-ghost btn-sm" id="rerun-btn" onclick="simulateRace()" style="display:none">↺ Restart</button>
       <button class="btn btn-accent" id="next-stage-btn" onclick="simulateNextStage()" style="display:none">▶ Next Stage</button>
-      <button class="btn btn-accent" onclick="simulateRace()">🎲 Simulate</button>
     </div>
   </div>
   <div id="stage-tabs" class="stage-tabs"></div>
@@ -2899,11 +2856,14 @@ function applyVariance(rider, rv, sv){
   return out;
 }
 
-// Start race: first stage only
+// Legacy — only called if somehow triggered outside season
 function simulateRace(){
-  const raceName=document.getElementById('race-name').value.trim()||'Custom Race';
-  if(!stages.length){alert('Add at least one stage first.');return;}
-  if(!selectedTeams.size){alert('Select at least one team.');return;}
+  if(seasonSim){ startSeasonDay(); return; }
+  alert('Start the season from the Calendar tab.');
+  showTab('calendar');
+  return;
+  const raceName='Custom Race';
+  if(!stages.length||!selectedTeams.size) return;
 
   const riderList=[];
   for(const id of selectedTeams){
@@ -3381,7 +3341,8 @@ function initSeason(){
   uciPoints = {};
   saveUciPoints();
   saveSeasonState();
-  renderSeasonPanel();
+  // Jump straight to first race
+  startSeasonDay();
 }
 
 // ── SIMULATE ONE DAY ────────────────────────────────────────────
@@ -3437,19 +3398,27 @@ function runSeasonQueueItem(){
   if(raceId==null) return finishSeasonDay();
 
   const entry = seasonSim.activeRaces[raceId];
-  if(!entry) { advanceSeasonQueue(); return; }
+  if(!entry){ advanceSeasonQueue(); return; }
   const {race, rs} = entry;
 
-  // Load race into Race Builder UI (with existing team state if already running)
   calSelectedRace = race;
   stageIdSeq = 0;
   stages = race.stages.map((s,i)=>({id:stageIdSeq++, name:s.name, terrain:s.terrain, distance:s.distance}));
-  const nameEl = document.getElementById('race-name');
-  if(nameEl) nameEl.value = race.name;
 
-  // If stage race already has teams selected (continuing), reuse raceState
-  // Otherwise build fresh raceState from season rs
-  raceState = {
+  // Continuing a stage race that already has riders selected — skip team picker
+  if(rs.stageResults && rs.stageResults.length > 0){
+    raceState = buildRaceStateFromSeasonRS(race, rs, raceId);
+    runNextStage();
+    return;
+  }
+
+  // New race — show team selection screen first
+  autoSelectTeamsForRace(race);
+  showRaceSetup(race, raceId);
+}
+
+function buildRaceStateFromSeasonRS(race, rs, raceId){
+  return {
     raceName: race.name,
     riderList: rs.riderList,
     fatigue: rs.fatigue,
@@ -3460,10 +3429,105 @@ function runSeasonQueueItem(){
     currentStageIndex: rs.currentStageIndex,
     raceVariance: rs.raceVariance,
     totalStages: race.stages.length,
-    _seasonRaceId: raceId, // mark as season race
+    _seasonRaceId: raceId,
   };
+}
 
-  // Auto-simulate the stage
+function showRaceSetup(race, raceId){
+  showTab('race');
+  const wrap = document.getElementById('race-setup-wrap');
+  if(!wrap) return;
+
+  const cat = race.category||'';
+  const catColor = UCI_CAT_COLOR[cat]||'var(--muted)';
+  const stageRows = race.stages.map((s,i)=>
+    `<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid var(--border);font-size:.82rem">
+      <span style="color:var(--muted);font-size:.72rem;min-width:20px">${i+1}</span>
+      <span class="tbadge tbadge-${s.terrain}" style="font-size:.68rem">${s.terrain}</span>
+      <span style="flex:1;color:var(--text)">${s.name}</span>
+      <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">${s.distance}km</span>
+    </div>`
+  ).join('');
+
+  wrap.innerHTML = `
+    <div style="max-width:1200px;margin:0 auto;padding:8px 0">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <span style="padding:3px 10px;border-radius:4px;background:${catColor};font-family:'Barlow Condensed',sans-serif;font-size:.8rem;font-weight:800;color:#000">${cat}</span>
+        <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.8rem;font-weight:800;text-transform:uppercase;color:var(--text)">${race.name}</span>
+        <span style="font-size:.82rem;color:var(--muted)">${flagImg(race.country,12)} ${race.country} · ${race.stages.length===1?'1-day classic':race.stages.length+' stages'} · ${raceDateStr(race)}</span>
+        <button class="btn btn-accent" style="margin-left:auto" onclick="confirmSeasonRaceStart(${raceId})">🚀 Start Race</button>
+      </div>
+      <div style="display:grid;grid-template-columns:300px 1fr;gap:12px">
+        <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">
+          <div style="padding:7px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:'Barlow Condensed',sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Stages (${race.stages.length})</div>
+          ${stageRows}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 0">
+            <span style="font-family:'Barlow Condensed',sans-serif;font-size:.9rem;font-weight:700;text-transform:uppercase;color:var(--text)">Teams in Race</span>
+            <span class="pill" id="race-team-count-pill">${selectedTeams.size} selected</span>
+            <button class="btn btn-ghost btn-sm" onclick="selectedTeams.clear();autoSelectTeamsForRace(calSelectedRace);renderSeasonTeamPicker()">↺ Reset to default</button>
+            <button class="btn btn-ghost btn-sm" onclick="selectedTeams.clear();renderSeasonTeamPicker()">✕ Clear all</button>
+            <input type="text" class="search-input" id="season-team-search" placeholder="Search teams…" oninput="renderSeasonTeamPicker()" style="max-width:180px;margin-left:auto">
+          </div>
+          <div id="season-team-grid" class="team-select-grid" style="max-height:calc(100vh - 220px)"></div>
+        </div>
+      </div>
+    </div>`;
+
+  renderSeasonTeamPicker();
+}
+
+function renderSeasonTeamPicker(){
+  const grid = document.getElementById('season-team-grid');
+  const pill = document.getElementById('race-team-count-pill');
+  if(!grid) return;
+  const q = (document.getElementById('season-team-search')?.value||'').toLowerCase();
+  const filtered = teams.filter(t=>t.riders.length>0&&(!q||t.name.toLowerCase().includes(q)||t.country.toLowerCase().includes(q)));
+  grid.innerHTML = filtered.map(t=>{
+    const sel = selectedTeams.has(t.id);
+    const avg = teamAvg(t).toFixed(1);
+    return `<div class="team-select-card ${sel?'selected':''}" onclick="toggleSeasonTeam(${t.id})">
+      <span class="tsc-flag">${flagImg(t.country,14)}</span>
+      <div class="tsc-info">
+        <div class="tsc-name">${t.name}</div>
+        <div class="tsc-meta">${t.country} · ${avg} avg</div>
+      </div>
+      <span class="tsc-check">✓</span>
+    </div>`;
+  }).join('');
+  if(pill) pill.textContent = selectedTeams.size+' selected';
+}
+
+function toggleSeasonTeam(id){
+  if(selectedTeams.has(id)) selectedTeams.delete(id);
+  else selectedTeams.add(id);
+  renderSeasonTeamPicker();
+}
+
+function confirmSeasonRaceStart(raceId){
+  if(!selectedTeams.size){ alert('Select at least one team.'); return; }
+  const entry = seasonSim.activeRaces[raceId];
+  if(!entry){ advanceSeasonQueue(); return; }
+  const {race, rs} = entry;
+
+  // Build fresh raceState with selected teams
+  const riderList=[];
+  for(const id of selectedTeams){
+    const team=teams.find(t=>t.id===id);
+    if(!team) continue;
+    team.riders.forEach(n=>{const r=allRiders.find(x=>x.name===n);if(r)riderList.push({...r});});
+  }
+  if(riderList.length<2){ alert('Need at least 2 riders.'); return; }
+
+  // Update season rs with selected riders
+  entry.rs.riderList = riderList;
+  entry.rs.fatigue = Object.fromEntries(riderList.map(r=>[r.name,0]));
+  entry.rs.gcTimes = Object.fromEntries(riderList.map(r=>[r.name,0]));
+  entry.rs.activeRiders = [...riderList];
+  entry.rs.raceVariance = makeVariance(riderList, 0.10);
+
+  raceState = buildRaceStateFromSeasonRS(race, entry.rs, raceId);
   runNextStage();
 }
 
