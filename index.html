@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v9.9</title>
+<title>CycleSim v10.1</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v9.9</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v10.1</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '9.9';
+const CACHE_VERSION = '10.1';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2011,6 +2011,24 @@ function assignRaceDates(cal){
     const maxStart = 348 - (r.stages.length - 1);
     r.startDay = randInt(0, maxStart);
   });
+
+  // Within each country, ensure higher-priority races start no later than lower-priority ones.
+  // This means if Tour de Belgique (2.UWT) and GP Bruxelles (2.2) overlap,
+  // the UWT starts first so its national teams are locked in before the 2.2 picks teams.
+  const byCountry = {};
+  cal.filter(r=>r.startDay!=null && !FIXED_DATES[r.name]).forEach(r=>{
+    if(!byCountry[r.country]) byCountry[r.country]=[];
+    byCountry[r.country].push(r);
+  });
+
+  Object.values(byCountry).forEach(races=>{
+    if(races.length<2) return;
+    // Sort by priority desc
+    races.sort((a,b)=>(CAT_PRIORITY[b.category]||0)-(CAT_PRIORITY[a.category]||0));
+    // Collect all start days, sort ascending, reassign highest priority = earliest date
+    const days = races.map(r=>r.startDay).sort((a,b)=>a-b);
+    races.forEach((r,i)=>{ r.startDay = days[i]; });
+  });
 }
 
 // ── UCI CATEGORY ASSIGNMENT ──────────────────────────────────────
@@ -2261,41 +2279,13 @@ const CAT_PRIORITY = {
 
 // Get teams that are "reserved" for higher-priority races overlapping with this race's dates
 function getReservedTeams(race){
-  const reserved = new Set();
-  if(!calendar||!race.startDay) return reserved;
-  const raceEnd = race.startDay + (race.stages?.length||1) - 1;
-  const myPriority = CAT_PRIORITY[race.category]||0;
-  const byAvgAll = [...teams].filter(t=>t.riders.length>0).sort((a,b)=>teamAvg(b)-teamAvg(a));
-
-  calendar.forEach(other=>{
-    if(other.id===race.id) return;
-    const oStart = other.startDay;
-    const oEnd = oStart + (other.stages?.length||1) - 1;
-    // Overlapping dates?
-    if(oStart>raceEnd || oEnd<race.startDay) return;
-    const oPriority = CAT_PRIORITY[other.category]||0;
-    if(oPriority <= myPriority) return; // only block for strictly higher priority
-
-    // Add the reserved pool for that higher race to blocked set
-    const oCountry = other.country;
-    const oNational = byAvgAll.filter(t=>t.country===oCountry);
-
-    if(oPriority>=8){ // GT / monument: top-20 + all national
-      byAvgAll.slice(0,20).forEach(t=>reserved.add(t.id));
-      oNational.forEach(t=>reserved.add(t.id));
-    } else if(oPriority>=7){ // 1.UWT / 2.UWT: top-35 + all national
-      byAvgAll.slice(0,35).forEach(t=>reserved.add(t.id));
-      oNational.forEach(t=>reserved.add(t.id));
-    } else if(oPriority>=6){ // 1.HC / 2.HC: top-50 + all national
-      byAvgAll.slice(0,50).forEach(t=>reserved.add(t.id));
-      oNational.forEach(t=>reserved.add(t.id));
-    } else if(oPriority>=5){ // 1.1 / 2.1: all national
-      oNational.forEach(t=>reserved.add(t.id));
-    } else { // 1.2 / 2.2: all national
-      oNational.forEach(t=>reserved.add(t.id));
-    }
-  });
-  return reserved;
+  // Only block teams for races happening ON THE SAME DAY as this race.
+  // We don't look forward at the whole calendar — that caused national teams
+  // to be wrongly excluded from their own country's races all season.
+  // Teams get blocked from lower races only if a higher-priority race
+  // runs on the exact same day (handled via busyTeams from currentDayEvents).
+  // This function is now a no-op — all blocking is done via busyTeams.
+  return new Set();
 }
 
 function autoSelectTeamsForRace(race){
