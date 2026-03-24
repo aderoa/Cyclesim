@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v10.7</title>
+<title>CycleSim v10.8</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,13 +225,13 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v10.7</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v10.8</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
     <button class="nav-btn" id="nav-btn-nativeFA" onclick="showTab('nativeFA')" style="display:none">Native FA <span class="nav-badge" id="nav-nfa-count" style="background:var(--red)">—</span></button>
     <button class="nav-btn" id="nav-btn-updates" onclick="showTab('updates')" style="display:none">Available Riders <span class="nav-badge" id="nav-updates-count" style="background:var(--blue)">—</span></button>
-    <button class="nav-btn" onclick="showTab('draft')" style="display:none" id="nav-btn-draft">Draft <span class="nav-badge" id="nav-draft-badge" style="display:none">✓</span></button>
+    <!-- Draft merged into Teams tab -->
     <button class="nav-btn" id="nav-btn-race" onclick="showTab('race')" style="display:none">Race Setup</button>
     <button class="nav-btn nav-season-tab" id="nav-btn-results" onclick="showTab('results')" style="display:none">Results</button>
     <button class="nav-btn nav-season-tab" id="nav-btn-calendar" onclick="showTab('calendar')" style="display:none">Calendar <span class="nav-badge" id="nav-calendar-count" style="background:var(--blue)">—</span></button>
@@ -264,22 +264,22 @@ tbody td{padding:6px 10px}
   <div class="toolbar">
     <button class="btn btn-accent" id="btn-step1" onclick="stepGeneratePools()">① Generate Pools</button>
     <button class="btn btn-ghost" id="btn-step2" onclick="stepSortByNationality()" disabled>② Sort by Nationality</button>
+    <button class="btn btn-accent" id="draft-run-btn" onclick="runDraft()" style="display:none">③ Run Draft</button>
+    <button class="btn btn-danger btn-sm" id="draft-reset-btn" onclick="resetDraft()" style="display:none">↺ Draft</button>
     <button class="btn btn-danger btn-sm" onclick="confirmGenerate()">↺ Reset All</button>
-    <input type="text" class="search-input" id="teams-search" placeholder="Search teams…" oninput="renderTeams()" style="max-width:180px">
+    <input type="text" class="search-input" id="teams-search" placeholder="Search teams…" oninput="renderTeams()" style="max-width:160px">
     <select class="form-select" id="teams-country-filter" onchange="renderTeams()">
       <option value="">All Countries</option>
     </select>
     <span class="pill" id="teams-count-pill">—</span>
     <span class="pill" id="nfa-count-pill" style="display:none;color:var(--red);border-color:rgba(232,64,64,.3);background:rgba(232,64,64,.08)">— native FAs</span>
+    <span class="pill" id="draft-status-pill" style="display:none"></span>
   </div>
 
-  <!-- Main layout: pools sidebar + teams grid -->
-  <div style="display:grid;grid-template-columns:220px 1fr;gap:10px;height:calc(100vh - 110px)">
+  <div style="display:grid;grid-template-columns:200px 1fr 280px;gap:10px;height:calc(100vh - 110px)">
 
-    <!-- Left: pool panels stacked -->
+    <!-- LEFT: pool panels -->
     <div style="display:flex;flex-direction:column;gap:8px;overflow:hidden">
-
-      <!-- Native pool -->
       <div style="display:flex;flex-direction:column;border:1px solid rgba(62,207,110,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex:4">
         <div style="padding:6px 12px;background:rgba(62,207,110,.08);border-bottom:1px solid rgba(62,207,110,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--green)">① Native Pool</span>
@@ -287,17 +287,13 @@ tbody td{padding:6px 10px}
         </div>
         <div id="ps-native-list" style="flex:1;overflow-y:auto;font-size:.76rem"></div>
       </div>
-
-      <!-- Draft pool -->
       <div style="display:flex;flex-direction:column;border:1px solid rgba(77,159,255,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex:3">
         <div style="padding:6px 12px;background:rgba(77,159,255,.08);border-bottom:1px solid rgba(77,159,255,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--blue)">② Draft Pool</span>
-          <span class="pill" id="ps-draft-count" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)" id="updates-total-pill">—</span>
+          <span class="pill" id="ps-draft-count" style="color:var(--blue);border-color:rgba(77,159,255,.3);background:rgba(77,159,255,.08)">—</span>
         </div>
         <div id="ps-draft-list" style="flex:1;overflow-y:auto;font-size:.76rem"></div>
       </div>
-
-      <!-- Free agents (pool remainder) -->
       <div style="display:flex;flex-direction:column;border:1px solid rgba(245,196,0,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex:1;min-height:52px">
         <div style="padding:6px 12px;background:rgba(245,196,0,.08);border-bottom:1px solid rgba(245,196,0,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">Free Agents</span>
@@ -305,8 +301,6 @@ tbody td{padding:6px 10px}
         </div>
         <div id="ps-fa-list" style="flex:1;overflow-y:auto;font-size:.76rem"></div>
       </div>
-
-      <!-- Native Free Agents (post-sort leftovers) -->
       <div id="nfa-panel" style="display:none;flex-direction:column;border:1px solid rgba(232,64,64,.3);border-radius:8px;overflow:hidden;background:var(--surface);flex:2;min-height:52px">
         <div style="padding:6px 12px;background:rgba(232,64,64,.08);border-bottom:1px solid rgba(232,64,64,.2);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--red)">Native FAs</span>
@@ -314,42 +308,52 @@ tbody td{padding:6px 10px}
         </div>
         <div id="ps-nfa-list" style="flex:1;overflow-y:auto;font-size:.76rem"></div>
       </div>
-
     </div>
 
-    <!-- Right: Native FA assignment tool OR teams grid -->
+    <!-- CENTER: NFA tool + teams grid -->
     <div style="display:flex;flex-direction:column;gap:8px;overflow:hidden">
-
-      <!-- Native FA assignment tool (shown when nativeFAs exist) -->
       <div id="nfa-tool" style="display:none;border:1px solid rgba(232,64,64,.3);border-radius:8px;overflow:hidden;background:var(--surface);height:300px;flex-shrink:0">
         <div style="padding:7px 14px;background:rgba(232,64,64,.08);border-bottom:1px solid rgba(232,64,64,.2);display:flex;align-items:center;gap:10px;height:38px">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.85rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--red)">⚠ Assign Native Free Agents</span>
-          <span style="font-size:.75rem;color:var(--muted)">Drag rider → team, or click rider then click team</span>
+          <span style="font-size:.75rem;color:var(--muted)">Click rider → click team</span>
           <span class="pill" id="nfa-remaining" style="margin-left:auto;color:var(--red);border-color:rgba(232,64,64,.3);background:rgba(232,64,64,.08)">—</span>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;height:262px">
           <div style="border-right:1px solid var(--border);display:flex;flex-direction:column;height:262px">
-            <div style="padding:4px 10px;font-family:'Barlow Condensed',sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border);height:24px;flex-shrink:0">Unassigned</div>
-            <div id="nfa-unassigned-list" style="height:238px;overflow-y:auto"></div>
+            <div style="padding:4px 10px;font-family:'Barlow Condensed',sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border);flex-shrink:0">Unassigned</div>
+            <div id="nfa-unassigned-list" style="flex:1;overflow-y:auto"></div>
           </div>
           <div style="display:flex;flex-direction:column;height:262px">
-            <div style="padding:4px 10px;font-family:'Barlow Condensed',sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border);height:24px;flex-shrink:0">Teams with open slots</div>
-            <div id="nfa-team-list" style="height:238px;overflow-y:auto"></div>
+            <div style="padding:4px 10px;font-family:'Barlow Condensed',sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border);flex-shrink:0">Teams with open slots</div>
+            <div id="nfa-team-list" style="flex:1;overflow-y:auto"></div>
           </div>
         </div>
       </div>
-
-      <!-- Teams grid -->
       <div id="teams-grid" class="teams-grid" style="flex:1;min-height:0;overflow-y:auto;align-content:start">
         <div class="empty-state" style="grid-column:1/-1">
           <div class="empty-icon">🚴</div>
-          <div>Generate pools, then sort by nationality to create teams.</div>
+          <div>① Generate Pools → ② Sort by Nationality → ③ Run Draft</div>
         </div>
       </div>
-
     </div>
+
+    <!-- RIGHT: Draft panel -->
+    <div style="display:flex;flex-direction:column;gap:8px;overflow:hidden">
+      <div class="card" style="margin:0;flex-shrink:0">
+        <div class="card-header" style="font-size:.8rem">📋 Draft Info</div>
+        <div class="card-body" id="draft-info" style="font-size:.82rem;color:var(--muted)">
+          Run the draft after sorting teams by nationality.
+        </div>
+      </div>
+      <div class="draft-log-wrap" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+        <div class="draft-log-header"><span>Pick Log</span><span id="draft-log-count">—</span></div>
+        <div id="draft-log-body" style="flex:1;overflow-y:auto"><div class="empty-state" style="padding:20px;font-size:.82rem">No picks yet.</div></div>
+      </div>
+    </div>
+
   </div>
 </div>
+
 
 <!-- ═══ NATIVE FA ASSIGNMENT ═════════════════════════════════ -->
 <div id="tab-nativeFA" class="tab-content">
@@ -401,35 +405,7 @@ tbody td{padding:6px 10px}
   </div>
 </div>
 
-<div id="tab-draft" class="tab-content">
-  <div class="toolbar">
-    <button class="btn btn-accent" id="draft-run-btn" onclick="runDraft()">⚡ Run Free Agent Draft</button>
-    <button class="btn btn-danger btn-sm" id="draft-reset-btn" onclick="resetDraft()" style="display:none">✕ Reset Draft</button>
-    <input type="text" class="search-input" id="draft-search" placeholder="Filter teams…" oninput="renderDraftTeams()" style="max-width:220px">
-    <span class="pill" id="draft-status-pill">Draft not run</span>
-  </div>
-  <div id="draft-not-ready" class="empty-state" style="display:none">
-    <div class="empty-icon">🚴</div>
-    <div>Generate teams first in the Teams tab.</div>
-  </div>
-  <div id="draft-layout" class="draft-layout">
-    <div class="draft-sidebar">
-      <div class="card" style="margin:0;flex-shrink:0">
-        <div class="card-header">📋 Draft Info</div>
-        <div class="card-body" id="draft-info" style="font-size:.85rem;color:var(--muted)">
-          Run the draft to see results here.
-        </div>
-      </div>
-      <div class="draft-log-wrap" id="draft-log">
-        <div class="draft-log-header"><span>Pick Log</span><span id="draft-log-count">—</span></div>
-        <div id="draft-log-body"><div class="empty-state" style="padding:20px;font-size:.82rem">No picks yet.</div></div>
-      </div>
-    </div>
-    <div class="draft-main" id="draft-main">
-      <div class="empty-state"><div class="empty-icon">📋</div><div>Run the draft to see full team rosters.</div></div>
-    </div>
-  </div>
-</div>
+<div id="tab-draft" class="tab-content" style="display:none"><!-- merged into Teams tab --></div>
 
 <!-- ═══ RACE BUILDER ═════════════════════════════════════════ -->
 <div id="tab-race" class="tab-content">
@@ -515,7 +491,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '10.7';
+const CACHE_VERSION = '10.8';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1019,6 +995,7 @@ function stepSortByNationality(){
   document.getElementById('nav-teams-count').textContent=teams.length;
   updatePoolStatus();
   buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
+  const draftRunBtn=document.getElementById('draft-run-btn');if(draftRunBtn)draftRunBtn.style.display='';
 
   if(nativeFreeAgents.length>0){
     autoAssignNativeFA();
@@ -4678,8 +4655,7 @@ function loadSavedDraft(){
 
 function renderDraftUI(){
   if(!teams.length){
-    document.getElementById('draft-not-ready').style.display='block';
-    document.getElementById('draft-layout').style.display='none';
+    // draft-not-ready removed — integrated into teams tab
     return;
   }
   document.getElementById('draft-not-ready').style.display='none';
@@ -4747,9 +4723,9 @@ function renderDraftTeams(){
     .filter(t=>t.name.toLowerCase().includes(q)||t.country.toLowerCase().includes(q))
     .sort((a,b)=>teamAvg(b)-teamAvg(a));
 
-  if(!filtered.length){document.getElementById('draft-main').innerHTML='<div class="empty-state" style="font-size:.83rem">No teams match.</div>';return;}
+  if(!filtered.length){document.getElementById('teams-grid').innerHTML='<div class="empty-state" style="font-size:.83rem">No teams match.</div>';return;}
 
-  document.getElementById('draft-main').innerHTML=`
+  document.getElementById('teams-grid').innerHTML=`
     <div class="draft-teams-grid">
       ${filtered.map(team=>{
         const avg=teamAvg(team);
@@ -4786,16 +4762,16 @@ function renderDraftTeams(){
 }
 
 
-const TABS=['database','teams','nativeFA','updates','draft','freeagents','race','results','calendar','history'];
+const TABS=['database','teams','nativeFA','updates','freeagents','race','results','calendar','history'];
 function showTab(tab){
   document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
   document.getElementById(`tab-${tab}`).classList.add('active');
   document.querySelectorAll('.nav-btn')[TABS.indexOf(tab)]?.classList.add('active');
   if(tab==='race'){ /* race setup rendered by showRaceSetup() */ }
-  if(tab==='teams'){renderTeams();}
+  if(tab==='teams'){renderTeams();renderDraftUI();}
   if(tab==='nativeFA'){renderNativeFA();}
-  if(tab==='draft'){renderDraftUI();}
+  if(tab==='draft'){showTab('teams');return;} // redirect to merged tab
   if(tab==='freeagents'){renderFreeAgents();}
   if(tab==='updates'){renderUpdates();}
   if(tab==='calendar'){renderSeasonPanel();renderCalendar();}
