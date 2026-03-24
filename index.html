@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.0</title>
+<title>CycleSim v12.2</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.0</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.2</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -483,7 +483,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.0';
+const CACHE_VERSION = '12.2';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3019,10 +3019,18 @@ function runNextStage(){
       if(gcAccum[rider.name]!=null) gcAccum[rider.name]+=gap;
     });
   });
+  // Build position lookup from last stage result for tiebreaking same-time finishes
+  const lastStageResult = rs.stageResults[rs.stageResults.length-1]?.result||[];
+  const stagePositionMap = {};
+  lastStageResult.forEach(r=>{ stagePositionMap[r.rider.name] = r.position; });
+
   const gcResult=rs.riderList
     .filter(r=>rs.fatigue[r.name]!==null)
-    .map(r=>({rider:r,totalGap:gcAccum[r.name]??0}))
-    .sort((a,b)=>a.totalGap-b.totalGap)
+    .map(r=>({rider:r, totalGap:gcAccum[r.name]??0,
+      stagePos: stagePositionMap[r.name] ?? 9999}))
+    .sort((a,b)=> a.totalGap!==b.totalGap
+      ? a.totalGap-b.totalGap
+      : a.stagePos-b.stagePos)  // tiebreak: last stage finish position
     .map((r,i)=>({...r,position:i+1}));
 
   // Sync gcTimes from stageResults so simulateStage's top25 protection reflects real GC
@@ -3064,8 +3072,9 @@ function runNextStage(){
         seasonSim.currentDayEvents.push({raceId:rs._seasonRaceId,raceName:race.name,category:race.category||'',
           country:race.country,stageNum:rs.currentStageIndex,totalStages:race.stages.length,
           stageName:race.stages[rs.currentStageIndex-1]?.name||'',
-          stageWinner:lastResults.gcResult?.[0]?.rider?.name||'—',complete:true,
-          gcLeader:lastResults.gcResult?.[0]?.rider?.name||null,gcResult:lastResults.gcResult,
+          stageWinner:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999))[0]?.rider?.name||'—',complete:true,
+          gcLeader:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999))[0]?.rider?.name||null,
+          gcResult:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999)),
           teamIds:[...(rs.officialTeamIds||[])]});
         delete seasonSim.activeRaces[rs._seasonRaceId];
       } else {
@@ -3095,7 +3104,7 @@ function showFinishScreen(lr){
 
   // ── Top-10 GC / finish
   // Re-sort gcResult numerically (totalGap may be string after serialization)
-  const sortedGC = [...(lr.gcResult||[])].sort((a,b)=>Number(a.totalGap)-Number(b.totalGap));
+  const sortedGC = [...(lr.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999));
   const top10 = sortedGC.slice(0,10).map((r,i)=>{
     const t = riderTeamMap[r.rider.name]!=null?teams.find(x=>x.id===riderTeamMap[r.rider.name]):null;
     const gapNum = Number(r.totalGap)||0;
@@ -3144,7 +3153,10 @@ function showFinishScreen(lr){
     if(!classifTeams||!classifTeams.length) return '';
     const leader = classifTeams[0].time;
     const rows = classifTeams.slice(0,5).map((x,i)=>{
-      const gap = i===0?'LEADER':'+'+fmtGap(x.time-leader);
+      const diff = Math.round(Number(x.time)-Number(leader));
+      const gap = i===0?'<span style="color:var(--accent);font-size:.72rem">LEADER</span>'
+        : diff===0?'<span style="color:var(--muted);font-size:.72rem">s.t.</span>'
+        : '<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">+'+diff+' pos</span>';
       return '<tr>'+
         '<td style="padding:3px 8px;color:var(--muted);font-size:.7rem;text-align:center">'+(i+1)+'</td>'+
         '<td style="padding:3px 10px;font-size:.82rem">'+flagImg(x.team.country,11)+' '+x.team.name+'</td>'+
@@ -3585,10 +3597,17 @@ function buildSeasonGC(rs){
       if(gcAccum[rider.name]!=null) gcAccum[rider.name]+=gap;
     });
   });
+  const lastStageRes = rs.stageResults[rs.stageResults.length-1]?.result||[];
+  const stagePosMap = {};
+  lastStageRes.forEach(r=>{ stagePosMap[r.rider.name] = r.position; });
+
   return rs.riderList
     .filter(r=>rs.fatigue[r.name]!==null)
-    .map(r=>({rider:r, totalGap:gcAccum[r.name]??0}))
-    .sort((a,b)=>a.totalGap-b.totalGap)
+    .map(r=>({rider:r, totalGap:gcAccum[r.name]??0,
+      stagePos: stagePosMap[r.name] ?? 9999}))
+    .sort((a,b)=> a.totalGap!==b.totalGap
+      ? a.totalGap-b.totalGap
+      : a.stagePos-b.stagePos)
     .map((r,i)=>({...r,position:i+1}));
 }
 
@@ -4497,7 +4516,7 @@ function renderResults(){
   if(!lastResults) return;
   const{raceName,stageResults,riderCount,teamCount,abandoned=[],currentStage,totalStages,complete}=lastResults;
   // Sort numerically — totalGap may be string after season serialization
-  const gcResult=[...(lastResults.gcResult||[])].sort((a,b)=>Number(a.totalGap)-Number(b.totalGap));
+  const gcResult=[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999));
   const nextBtn=document.getElementById('next-stage-btn');
   const rerunBtn=document.getElementById('rerun-btn');
   const inSeason = raceState?._seasonRaceId!=null && seasonSim;
@@ -4871,7 +4890,7 @@ function renderHistory(){
   if(seasonSim && seasonSim.dayLog){
     seasonSim.dayLog.forEach(d=>{
       (d.events||[]).forEach(ev=>{
-        if(ev.complete && ev.gcResult && ev.gcResult.length){
+        if(ev.complete && ev.gcResult?.length){
           completed.push({...ev, date:d.date, day:d.day});
         }
       });
@@ -4901,9 +4920,10 @@ function renderHistory(){
 
   const rows = filtered.map(ev=>{
     const catColor = UCI_CAT_COLOR[ev.category]||'var(--muted)';
-    const winner = ev.gcResult[0]?.rider;
-    const p2 = ev.gcResult[1]?.rider;
-    const p3 = ev.gcResult[2]?.rider;
+    const sortedGCH = [...(ev.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999));
+    const winner = sortedGCH[0]?.rider || (ev.gcLeader ? {name:ev.gcLeader, country:'', avg:0} : null);
+    const p2 = sortedGCH[1]?.rider;
+    const p3 = sortedGCH[2]?.rider;
     const winTeamId = winner ? riderTeamMap[winner.name] : null;
     const winTeam = winTeamId!=null ? teams.find(t=>t.id===winTeamId) : null;
     const isStage = ev.totalStages > 1;
