@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v7.6</title>
+<title>CycleSim v7.7</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.6</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.7</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -552,7 +552,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '7.6';
+const CACHE_VERSION = '7.7';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2209,12 +2209,20 @@ function renderCalendar(){
     const stages = race.stages.length;
     const color = RACE_TYPE_COLOR[race.type]||'var(--muted)';
     const terrainBadges = race.stages.slice(0,3).map(s=>`<span class="tbadge tbadge-${s.terrain}" style="font-size:.65rem;padding:1px 5px">${s.terrain}</span>`).join('');
-    html += `<div class="cal-race-row" data-race-id="${race.id}" onclick="openRace(${race.id})">
+    const raceStatus = !seasonSim ? 'available'
+      : seasonSim.dayLog.some(d=>d.events.some(e=>e.raceId===race.id&&e.complete)) ? 'done'
+      : seasonSim.activeRaces?.[race.id] ? 'active'
+      : race.startDay > (seasonSim?.currentDay||0) ? 'future'
+      : 'available';
+    const rowOpacity = raceStatus==='future' ? 'opacity:.45;' : '';
+    html += `<div class="cal-race-row" data-race-id="${race.id}" onclick="openRace(${race.id})" style="${rowOpacity}">
         <span style="min-width:46px;padding:1px 5px;border-radius:3px;background:${UCI_CAT_COLOR[race.category]||color};font-family:'Barlow Condensed',sans-serif;font-size:.65rem;font-weight:800;color:#000;text-align:center;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${race.category||''}</span>
         <span style="flex:1">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.92rem;font-weight:700;text-transform:uppercase;color:var(--text)">${race.name}</span>
           <span style="font-size:.75rem;color:var(--muted);margin-left:8px">${flagImg(race.country,10)} ${race.country}</span>
           ${race.startDay!=null ? '<span style="font-size:.7rem;color:var(--blue);font-family:JetBrains Mono,monospace;margin-left:6px">'+fmtDate(race.startDay)+'</span>' : ''}
+          ${raceStatus==='done'?'<span style="color:var(--green);font-size:.7rem;margin-left:4px">✓</span>':''}
+          ${raceStatus==='active'?'<span style="color:var(--accent);font-size:.7rem;margin-left:4px">⚡</span>':''}
         </span>
         <span style="display:flex;gap:3px;align-items:center">${terrainBadges}</span>
         <span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted);width:40px;text-align:right">${stages===1?'1 day':stages+' st.'}</span>
@@ -2230,6 +2238,35 @@ function renderCalendar(){
 function openRace(id){
   calSelectedRace = calendar.find(r=>r.id===id)||null;
   renderRaceDetail();
+}
+
+function seasonRaceButton(race){
+  // No season running — always allow manual simulation
+  if(!seasonSim){
+    return '<button class="btn btn-accent" onclick="loadRaceIntoBuilder('+race.id+')">📋 Race Builder</button>';
+  }
+  const raceDay = race.startDay;
+  const today = seasonSim.currentDay;
+  const endDay = raceDay + race.stages.length - 1;
+
+  // Already completed in season
+  const wasSimulated = seasonSim.dayLog.some(d=>d.events.some(e=>e.raceId===race.id&&e.complete));
+  if(wasSimulated){
+    return '<span style="color:var(--green);font-size:.82rem;font-family:Barlow Condensed,sans-serif;font-weight:700">✓ COMPLETED IN SEASON</span>';
+  }
+  // Currently running
+  const isActive = seasonSim.activeRaces && seasonSim.activeRaces[race.id];
+  if(isActive){
+    const stagesDone = isActive.rs.currentStageIndex;
+    return '<span style="color:var(--accent);font-size:.82rem;font-family:Barlow Condensed,sans-serif;font-weight:700">⚡ IN PROGRESS (Stage '+stagesDone+'/'+race.stages.length+')</span>';
+  }
+  // Future — locked
+  if(raceDay > today){
+    const daysAway = raceDay - today;
+    return '<span style="color:var(--muted);font-size:.78rem">🔒 Starts '+fmtDate(raceDay)+' ('+daysAway+' day'+(daysAway!==1?'s':'')+' away)</span>';
+  }
+  // Past but not in log — missed (shouldn't happen)
+  return '<span style="color:var(--muted);font-size:.78rem">⚠ Not yet simulated</span>';
 }
 
 function renderRaceDetail(){
@@ -2252,7 +2289,7 @@ function renderRaceDetail(){
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:1.4rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${color}">${race.name}</div>
         <div style="font-size:.8rem;color:var(--muted);margin-top:2px">${flagImg(race.country,11)} ${race.country} &nbsp;·&nbsp; ${RACE_TYPE_LABEL[race.type]} &nbsp;·&nbsp; ${race.stages.length===1?'1-day classic':race.stages.length+' stages'}${race.category?' &nbsp;·&nbsp; <b>'+race.category+'</b>':''}${race.startDay!=null ? ' &nbsp;·&nbsp; <span style="color:var(--blue)">'+raceDateStr(race)+'</span>' : ''}</div>
       </div>
-      <button class="btn btn-accent" onclick="loadRaceIntoBuilder(${race.id})">📋 Race Builder</button>
+      ${seasonRaceButton(race)}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;height:calc(100% - 72px)">
       <div style="border-right:1px solid var(--border);overflow-y:auto">
@@ -2261,7 +2298,7 @@ function renderRaceDetail(){
       </div>
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px">
         <div style="color:var(--muted);font-size:.85rem;text-align:center">Load this race into the Race Builder to select teams and simulate.</div>
-        <button class="btn btn-accent" onclick="loadRaceIntoBuilder(${race.id})">📋 Load into Race Builder</button>
+        ${seasonRaceButton(race)}
       </div>
     </div>`;
 }
