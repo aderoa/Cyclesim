@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v11.3</title>
+<title>CycleSim v11.4</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v11.3</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v11.4</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -489,7 +489,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '11.3';
+const CACHE_VERSION = '11.4';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -4954,7 +4954,8 @@ function updateNavPhase(){
 function generateTeams(){
   if(!allRiders.length){ alert('Rider database not loaded yet.'); return; }
   if((teams.length||nativePool.length) && !confirm('Regenerate all teams? This will reset everything.')) return;
-  // Step 1: Generate pools
+
+  // Step 1: pools
   T = Math.floor(allRiders.length / 7);
   NATIVE_SIZE = T * 4;
   DRAFT_SIZE  = T * 3;
@@ -4962,47 +4963,96 @@ function generateTeams(){
   nativePool = shuffled.slice(0, NATIVE_SIZE).map(r=>r.name);
   draftPool  = shuffled.slice(NATIVE_SIZE, NATIVE_SIZE+DRAFT_SIZE).map(r=>r.name);
   freeAgent  = shuffled.slice(NATIVE_SIZE+DRAFT_SIZE).map(r=>r.name);
-  nativeFreeAgents=[];teams=[];selectedNFA=null;
-  draftLog=[];draftDone=false;
-  document.getElementById('nav-teams-count').textContent='—';
-  document.getElementById('teams-count-pill').textContent='—';
+  nativeFreeAgents=[];teams=[];selectedNFA=null;draftLog=[];draftDone=false;
 
-  // Step 2: Sort by nationality
+  // Step 2: group native pool by country into teams of 4
   const byCountry={};
   nativePool.forEach(name=>{
-    const r=allRiders.find(x=>x.name===name);
-    if(!r) return;
+    const r=allRiders.find(x=>x.name===name); if(!r) return;
     if(!byCountry[r.country]) byCountry[r.country]=[];
     byCountry[r.country].push(name);
   });
-  teams=[];nativeFreeAgents=[];
-  Object.entries(byCountry).forEach(([country,riders])=>{
-    const fullPacks=Math.floor(riders.length/4);
-    const remainder=riders.length%4;
-    for(let i=0;i<fullPacks;i++){
-      teams.push({id:teams.length,name:'',country:'',riders:riders.slice(i*4,i*4+4)});
-    }
-    if(remainder>0) nativeFreeAgents.push(...riders.slice(fullPacks*4));
+  Object.entries(byCountry).forEach(([,riders])=>{
+    for(let i=0;i+3<riders.length;i+=4)
+      teams.push({id:teams.length,name:'',country:'',riders:riders.slice(i,i+4)});
+    const rem=riders.length%4;
+    if(rem>0) nativeFreeAgents.push(...riders.slice(riders.length-rem));
   });
   while(teams.length<T) teams.push({id:teams.length,name:'',country:'',riders:[]});
   if(teams.length>T) teams=teams.slice(0,T);
   resolveTeamIdentities();
-  if(nativeFreeAgents.length>0) autoAssignNativeFA();
 
-  // Step 3: Run draft
+  // Assign native FAs using geographic proximity
+  if(nativeFreeAgents.length>0){
+    const assigned=new Set(teams.flatMap(t=>t.riders));
+    let remaining=nativeFreeAgents.filter(n=>!assigned.has(n));
+    // Fill teams that have <4 riders, closest country first
+    const shortTeams=[...teams].filter(t=>t.riders.length<4).sort((a,b)=>a.riders.length-b.riders.length);
+    shortTeams.forEach(team=>{
+      if(!remaining.length) return;
+      const needed=4-team.riders.length;
+      const scored=remaining.map(name=>{
+        const r=allRiders.find(x=>x.name===name);
+        const c=r?r.country:'?';
+        let score=3;
+        if(c===team.country) score=0;
+        else if(getRegionLabel(c)===getRegionLabel(team.country)) score=1;
+        else if(getContinent(c)===getContinent(team.country)) score=2;
+        return {name,score};
+      }).sort((a,b)=>a.score-b.score);
+      for(let i=0;i<Math.min(needed,scored.length);i++){
+        team.riders.push(scored[i].name);
+        remaining=remaining.filter(n=>n!==scored[i].name);
+      }
+    });
+    // Any still unassigned: put on any team with <4 riders
+    remaining.forEach(name=>{
+      const t=teams.find(t=>t.riders.length<4);
+      if(t) t.riders.push(name);
+    });
+    resolveTeamIdentities();
+  }
+
+  // Step 3: snake draft — assign draftPool riders to teams
   buildRiderTeamMap();
-  runDraftSilent();
+  const available=[...draftPool].map(n=>allRiders.find(r=>r.name===n)).filter(Boolean)
+    .sort((a,b)=>b.avg-a.avg);
+  // Draft order: weakest team first (by current avg), snake each round
+  const draftOrder=[...teams].sort((a,b)=>teamAvg(a)-teamAvg(b));
+  const ROUNDS=Math.floor(draftPool.length/Math.max(teams.length,1));
+  for(let round=0;round<ROUNDS&&available.length>0;round++){
+    const order=round%2===0?[...draftOrder]:[...draftOrder].reverse();
+    for(const team of order){
+      if(!available.length) break;
+      const pick=available.shift();
+      team.riders.push(pick.name);
+      riderTeamMap[pick.name]=team.id;
+      draftLog.push({round:round+1,teamId:team.id,teamName:team.name,rider:pick,source:'draft'});
+    }
+  }
+  // Remaining riders (if draftPool not divisible by team count)
+  let ti=0;
+  while(available.length){
+    const pick=available.shift();
+    const team=draftOrder[ti%draftOrder.length];
+    team.riders.push(pick.name);
+    riderTeamMap[pick.name]=team.id;
+    ti++;
+  }
+  draftDone=true;
 
-  // Done
+  // Finalize
+  buildRiderTeamMap(); // rebuild to catch all assignments
   populateCountryFilters();
   renderTeams();
   renderRaceTeamPicker();
   updatePoolStatus();
+  renderDraftUI();
   saveTeams();
   updateNavPhase();
   document.getElementById('nav-teams-count').textContent=teams.length;
   document.getElementById('teams-count-pill').textContent=teams.length+' teams';
-  console.log('Teams generated:', teams.length);
+  console.log('Done: '+teams.length+' teams, draftLog: '+draftLog.length+' picks');
 }
 
 function runDraftSilent(){
