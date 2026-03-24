@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v10.8</title>
+<title>CycleSim v10.9</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v10.8</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v10.9</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -491,7 +491,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '10.8';
+const CACHE_VERSION = '10.9';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -904,7 +904,7 @@ function confirmGenerate(){
   if((teams.length||nativePool.length) && !confirm('Reset all pools and teams? This cannot be undone.')) return;
   nativePool=[];draftPool=[];freeAgent=[];nativeFreeAgents=[];teams=[];
   draftLog=[];draftDone=false;selectedNFA=null;
-  document.getElementById('nav-draft-badge').style.display='none';
+  // nav-draft-badge removed (merged tab)
   document.getElementById('draft-reset-btn').style.display='none';
   document.getElementById('btn-step2').disabled=true;
   document.getElementById('nfa-panel').style.display='none';
@@ -934,7 +934,7 @@ function stepGeneratePools(){
   // Reset everything team-related — pools are independent
   nativeFreeAgents=[];teams=[];selectedNFA=null;
   draftLog=[];draftDone=false;
-  document.getElementById('nav-draft-badge').style.display='none';
+  // nav-draft-badge removed (merged tab)
   document.getElementById('draft-reset-btn').style.display='none';
   document.getElementById('btn-step2').disabled=false;
   document.getElementById('nfa-panel').style.display='none';
@@ -4619,7 +4619,7 @@ function runDraft(){
   buildRiderTeamMap();
   saveTeams();
   saveDraft();
-  document.getElementById('nav-draft-badge').style.display='inline-block'; updateNavPhase();;
+  // nav-draft-badge removed; updateNavPhase();;
   document.getElementById('draft-reset-btn').style.display='inline-flex';
   renderDraftUI();
   renderTeams();
@@ -4633,7 +4633,7 @@ function resetDraft(){
   buildRiderTeamMap();
   saveTeams();
   saveDraft();
-  document.getElementById('nav-draft-badge').style.display='none';
+  // nav-draft-badge removed (merged tab)
   document.getElementById('draft-reset-btn').style.display='none';
   renderDraftUI();
   renderTeams();
@@ -4647,7 +4647,7 @@ function loadSavedDraft(){
     const d=localStorage.getItem('cyclesim_draft');
     if(d){const p=JSON.parse(d);draftLog=p.draftLog||[];draftDone=p.draftDone||false;}
     if(draftDone){
-      document.getElementById('nav-draft-badge').style.display='inline-block'; updateNavPhase();;
+      // nav-draft-badge removed; updateNavPhase();;
       document.getElementById('draft-reset-btn').style.display='inline-flex';
     }
   }catch(e){}
