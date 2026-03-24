@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v9.6</title>
+<title>CycleSim v9.7</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v9.6</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v9.7</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '9.6';
+const CACHE_VERSION = '9.7';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2320,24 +2320,29 @@ function autoSelectTeamsForRace(race){
   // Get reserved teams for higher-priority overlapping races
   const reserved = getReservedTeams(race);
 
-  // Available pool: not busy AND not reserved for a higher race
-  // Exception: national teams can override if this race is >= their reserved race's priority
-  // (handled by getReservedTeams only blocking STRICTLY higher priority)
-  const isEligible = t => t.riders.length>0 && !busyTeams.has(t.id) && !reserved.has(t.id);
+  // Two pools:
+  // - notBusy: not racing today (hard limit — can't be in two races simultaneously)
+  // - eligible: also not reserved (for world/global slots)
+  // National teams of the host country are ALWAYS available (not reserved) — only busy blocks them
+  const notBusy = t => t.riders.length>0 && !busyTeams.has(t.id);
+  const isEligible = t => notBusy(t) && !reserved.has(t.id);
 
+  // National pool: only blocked by busy, NOT by reservations
+  // (a Malaysian team can always race in Kuala Lumpur even if reserved for a higher race)
+  const notBusyAll = [...teams].filter(notBusy).sort((a,b)=>teamAvg(b)-teamAvg(a));
   const byAvg = [...teams].filter(isEligible).sort((a,b)=>teamAvg(b)-teamAvg(a));
 
-  // National pool: same country first, then same region (only eligible teams)
   function getNational(n){
-    const sameCountry = byAvg.filter(t=>t.country===country);
+    // Use notBusyAll for national slots — reservations don't apply to host country
+    const sameCountry = notBusyAll.filter(t=>t.country===country);
     if(sameCountry.length>=n) return sameCountry.slice(0,n);
-    const sameRegion = byAvg.filter(t=>t.country!==country && getRegionLabel(t.country)===region);
+    const sameRegion = notBusyAll.filter(t=>t.country!==country && getRegionLabel(t.country)===region);
     return [...sameCountry,...sameRegion].slice(0,n);
   }
 
-  // National ranking: sort national teams by UCI team points
+  // National ranking: sort by UCI points, using notBusy pool (not blocked by reservations)
   function getNationalRanking(){
-    return byAvg.filter(t=>t.country===country)
+    return notBusyAll.filter(t=>t.country===country)
       .sort((a,b)=>(teamUciPoints[b.name]||0)-(teamUciPoints[a.name]||0));
   }
 
@@ -2401,16 +2406,25 @@ function autoSelectTeamsForRace(race){
     selected = [...rand15,...rand10];
   }
 
-  // Always ensure exactly 25 teams — pad with remaining available if needed
+  // Always ensure exactly 25 teams — pad with available teams if needed
+  // Priority: national/regional first, then world by avg
   const TARGET = 25;
   if(selected.length < TARGET){
     const selectedIds = new Set(selected.map(t=>t.id));
-    const extras = [...teams]
+    // First try national/regional not yet included
+    const natExtras = notBusyAll
+      .filter(t=>(t.country===country||getRegionLabel(t.country)===region) && !selectedIds.has(t.id));
+    for(const t of natExtras){
+      if(selected.length>=TARGET) break;
+      selected.push(t); selectedIds.add(t.id);
+    }
+    // Then fill from world pool
+    const worldExtras = [...teams]
       .filter(t=>t.riders.length>0 && !selectedIds.has(t.id) && !busyTeams.has(t.id))
       .sort((a,b)=>teamAvg(b)-teamAvg(a));
-    for(const t of extras){
+    for(const t of worldExtras){
       if(selected.length>=TARGET) break;
-      selected.push(t);
+      selected.push(t); selectedIds.add(t.id);
     }
   }
   if(selected.length > TARGET) selected = selected.slice(0, TARGET);
