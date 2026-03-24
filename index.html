@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v8.4</title>
+<title>CycleSim v8.5</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.4</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.5</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '8.4';
+const CACHE_VERSION = '8.5';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2891,14 +2891,13 @@ function simulateRace(){
 
 // Continue race: simulate next stage
 function simulateNextStage(){
-  // In season mode: "Next Race" or "Finish Day"
+  // In season mode: always advance the day queue, never inline next stage
   if(raceState?._seasonRaceId!=null && seasonSim){
-    const complete = raceState.currentStageIndex>=stages.length;
-    if(complete){
-      advanceSeasonQueue(); return;
-    }
+    advanceSeasonQueue();
+    return;
   }
-  if(!raceState){simulateRace();return;}
+  // Manual simulation
+  if(!raceState){return;}
   if(raceState.currentStageIndex>=stages.length){alert('Race complete!');return;}
   runNextStage();
 }
@@ -4037,14 +4036,17 @@ function renderResults(){
   const nextBtn=document.getElementById('next-stage-btn');
   const rerunBtn=document.getElementById('rerun-btn');
   const inSeason = raceState?._seasonRaceId!=null && seasonSim;
-  const hasMoreQueue = inSeason && seasonSim.dayQueue && seasonSim.dayQueueIndex+1 < seasonSim.dayQueue.length;
+  const hasMoreQueue = inSeason && seasonSim.dayQueue && seasonSim.dayQueueIndex+1 < (seasonSim.dayQueue?.length||0);
   if(nextBtn){
-    if(inSeason && complete && hasMoreQueue){
+    if(inSeason && hasMoreQueue){
+      // More races today — always go to next race regardless of stage completion
       nextBtn.style.display=''; nextBtn.textContent='▶ Next Race';
-    } else if(totalStages>1&&!complete){
-      nextBtn.style.display=''; nextBtn.textContent='▶ Stage '+(currentStage+1)+' of '+totalStages;
-    } else if(inSeason && complete && !hasMoreQueue){
+    } else if(inSeason && !hasMoreQueue){
+      // Last event of the day
       nextBtn.style.display=''; nextBtn.textContent='▶ Finish Day';
+    } else if(!inSeason && totalStages>1&&!complete){
+      // Manual simulation (no season) — show next stage
+      nextBtn.style.display=''; nextBtn.textContent='▶ Stage '+(currentStage+1)+' of '+totalStages;
     } else {
       nextBtn.style.display='none';
     }
