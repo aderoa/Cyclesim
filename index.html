@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v11.4</title>
+<title>CycleSim v11.5</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -91,14 +91,14 @@ tbody td{padding:6px 10px}
 .tlist-avg{font-family:'JetBrains Mono',monospace;font-size:.75rem;color:var(--muted)}
 
 /* ── TEAM GRID ───────────────────────────────────── */
-.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;overflow-y:auto;padding-right:4px;align-content:start;padding-bottom:8px}.team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;border-left:4px solid var(--muted);transition:border-color .15s}
+.teams-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;overflow-y:auto;padding-right:4px;align-content:start;padding-bottom:8px}.team-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;border-left:4px solid var(--muted);transition:border-color .15s}
 .team-card:hover{border-color:var(--border2)}
 .team-card-head{padding:9px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;color:var(--text)}
 .team-flag{font-size:1.1rem;line-height:1}
-.team-name-text{font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.team-name-text{font-family:'Barlow Condensed',sans-serif;font-size:1.05rem;font-weight:800;text-transform:uppercase;letter-spacing:.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 .team-avg-pill{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--muted)}
 .team-country-text{font-size:.7rem;color:var(--muted);padding:2px 12px 4px;border-bottom:1px solid var(--border)}
-.team-rider-row{display:flex;align-items:center;gap:5px;padding:3px 10px;font-size:.78rem;transition:background .1s;color:var(--text)}
+.team-rider-row{display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:.82rem;transition:background .1s;color:var(--text);border-bottom:1px solid var(--border)}
 .team-rider-row:hover{background:var(--surface2)}
 .team-rider-num{color:var(--muted);font-size:.7rem;width:12px}
 .team-rider-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v11.4</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v11.5</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -489,7 +489,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '11.4';
+const CACHE_VERSION = '11.5';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -5013,15 +5013,17 @@ function generateTeams(){
     resolveTeamIdentities();
   }
 
-  // Step 3: snake draft — assign draftPool riders to teams
+  // Step 3: affinity draft — best rider to strongest team (PCM style)
+  // Teams pick in strength order (strongest first), best rider available each pick
   buildRiderTeamMap();
   const available=[...draftPool].map(n=>allRiders.find(r=>r.name===n)).filter(Boolean)
-    .sort((a,b)=>b.avg-a.avg);
-  // Draft order: weakest team first (by current avg), snake each round
-  const draftOrder=[...teams].sort((a,b)=>teamAvg(a)-teamAvg(b));
-  const ROUNDS=Math.floor(draftPool.length/Math.max(teams.length,1));
-  for(let round=0;round<ROUNDS&&available.length>0;round++){
-    const order=round%2===0?[...draftOrder]:[...draftOrder].reverse();
+    .sort((a,b)=>b.avg-a.avg); // best first
+  // Each team gets exactly 3 draft picks (draftPool = T*3)
+  const PICKS_PER_TEAM = 3;
+  // Repeat: sort teams by current avg desc, each picks the best available
+  for(let round=0;round<PICKS_PER_TEAM&&available.length>0;round++){
+    // Re-sort teams by avg each round so strongest team always picks first
+    const order=[...teams].sort((a,b)=>teamAvg(b)-teamAvg(a));
     for(const team of order){
       if(!available.length) break;
       const pick=available.shift();
@@ -5030,11 +5032,12 @@ function generateTeams(){
       draftLog.push({round:round+1,teamId:team.id,teamName:team.name,rider:pick,source:'draft'});
     }
   }
-  // Remaining riders (if draftPool not divisible by team count)
+  // Remaining riders
   let ti=0;
+  const fallbackOrder=[...teams].sort((a,b)=>teamAvg(b)-teamAvg(a));
   while(available.length){
     const pick=available.shift();
-    const team=draftOrder[ti%draftOrder.length];
+    const team=fallbackOrder[ti%fallbackOrder.length];
     team.riders.push(pick.name);
     riderTeamMap[pick.name]=team.id;
     ti++;
