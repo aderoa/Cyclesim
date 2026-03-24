@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v11.2</title>
+<title>CycleSim v11.3</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v11.2</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v11.3</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -262,10 +262,8 @@ tbody td{padding:6px 10px}
 <!-- ═══ TEAMS ════════════════════════════════════════════════ -->
 <div id="tab-teams" class="tab-content">
   <div class="toolbar">
-    <button class="btn btn-accent" id="btn-step1" onclick="stepGeneratePools()">① Generate Pools</button>
-    <button class="btn btn-ghost" id="btn-step2" onclick="stepSortByNationality()">② Sort by Nationality</button>
-    <button class="btn btn-accent" id="draft-run-btn" onclick="runDraft()" disabled>③ Run Draft</button>
-    <button class="btn btn-danger btn-sm" id="draft-reset-btn" onclick="resetDraft()" style="display:none">↺ Draft</button>
+    <button class="btn btn-accent" id="btn-generate-teams" onclick="generateTeams()">⚡ Generate Teams</button>
+    <button class="btn btn-danger btn-sm" id="draft-reset-btn" onclick="resetDraft()" style="display:none">↺ Redo Draft</button>
     <button class="btn btn-danger btn-sm" onclick="confirmGenerate()">↺ Reset All</button>
     <input type="text" class="search-input" id="teams-search" placeholder="Search teams…" oninput="renderTeams()" style="max-width:160px">
     <select class="form-select" id="teams-country-filter" onchange="renderTeams()">
@@ -491,7 +489,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '11.2';
+const CACHE_VERSION = '11.3';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -4951,6 +4949,96 @@ function updateNavPhase(){
   // Draft: show only if teams exist and draft not complete
   const draftBtn = document.getElementById('nav-btn-draft');
   if(draftBtn) draftBtn.style.display = (teams.length > 0 && !draftDone) ? '' : 'none';
+}
+
+function generateTeams(){
+  if(!allRiders.length){ alert('Rider database not loaded yet.'); return; }
+  if((teams.length||nativePool.length) && !confirm('Regenerate all teams? This will reset everything.')) return;
+  // Step 1: Generate pools
+  T = Math.floor(allRiders.length / 7);
+  NATIVE_SIZE = T * 4;
+  DRAFT_SIZE  = T * 3;
+  const shuffled=[...allRiders].sort(()=>Math.random()-.5);
+  nativePool = shuffled.slice(0, NATIVE_SIZE).map(r=>r.name);
+  draftPool  = shuffled.slice(NATIVE_SIZE, NATIVE_SIZE+DRAFT_SIZE).map(r=>r.name);
+  freeAgent  = shuffled.slice(NATIVE_SIZE+DRAFT_SIZE).map(r=>r.name);
+  nativeFreeAgents=[];teams=[];selectedNFA=null;
+  draftLog=[];draftDone=false;
+  document.getElementById('nav-teams-count').textContent='—';
+  document.getElementById('teams-count-pill').textContent='—';
+
+  // Step 2: Sort by nationality
+  const byCountry={};
+  nativePool.forEach(name=>{
+    const r=allRiders.find(x=>x.name===name);
+    if(!r) return;
+    if(!byCountry[r.country]) byCountry[r.country]=[];
+    byCountry[r.country].push(name);
+  });
+  teams=[];nativeFreeAgents=[];
+  Object.entries(byCountry).forEach(([country,riders])=>{
+    const fullPacks=Math.floor(riders.length/4);
+    const remainder=riders.length%4;
+    for(let i=0;i<fullPacks;i++){
+      teams.push({id:teams.length,name:'',country:'',riders:riders.slice(i*4,i*4+4)});
+    }
+    if(remainder>0) nativeFreeAgents.push(...riders.slice(fullPacks*4));
+  });
+  while(teams.length<T) teams.push({id:teams.length,name:'',country:'',riders:[]});
+  if(teams.length>T) teams=teams.slice(0,T);
+  resolveTeamIdentities();
+  if(nativeFreeAgents.length>0) autoAssignNativeFA();
+
+  // Step 3: Run draft
+  buildRiderTeamMap();
+  runDraftSilent();
+
+  // Done
+  populateCountryFilters();
+  renderTeams();
+  renderRaceTeamPicker();
+  updatePoolStatus();
+  saveTeams();
+  updateNavPhase();
+  document.getElementById('nav-teams-count').textContent=teams.length;
+  document.getElementById('teams-count-pill').textContent=teams.length+' teams';
+  console.log('Teams generated:', teams.length);
+}
+
+function runDraftSilent(){
+  // Run the draft without UI updates — just assigns draft pool riders to teams
+  if(!teams.length||!draftPool.length) return;
+  draftLog=[];
+  // Each team drafts in snake order until draft pool exhausted
+  const available=[...draftPool].map(n=>allRiders.find(r=>r.name===n)).filter(Boolean);
+  available.sort((a,b)=>b.avg-a.avg); // best available first
+  const draftOrder=[...teams].sort((a,b)=>teamAvg(a)-teamAvg(b)); // weakest team picks first
+  let i=0,dir=1,round=1;
+  const teamDraftCount={};
+  teams.forEach(t=>{teamDraftCount[t.id]=0;});
+  const DRAFT_ROUNDS=Math.floor(draftPool.length/teams.length);
+  for(let round=0;round<DRAFT_ROUNDS&&available.length>0;round++){
+    const order=round%2===0?[...draftOrder]:[...draftOrder].reverse();
+    for(const team of order){
+      if(!available.length) break;
+      // Pick best remaining rider
+      const pick=available.shift();
+      team.riders.push(pick.name);
+      draftLog.push({round:round+1,teamId:team.id,teamName:team.name,rider:pick,source:'draft'});
+      riderTeamMap[pick.name]=team.id;
+    }
+  }
+  // Assign any leftover draft pool riders
+  let ti=0;
+  while(available.length){
+    const pick=available.shift();
+    const team=draftOrder[ti%draftOrder.length];
+    team.riders.push(pick.name);
+    riderTeamMap[pick.name]=team.id;
+    ti++;
+  }
+  draftDone=true;
+  renderDraftUI();
 }
 
 // INIT
