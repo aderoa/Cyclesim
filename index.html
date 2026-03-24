@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v8.7</title>
+<title>CycleSim v8.8</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.7</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.8</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '8.7';
+const CACHE_VERSION = '8.8';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3006,8 +3006,8 @@ function checkTransferMarket(){
   if(transferMarket) return; // already open
   if(!seasonSim) return;
   const day = seasonSim.currentDay;
-  // Trigger every 7 days: day 7,14,21,...
-  if(day===0 || day%7!==0) return;
+  // Trigger every 7 days starting from day 7
+  if(day < 7 || day%7!==0) return;
 
   // Riders currently racing in active stage races — exclude them
   const inRace = new Set();
@@ -3120,40 +3120,66 @@ function renderMarket(){
     (!allFilled?'<span style="color:var(--muted);font-size:.82rem">'+(totalSlots-filledSlots)+' slot'+(totalSlots-filledSlots!==1?'s':'')+' still open</span>':'')+
     '</div>';
 
-  // Wire up drag events via JS (not inline handlers — avoids special char issues)
-  wrap.querySelectorAll('.market-rider,.market-assigned-slot').forEach(el=>{
+  // Wire drag + click events
+  let clickSelectedRider = null;
+  wrap.querySelectorAll('.market-rider').forEach(el=>{
     el.addEventListener('dragstart',e=>{
       marketDragRider = decodeURIComponent(el.dataset.name||'');
       e.dataTransfer.effectAllowed='move';
+    });
+    el.addEventListener('click',()=>{
+      clickSelectedRider = decodeURIComponent(el.dataset.name||'');
+      wrap.querySelectorAll('.market-rider').forEach(r=>r.style.background='');
+      el.style.background='rgba(245,196,0,.15)';
+    });
+  });
+  wrap.querySelectorAll('.market-assigned-slot').forEach(el=>{
+    el.addEventListener('dragstart',e=>{
+      marketDragRider = decodeURIComponent(el.dataset.name||'');
+      e.dataTransfer.effectAllowed='move';
+    });
+    el.addEventListener('click',()=>{
+      // Clicking assigned slot returns rider to pool
+      const name = decodeURIComponent(el.dataset.name||'');
+      const tid = el.dataset.teamid;
+      const si = parseInt(el.dataset.slot);
+      marketUnassign(tid, si);
     });
   });
   wrap.querySelectorAll('.market-drop-slot').forEach(el=>{
     el.addEventListener('dragover',e=>e.preventDefault());
     el.addEventListener('drop',e=>{
       e.preventDefault();
-      if(!marketDragRider||!transferMarket) return;
-      const tid = el.dataset.teamid;
-      const si = parseInt(el.dataset.slot);
       const name = marketDragRider;
+      if(!name||!transferMarket) return;
       if(!transferMarket.riders.some(r=>r.name===name)) return;
+      const tid = el.dataset.teamid; const si = parseInt(el.dataset.slot);
       Object.values(transferMarket.pendingSlots).forEach(slots=>{const i=slots.indexOf(name);if(i>=0)slots[i]=null;});
       if(transferMarket.pendingSlots[tid]) transferMarket.pendingSlots[tid][si]=name;
-      marketDragRider=null;
-      saveTransferMarket();
-      renderMarket();
+      marketDragRider=null; saveTransferMarket(); renderMarket();
+    });
+    el.addEventListener('click',()=>{
+      if(!clickSelectedRider||!transferMarket) return;
+      const name = clickSelectedRider;
+      if(!transferMarket.riders.some(r=>r.name===name)) return;
+      const tid = el.dataset.teamid; const si = parseInt(el.dataset.slot);
+      Object.values(transferMarket.pendingSlots).forEach(slots=>{const i=slots.indexOf(name);if(i>=0)slots[i]=null;});
+      if(transferMarket.pendingSlots[tid]) transferMarket.pendingSlots[tid][si]=name;
+      clickSelectedRider=null; saveTransferMarket(); renderMarket();
     });
   });
-  document.getElementById('market-pool')?.addEventListener('dragover',e=>e.preventDefault());
-  document.getElementById('market-pool')?.addEventListener('drop',e=>{
-    e.preventDefault();
-    if(!marketDragRider||!transferMarket) return;
-    Object.values(transferMarket.pendingSlots).forEach(slots=>{const i=slots.indexOf(marketDragRider);if(i>=0)slots[i]=null;});
-    marketDragRider=null;
-    saveTransferMarket();
-    renderMarket();
-  });
-}
+  const pool = document.getElementById('market-pool');
+  if(pool){
+    pool.addEventListener('dragover',e=>e.preventDefault());
+    pool.addEventListener('drop',e=>{
+      e.preventDefault();
+      if(!marketDragRider||!transferMarket) return;
+      Object.values(transferMarket.pendingSlots).forEach(slots=>{const i=slots.indexOf(marketDragRider);if(i>=0)slots[i]=null;});
+      marketDragRider=null; saveTransferMarket(); renderMarket();
+    });
+  }
 
+}
 function marketDragStart(e, name){
   marketDragRider = name;
   e.dataTransfer.effectAllowed = 'move';
@@ -3355,8 +3381,10 @@ function initSeason(){
   seasonSim = { currentDay:0, activeRaces:{}, dayLog:[] };
   countryPoints = {};
   uciPoints = {};
+  transferMarket = null;
   saveUciPoints();
   saveSeasonState();
+  saveTransferMarket();
   // Jump straight to first race
   startSeasonDay();
 }
