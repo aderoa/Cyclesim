@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v8.0</title>
+<title>CycleSim v8.1</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.0</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.1</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -552,7 +552,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '8.0';
+const CACHE_VERSION = '8.1';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3535,6 +3535,52 @@ function simulateSeasonWeek(){
 
 
 // ── COUNTRY RANKINGS ────────────────────────────────────────────
+
+function renderSeasonPanel(){
+  const panel = document.getElementById('season-panel');
+  if(!panel) return;
+  if(!seasonSim){
+    panel.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:8px 0"><button class="btn btn-accent" onclick="initSeason()">\uD83C\uDFC1 Start Season Simulation</button><span style="color:var(--muted);font-size:.82rem">Simulate the full calendar day by day</span></div>';
+    return;
+  }
+  const isComplete = seasonSim.currentDay > 348;
+  const dayDate = isComplete ? 'Season Complete' : fmtDate(seasonSim.currentDay)+' 2026';
+  const activeCount = Object.keys(seasonSim.activeRaces||{}).length;
+  const inQueue = !!(seasonSim.dayQueue && seasonSim.dayQueueIndex < (seasonSim.dayQueue.length||0));
+  let html = '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap">';
+  html += '<span style="font-family:Barlow Condensed,sans-serif;font-size:1.1rem;font-weight:800;color:var(--accent)">'+dayDate+'</span>';
+  if(!isComplete && !inQueue) html += '<button class="btn btn-accent" onclick="startSeasonDay()">&#9654; Simulate Day</button>';
+  if(!isComplete) html += '<button class="btn btn-ghost btn-sm" onclick="simulateSeasonWeek()">&#9654;&#9654; Week</button>';
+  if(transferMarket) html += '<button class="btn btn-accent btn-sm" onclick="showTransferMarket()">\uD83D\uDCBC Transfer Window Open!</button>';
+  html += '<span class="pill">'+activeCount+' race'+(activeCount!==1?'s':'')+' in progress</span>';
+  html += '<button class="btn btn-danger btn-sm" onclick="initSeason()" style="margin-left:auto">&#x21BA; Reset</button>';
+  html += '</div>';
+  html += renderDayLog();
+  panel.innerHTML = html;
+}
+
+function renderDayLog(){
+  if(!seasonSim||!seasonSim.dayLog||!seasonSim.dayLog.length) return '';
+  const recent = seasonSim.dayLog.slice(-3).reverse();
+  return recent.map(function(d){
+    const events = d.events||[];
+    if(!events.length) return '<div style="padding:4px 0;color:var(--muted);font-size:.78rem">'+d.date+' &mdash; Rest day</div>';
+    const evHTML = events.map(function(ev){
+      const catColor = (UCI_CAT_COLOR&&UCI_CAT_COLOR[ev.category])||'var(--muted)';
+      const stageInfo = ev.totalStages>1?'Stage '+ev.stageNum+'/'+ev.totalStages:'1-day';
+      const winner = ev.complete&&ev.gcResult?'<span style="color:var(--green)"> &middot; GC: '+ev.gcLeader+'</span>':'<span style="color:var(--muted)"> &middot; '+(ev.stageWinner||'')+(ev.breakaway?' &#x1F3C7;':'')+'</span>';
+      const fin = ev.complete?'<span style="color:var(--green);font-weight:700"> &#10003;</span>':'';
+      return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:.82rem;border-bottom:1px solid var(--border)">'+
+        '<span style="min-width:46px;padding:1px 5px;border-radius:3px;background:'+catColor+';font-family:Barlow Condensed,sans-serif;font-size:.62rem;font-weight:800;color:#000;text-align:center">'+(ev.category||'')+'</span>'+
+        '<span style="font-weight:700;color:var(--text)">'+ev.raceName+'</span>'+
+        '<span class="pill" style="font-size:.65rem">'+stageInfo+'</span>'+
+        winner+fin+'</div>';
+    }).join('');
+    return '<div style="margin-top:6px"><div style="font-family:Barlow Condensed,sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:3px 0">'+d.date+'</div>'+evHTML+'</div>';
+  }).join('');
+}
+
+
 function renderCountryRankings(){
   const wrap = document.getElementById('country-wrap');
   if(!wrap) return;
