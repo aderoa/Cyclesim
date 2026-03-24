@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v10.2</title>
+<title>CycleSim v10.3</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v10.2</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v10.3</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '10.2';
+const CACHE_VERSION = '10.3';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3639,14 +3639,12 @@ function startSeasonDay(){
   // Build today's queue of race events
   const queue = [];
 
-  // Init new races starting today
+  // Queue new races starting today (don't initialize yet — let each race init just before it runs)
   calendar.filter(r=>r.startDay===day).forEach(race=>{
-    const rs = buildSeasonRaceState(race);
-    if(!rs) return;
-    seasonSim.activeRaces[race.id] = {race, rs};
+    if(!seasonSim.activeRaces[race.id]) queue.push(race.id);
   });
 
-  // Collect everything running today
+  // Also queue continuing stage races (already initialized, just need next stage)
   Object.entries(seasonSim.activeRaces).forEach(([id, {race,rs}])=>{
     const expectedStage = day - race.startDay;
     if(rs.currentStageIndex === expectedStage) queue.push(parseInt(id));
@@ -3685,6 +3683,20 @@ function runSeasonQueueItem(){
   const raceId = seasonSim.dayQueue[seasonSim.dayQueueIndex];
   if(raceId==null) return finishSeasonDay();
 
+  // Initialize the race NOW (just before setup), not upfront with all others
+  // This ensures busyTeams only reflects races already running, not concurrent ones
+  if(!seasonSim.activeRaces[raceId]){
+    const race = calendar.find(r=>r.id===raceId);
+    if(!race){ advanceSeasonQueue(); return; }
+    // Don't use buildSeasonRaceState here — we'll build the riderList after team selection
+    // Just register a placeholder so the race is "known"
+    seasonSim.activeRaces[raceId] = {race, rs:{
+      riderList:[], fatigue:{}, gcTimes:{}, stageResults:[], allAbandoned:[],
+      activeRiders:[], currentStageIndex:0, raceVariance:{}, totalStages:race.stages.length,
+      officialTeamIds:new Set()
+    }};
+  }
+
   const entry = seasonSim.activeRaces[raceId];
   if(!entry){ advanceSeasonQueue(); return; }
   const {race, rs} = entry;
@@ -3700,7 +3712,7 @@ function runSeasonQueueItem(){
     return;
   }
 
-  // New race — show team selection screen first
+  // New race — show team selection screen first (autoSelect runs with accurate busyTeams)
   autoSelectTeamsForRace(race);
   showRaceSetup(race, raceId);
 }
@@ -3897,14 +3909,36 @@ function simulateSeasonWeek(){
     if(!seasonSim||seasonSim.currentDay>348) break;
     const day=seasonSim.currentDay;
     const dayEvents=[];
-    calendar.filter(r=>r.startDay===day).forEach(race=>{
-      const rs=buildSeasonRaceState(race);
-      if(!rs) return;
-      seasonSim.activeRaces[race.id]={race,rs};
-    });
+    // In batch mode, init new races one at a time as they run (so busyTeams is accurate)
+    const newRaceIds = calendar.filter(r=>r.startDay===day && !seasonSim.activeRaces[r.id]).map(r=>r.id);
     const toFinish=[];
-    Object.entries(seasonSim.activeRaces).forEach(([id,{race,rs}])=>{
-      const raceId=parseInt(id);
+    // Combine: new races for today + continuing stage races
+    const allRaceIds = [
+      ...Object.keys(seasonSim.activeRaces).map(Number).filter(id=>{
+        const {rs}=seasonSim.activeRaces[id]; return rs.currentStageIndex===(day-seasonSim.activeRaces[id].race.startDay);
+      }),
+      ...newRaceIds
+    ];
+    // Sort by priority (higher first)
+    allRaceIds.sort((a,b)=>{
+      const ra=seasonSim.activeRaces[a]?.race||calendar.find(r=>r.id===a);
+      const rb=seasonSim.activeRaces[b]?.race||calendar.find(r=>r.id===b);
+      return (CAT_PRIORITY[rb?.category]||0)-(CAT_PRIORITY[ra?.category]||0);
+    });
+    allRaceIds.forEach(raceId=>{
+      // Initialize new races just before they run
+      if(!seasonSim.activeRaces[raceId]){
+        const race=calendar.find(r=>r.id===raceId);
+        if(!race) return;
+        const rs=buildSeasonRaceState(race);
+        if(!rs) return;
+        seasonSim.activeRaces[raceId]={race,rs};
+      }
+    });
+    allRaceIds.forEach(id=>{
+      const raceId=id;
+      if(!seasonSim.activeRaces[raceId]) return;
+      const {race,rs}=seasonSim.activeRaces[raceId];
       const expectedStage=day-race.startDay;
       if(rs.currentStageIndex!==expectedStage) return;
       const stageRes=runSeasonStage(race,rs);
