@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v8.5</title>
+<title>CycleSim v8.6</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.5</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.6</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '8.5';
+const CACHE_VERSION = '8.6';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3055,93 +3055,109 @@ function showTransferMarket(){
 function renderMarket(){
   const wrap = document.getElementById('market-wrap');
   if(!wrap) return;
-
   if(!transferMarket){
-    wrap.innerHTML=`<div class="empty-state"><div class="empty-icon">💼</div>
-      <div>No active transfer market. Simulate at least 7 days to trigger the first window.</div></div>`;
+    wrap.innerHTML='<div class="empty-state"><div class="empty-icon">💼</div><div>No active transfer market. Simulate at least 7 days to trigger the first window.</div></div>';
     return;
   }
-
   const {riders, pendingSlots} = transferMarket;
+  const assignedNames = new Set(Object.values(pendingSlots).flatMap(s=>s.filter(Boolean)));
+  const totalSlots = Object.values(pendingSlots).reduce((s,a)=>s+a.length,0);
+  const filledSlots = Object.values(pendingSlots).reduce((s,a)=>s+a.filter(Boolean).length,0);
+  const allFilled = filledSlots===totalSlots;
 
-  // Which riders haven't been assigned yet
-  const assignedNames = new Set(
-    Object.values(pendingSlots).flatMap(slots=>slots.filter(Boolean))
-  );
-  const unassigned = riders.filter(r=>!assignedNames.has(r.name));
-  const totalSlots = Object.values(pendingSlots).reduce((s,arr)=>s+arr.length,0);
-  const filledSlots = Object.values(pendingSlots).reduce((s,arr)=>s+arr.filter(Boolean).length,0);
-  const allFilled = filledSlots === totalSlots;
+  // Sort pool by avg desc
+  const unassigned = riders
+    .filter(r=>!assignedNames.has(r.name))
+    .map(r=>({...r, riderData:allRiders.find(x=>x.name===r.name)}))
+    .filter(r=>r.riderData)
+    .sort((a,b)=>b.riderData.avg-a.riderData.avg);
 
-  wrap.innerHTML=`
-    <div style="display:grid;grid-template-columns:320px 1fr;gap:12px;height:calc(100vh - 130px)">
+  // Sort teams by avg desc
+  const sortedTeamEntries = Object.entries(pendingSlots)
+    .map(([tid,slots])=>({tid, slots, team:teams.find(t=>t.id===+tid)}))
+    .filter(e=>e.team)
+    .sort((a,b)=>teamAvg(b.team)-teamAvg(a.team));
 
-      <!-- LEFT: Market riders pool -->
-      <div style="display:flex;flex-direction:column;border:1px solid rgba(245,196,0,.3);border-radius:8px;overflow:hidden;background:var(--surface)">
-        <div style="padding:8px 14px;background:rgba(245,196,0,.08);border-bottom:1px solid rgba(245,196,0,.2);font-family:'Barlow Condensed',sans-serif;font-size:.85rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);display:flex;justify-content:space-between;align-items:center">
-          <span>Transfer Pool</span>
-          <span class="pill" style="color:var(--accent);border-color:rgba(245,196,0,.3);background:rgba(245,196,0,.08)">${unassigned.length} available</span>
-        </div>
-        <div id="market-pool" style="flex:1;overflow-y:auto"
-          ondragover="event.preventDefault()"
-          ondrop="marketDropToPool(event)">
-          ${unassigned.map(mr=>{
-            const r = allRiders.find(x=>x.name===mr.name);
-            const fromTeam = teams.find(t=>t.id===mr.fromTeamId);
-            if(!r) return '';
-            return `<div class="nfa-rider-row" draggable="true"
-              id="mkt-rider-${r.name.replace(/\s/g,'_')}"
-              ondragstart="marketDragStart(event,'${r.name.replace(/'/g,"\\'")}')">
-              <span class="nfa-flag">${flagImg(r.country,12)}</span>
-              <span class="nfa-name">${r.name}</span>
-              <span class="nfa-avg">${r.avg.toFixed(1)}</span>
-              <span style="font-size:.68rem;color:var(--red);font-family:'Barlow Condensed',sans-serif;margin-left:4px">${fromTeam?fromTeam.name:''}</span>
-            </div>`;
-          }).join('')}
-          ${unassigned.length===0?'<div style="padding:20px;text-align:center;color:var(--green);font-size:.82rem">✓ All riders assigned</div>':''}
-        </div>
-      </div>
+  let poolHTML = unassigned.map(mr=>{
+    const r = mr.riderData;
+    const ft = teams.find(t=>t.id===mr.fromTeamId);
+    return '<div class="nfa-rider-row market-rider" data-name="'+encodeURIComponent(r.name)+'" draggable="true" style="cursor:grab">'+
+      '<span class="nfa-flag">'+flagImg(r.country,12)+'</span>'+
+      '<span class="nfa-name" style="flex:1">'+r.name+'</span>'+
+      '<span class="nfa-avg" style="margin-right:4px">'+r.avg.toFixed(1)+'</span>'+
+      '<span style="font-size:.65rem;color:var(--red);font-family:Barlow Condensed,sans-serif;white-space:nowrap">'+(ft?ft.name:'')+'</span>'+
+      '</div>';
+  }).join('') + (unassigned.length===0?'<div style="padding:20px;text-align:center;color:var(--green);font-size:.82rem">✓ All riders assigned</div>':'');
 
-      <!-- RIGHT: Teams with open slots -->
-      <div style="overflow-y:auto;display:flex;flex-direction:column;gap:8px">
-        ${Object.entries(pendingSlots).map(([teamId, slots])=>{
-          const team = teams.find(t=>t.id===+teamId);
-          if(!team) return '';
-          return `<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">
-            <div style="padding:7px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:'Barlow Condensed',sans-serif;font-size:.88rem;font-weight:700;text-transform:uppercase;display:flex;align-items:center;gap:8px">
-              ${flagImg(team.country,12)}
-              <span style="color:var(--text)">${team.name}</span>
-              <span class="pill" style="font-size:.65rem">${slots.filter(Boolean).length}/${slots.length} filled</span>
-            </div>
-            <div>
-              ${slots.map((assigned,slotIdx)=>assigned
-                ? `<div class="nfa-rider-row" style="background:rgba(62,207,110,.06)"
-                    draggable="true"
-                    ondragstart="marketDragStart(event,'${assigned.replace(/'/g,"\\'")}')">
-                    <span style="font-size:.72rem;color:var(--green)">✓</span>
-                    <span class="nfa-flag">${flagImg(allRiders.find(x=>x.name===assigned)?.country||'',12)}</span>
-                    <span class="nfa-name">${assigned}</span>
-                    <span class="nfa-avg">${allRiders.find(x=>x.name===assigned)?.avg.toFixed(1)||''}</span>
-                    <span style="font-size:.68rem;color:var(--muted);margin-left:auto;cursor:pointer" onclick="marketUnassign('${teamId}',${slotIdx})">✕</span>
-                  </div>`
-                : `<div style="padding:7px 14px;font-size:.75rem;color:var(--muted);font-style:italic;border-top:1px dashed var(--border);background:rgba(245,196,0,.03)"
-                    ondragover="event.preventDefault()"
-                    ondrop="marketDropToSlot(event,'${teamId}',${slotIdx})">
-                    Drop rider here…
-                  </div>`
-              ).join('')}
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>
+  let teamsHTML = sortedTeamEntries.map(({tid,slots,team})=>{
+    const avg = teamAvg(team).toFixed(1);
+    const filled = slots.filter(Boolean).length;
+    let slotsHTML = slots.map((assigned,si)=>{
+      if(assigned){
+        const ar = allRiders.find(x=>x.name===assigned);
+        return '<div class="nfa-rider-row market-assigned-slot" data-teamid="'+tid+'" data-slot="'+si+'" style="background:rgba(62,207,110,.06);cursor:grab" draggable="true" data-name="'+encodeURIComponent(assigned)+'">'+
+          '<span style="font-size:.72rem;color:var(--green);width:14px">✓</span>'+
+          '<span class="nfa-flag">'+flagImg(ar?.country||'',12)+'</span>'+
+          '<span class="nfa-name" style="flex:1">'+assigned+'</span>'+
+          '<span class="nfa-avg" style="margin-right:4px">'+(ar?ar.avg.toFixed(1):'')+'</span>'+
+          '<span onclick="marketUnassign('+tid+','+si+')" style="color:var(--muted);cursor:pointer;font-size:.75rem;padding:0 4px">✕</span>'+
+          '</div>';
+      }
+      return '<div class="market-drop-slot" data-teamid="'+tid+'" data-slot="'+si+'" style="padding:7px 14px;font-size:.75rem;color:var(--muted);font-style:italic;border-top:1px dashed var(--border);background:rgba(245,196,0,.03);cursor:pointer">Drop rider here…</div>';
+    }).join('');
+    return '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">'+
+      '<div style="padding:7px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">'+
+      flagImg(team.country,13)+
+      '<span style="font-family:Barlow Condensed,sans-serif;font-size:.95rem;font-weight:700;text-transform:uppercase;flex:1;color:var(--text)">'+team.name+'</span>'+
+      '<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+avg+' avg</span>'+
+      '<span class="pill" style="font-size:.65rem">'+filled+'/'+slots.length+' filled</span>'+
+      '</div>'+slotsHTML+'</div>';
+  }).join('');
 
-    <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
-      <button class="btn btn-accent" onclick="confirmTransfers()" ${allFilled?'':'disabled'}>
-        ✓ Confirm Transfers & Continue Season
-      </button>
-      ${!allFilled?`<span style="color:var(--muted);font-size:.82rem">${totalSlots-filledSlots} slot${totalSlots-filledSlots!==1?'s':''} still open</span>`:''}
-    </div>`;
+  wrap.innerHTML=
+    '<div style="display:grid;grid-template-columns:300px 1fr;gap:12px;height:calc(100vh - 140px)">'+
+    '<div style="display:flex;flex-direction:column;border:1px solid rgba(245,196,0,.3);border-radius:8px;overflow:hidden;background:var(--surface)">'+
+    '<div style="padding:8px 14px;background:rgba(245,196,0,.08);border-bottom:1px solid rgba(245,196,0,.2);font-family:Barlow Condensed,sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;color:var(--accent);display:flex;justify-content:space-between">'+
+    '<span>Transfer Pool</span><span class="pill" style="color:var(--accent);border-color:rgba(245,196,0,.3)">'+unassigned.length+' available</span></div>'+
+    '<div id="market-pool" style="flex:1;overflow-y:auto">'+poolHTML+'</div></div>'+
+    '<div style="overflow-y:auto;display:flex;flex-direction:column;gap:8px" id="market-teams">'+teamsHTML+'</div></div>'+
+    '<div style="margin-top:10px;display:flex;gap:10px;align-items:center">'+
+    '<button class="btn btn-accent" onclick="confirmTransfers()" '+(allFilled?'':'disabled')+'>✓ Confirm Transfers &amp; Continue Season</button>'+
+    (!allFilled?'<span style="color:var(--muted);font-size:.82rem">'+(totalSlots-filledSlots)+' slot'+(totalSlots-filledSlots!==1?'s':'')+' still open</span>':'')+
+    '</div>';
+
+  // Wire up drag events via JS (not inline handlers — avoids special char issues)
+  wrap.querySelectorAll('.market-rider,.market-assigned-slot').forEach(el=>{
+    el.addEventListener('dragstart',e=>{
+      marketDragRider = decodeURIComponent(el.dataset.name||'');
+      e.dataTransfer.effectAllowed='move';
+    });
+  });
+  wrap.querySelectorAll('.market-drop-slot').forEach(el=>{
+    el.addEventListener('dragover',e=>e.preventDefault());
+    el.addEventListener('drop',e=>{
+      e.preventDefault();
+      if(!marketDragRider||!transferMarket) return;
+      const tid = el.dataset.teamid;
+      const si = parseInt(el.dataset.slot);
+      const name = marketDragRider;
+      if(!transferMarket.riders.some(r=>r.name===name)) return;
+      Object.values(transferMarket.pendingSlots).forEach(slots=>{const i=slots.indexOf(name);if(i>=0)slots[i]=null;});
+      if(transferMarket.pendingSlots[tid]) transferMarket.pendingSlots[tid][si]=name;
+      marketDragRider=null;
+      saveTransferMarket();
+      renderMarket();
+    });
+  });
+  document.getElementById('market-pool')?.addEventListener('dragover',e=>e.preventDefault());
+  document.getElementById('market-pool')?.addEventListener('drop',e=>{
+    e.preventDefault();
+    if(!marketDragRider||!transferMarket) return;
+    Object.values(transferMarket.pendingSlots).forEach(slots=>{const i=slots.indexOf(marketDragRider);if(i>=0)slots[i]=null;});
+    marketDragRider=null;
+    saveTransferMarket();
+    renderMarket();
+  });
 }
 
 function marketDragStart(e, name){
@@ -3558,8 +3574,10 @@ function finishSeasonDay(){
   saveSeasonState();
   saveUciPoints();
   checkTransferMarket();
-  renderSeasonPanel();
-  renderCalendar();
+  if(transferMarket){ renderSeasonPanel(); renderCalendar(); return; }
+  if(seasonSim.currentDay > 348){ renderSeasonPanel(); renderCalendar(); return; }
+  // Auto-skip rest days and start next day with races
+  startSeasonDay();
 }
 
 function simulateSeasonWeek(){
