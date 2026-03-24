@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v9.0</title>
+<title>CycleSim v9.1</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v9.0</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v9.1</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '9.0';
+const CACHE_VERSION = '9.1';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2989,8 +2989,119 @@ function runNextStage(){
     }
   }
 
+  // Show finish screen for completed season races
+  if(rs._seasonRaceId!=null && seasonSim && lastResults.complete){
+    showFinishScreen(lastResults);
+    return;
+  }
+
   showTab('results');
   renderResults();
+}
+
+function showFinishScreen(lr){
+  const race = lr.race || calSelectedRace;
+  if(!race) { showTab('results'); renderResults(); return; }
+
+  // Compute secondary classifications
+  const classif = lr.stageResults.length > 1 ? computeClassifications(lr.stageResults, lr.riderList||[]) : null;
+
+  const cat = race.category||'';
+  const catColor = UCI_CAT_COLOR[cat]||'var(--muted)';
+  const isStage = lr.totalStages > 1;
+
+  // Top 10 GC / finish
+  const top10 = (lr.gcResult||[]).slice(0,10).map((r,i)=>{
+    const team = riderTeamMap[r.rider.name]!=null ? teams.find(t=>t.id===riderTeamMap[r.rider.name]) : null;
+    const gap = i===0?'WINNER':'+'+fmtGap(r.totalGap);
+    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+    return '<tr style="'+(i===0?'background:rgba(245,196,0,.08)':'')+'">'+
+      '<td style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-size:.78rem;width:36px;text-align:center;color:var(--muted)">'+(medal||i+1)+'</td>'+
+      '<td style="padding:6px 12px">'+flagImg(r.rider.country,12)+' '+r.rider.name+'</td>'+
+      '<td style="padding:6px 12px"><span class="rteam">'+(team?team.name:'—')+'</span></td>'+
+      '<td style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">'+r.rider.avg.toFixed(1)+'</td>'+
+      '<td style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:'+(i===0?'var(--accent)':'var(--muted)')+'">'+gap+'</td>'+
+      '</tr>';
+  }).join('');
+
+  // Stage winners
+  const stageWins = isStage ? lr.stageResults.map((sr,i)=>{
+    const w = sr.result?.[0];
+    if(!w) return '';
+    const team = riderTeamMap[w.rider.name]!=null ? teams.find(t=>t.id===riderTeamMap[w.rider.name]) : null;
+    return '<tr>'+
+      '<td style="padding:4px 12px;color:var(--muted);font-size:.75rem">'+sr.stage.name+'</td>'+
+      '<td style="padding:4px 12px">'+flagImg(w.rider.country,11)+' '+w.rider.name+'</td>'+
+      '<td style="padding:4px 12px"><span class="rteam">'+(team?team.name:'—')+'</span></td>'+
+      '<td style="padding:4px 12px"><span class="tbadge tbadge-'+sr.stage.terrain+'" style="font-size:.62rem">'+sr.stage.terrain+'</span>'+
+      (sr.breakaway?' 🏇':'')+'</td></tr>';
+  }).join('') : '';
+
+  function classifBlock(title, entries, color){
+    if(!entries||!entries.length) return '';
+    return '<div style="margin-bottom:12px">'+
+      '<div style="font-family:Barlow Condensed,sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;color:'+color+';padding:5px 12px;background:var(--surface2);border-bottom:1px solid var(--border)">'+title+'</div>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:.82rem"><tbody>'+
+      entries.slice(0,5).map((r,i)=>{
+        const name = r.rider?.name||r.name||r.team;
+        const pts = r.totalPoints||r.totalTime||r.totalGap||r.points||'';
+        const team = name&&riderTeamMap[name]!=null ? teams.find(t=>t.id===riderTeamMap[name]) : (r.teamName?{name:r.teamName}:null);
+        return '<tr><td style="padding:3px 12px;color:var(--muted);font-size:.72rem;width:28px">'+(i+1)+'</td>'+
+          '<td style="padding:3px 12px">'+name+'</td>'+
+          '<td style="padding:3px 12px;color:var(--muted);font-size:.75rem">'+(team?team.name:'')+'</td>'+
+          '<td style="padding:3px 12px;text-align:right;font-family:JetBrains Mono,monospace;font-size:.75rem;color:'+color+'">'+pts+'</td></tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
+  const wrap = document.getElementById('race-setup-wrap');
+  if(!wrap){ showTab('results'); renderResults(); return; }
+  showTab('race');
+
+  const navBtn = document.getElementById('next-stage-btn');
+
+  wrap.innerHTML =
+    '<div style="max-width:1100px;margin:0 auto;padding:12px 0">'+
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+      '<span style="padding:3px 10px;border-radius:4px;background:'+catColor+';font-family:Barlow Condensed,sans-serif;font-size:.8rem;font-weight:800;color:#000">'+cat+'</span>'+
+      '<span style="font-family:Barlow Condensed,sans-serif;font-size:2rem;font-weight:800;text-transform:uppercase;color:var(--accent)">'+race.name+'</span>'+
+      '<span style="font-size:.82rem;color:var(--muted)">'+flagImg(race.country,12)+' '+race.country+' · '+raceDateStr(race)+'</span>'+
+      '<button class="btn btn-accent" style="margin-left:auto" onclick="advanceSeasonQueue()">▶ Continue Season</button>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'+
+      '<div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;color:var(--muted);padding:6px 12px;background:var(--surface2);border-bottom:1px solid var(--border)">'+
+          (isStage?'General Classification':'Final Result')+' — Top 10'+
+        '</div>'+
+        '<table style="width:100%;border-collapse:collapse;font-size:.85rem">'+
+        '<thead><tr style="background:var(--surface2)">'+
+          '<th style="width:36px"></th>'+
+          '<th style="padding:6px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Rider</th>'+
+          '<th style="padding:6px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Team</th>'+
+          '<th style="padding:6px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">OVR</th>'+
+          '<th style="padding:6px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Gap</th>'+
+        '</tr></thead><tbody>'+top10+'</tbody></table>'+
+      '</div>'+
+      '<div>'+
+        (isStage && classif ? (
+          classifBlock('🟢 Points Classification', classif.pointsClassif?.map(r=>({...r, totalPoints:r.points})), 'var(--green)') +
+          classifBlock('🔴 Mountains Classification', classif.mountainClassif?.map(r=>({...r, totalPoints:r.points})), 'var(--red)') +
+          classifBlock('🔵 Sprints Classification', classif.sprintClassif?.map(r=>({...r, totalPoints:r.points})), 'var(--blue)') +
+          classifBlock('⚪ Teams Classification', classif.teamClassif?.map(r=>({team:r.team, teamName:r.team, totalTime:fmtGap(r.totalGap)})), 'var(--muted)')
+        ) : '') +
+        (isStage ? (
+          '<div style="margin-top:12px">'+
+          '<div style="font-family:Barlow Condensed,sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--muted);padding:5px 12px;background:var(--surface2);border-bottom:1px solid var(--border)">Stage Winners</div>'+
+          '<table style="width:100%;border-collapse:collapse;font-size:.82rem"><tbody>'+stageWins+'</tbody></table></div>'
+        ) : '') +
+      '</div>'+
+    '</div></div>';
+}
+
+function fmtGap(secs){
+  if(!secs) return "0''";
+  if(secs < 60) return secs+'"';
+  return Math.floor(secs/60)+"'"+String(secs%60).padStart(2,'0')+'"';
 }
 
 
@@ -3029,11 +3140,14 @@ function checkTransferMarket(){
     if(rs && rs.activeRiders) rs.activeRiders.forEach(r=>inRace.add(r.name));
   });
 
-  // 0.5% of total riders, min 5 max 30
+  // Exact 0.5% of eligible riders (not in race, on a team), purely random
   const eligible = allRiders.filter(r=>!inRace.has(r.name) && riderTeamMap[r.name]!=null);
-  const count = Math.max(5, Math.min(30, Math.round(allRiders.length * 0.005)));
-  // Pick randomly
-  const picked = [...eligible].sort(()=>Math.random()-0.5).slice(0,count);
+  const count = Math.round(eligible.length * 0.005);
+  if(count < 1) return;
+  // Pure Fisher-Yates shuffle for true random selection
+  const pool = [...eligible];
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  const picked = pool.slice(0, count);
   if(!picked.length) return;
 
   // Build market
@@ -3523,18 +3637,32 @@ function renderSeasonTeamPicker(){
   const pill = document.getElementById('race-team-count-pill');
   if(!grid) return;
   const q = (document.getElementById('season-team-search')?.value||'').toLowerCase();
+
+  // Build busy teams set (in active stage races)
+  const busySet = new Set();
+  if(seasonSim){
+    Object.values(seasonSim.activeRaces||{}).forEach(({rs})=>{
+      if(!rs||!rs.riderList) return;
+      rs.riderList.forEach(r=>{ const tid=riderTeamMap[r.name]; if(tid!=null) busySet.add(tid); });
+    });
+    (seasonSim.currentDayEvents||[]).forEach(ev=>{
+      if(ev.teamIds) ev.teamIds.forEach(tid=>busySet.add(tid));
+    });
+  }
+
   const filtered = teams.filter(t=>t.riders.length>0&&(!q||t.name.toLowerCase().includes(q)||t.country.toLowerCase().includes(q)));
   grid.innerHTML = filtered.map(t=>{
     const sel = selectedTeams.has(t.id);
+    const busy = busySet.has(t.id);
     const avg = teamAvg(t).toFixed(1);
-    return `<div class="team-select-card ${sel?'selected':''}" onclick="toggleSeasonTeam(${t.id})">
-      <span class="tsc-flag">${flagImg(t.country,14)}</span>
-      <div class="tsc-info">
-        <div class="tsc-name">${t.name}</div>
-        <div class="tsc-meta">${t.country} · ${avg} avg</div>
-      </div>
-      <span class="tsc-check">✓</span>
-    </div>`;
+    return '<div class="team-select-card '+(sel?'selected':'')+(busy?' tsc-busy':'')+'" onclick="'+(busy?'':('toggleSeasonTeam('+t.id+')'))+'" style="'+(busy?'opacity:.4;cursor:not-allowed':'')+'">'+
+      '<span class="tsc-flag">'+flagImg(t.country,14)+'</span>'+
+      '<div class="tsc-info">'+
+        '<div class="tsc-name">'+t.name+(busy?' <span style="color:var(--red);font-size:.65rem;font-family:Barlow Condensed,sans-serif">RACING</span>':'')+'</div>'+
+        '<div class="tsc-meta">'+t.country+' · '+avg+' avg</div>'+
+      '</div>'+
+      (busy?'<span style="color:var(--muted);font-size:.7rem">🔒</span>':'<span class="tsc-check">✓</span>')+
+      '</div>';
   }).join('');
   if(pill) pill.textContent = selectedTeams.size+' selected';
 }
@@ -3726,18 +3854,31 @@ function renderCountryRankings(){
       '<td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
   }).join('');
 
-  wrap.innerHTML='<div style="display:grid;grid-template-columns:220px 1fr;gap:0;height:calc(100vh-130px);border:1px solid var(--border);border-radius:8px;overflow:hidden">'+
+  const thS = 'padding:7px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase';
+  const teamRows = countryTeams.slice(0,20).map(([tn,pts],i)=>{
+    const team = teams.find(t=>t.name===tn);
+    return '<tr><td class="cell-rank">'+(i+1)+'</td>'+
+      '<td style="padding:7px 12px">'+(team?flagImg(team.country,11)+' ':'')+tn+'</td>'+
+      '<td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
+  }).join('');
+
+  wrap.innerHTML='<div style="display:grid;grid-template-columns:200px 1fr;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;height:calc(100vh - 130px)">'+
     '<div style="border-right:1px solid var(--border);overflow-y:auto;background:var(--surface)">'+countryList+'</div>'+
-    '<div style="overflow-y:auto;background:var(--surface)">'+
-    '<div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.9rem;font-weight:700;text-transform:uppercase;color:var(--accent)">'+
-    flagImg(selectedCountry,14)+' '+selectedCountry+' Ranking</div>'+
+    '<div style="overflow-y:auto;background:var(--surface);display:grid;grid-template-rows:auto 1fr auto 1fr;align-content:start">'+
+    '<div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.85rem;font-weight:700;text-transform:uppercase;color:var(--accent)">'+
+    flagImg(selectedCountry,13)+' '+selectedCountry+' — Rider Ranking</div>'+
     '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">'+
-    '<th style="width:40px;padding:7px 10px;text-align:center;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase">#</th>'+
-    '<th style="padding:7px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase">Rider</th>'+
-    '<th style="padding:7px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase">Team</th>'+
-    '<th style="padding:7px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase">OVR</th>'+
-    '<th style="padding:7px 10px;text-align:right;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase">Pts</th>'+
-    '</tr></thead><tbody>'+riderRows+'</tbody></table></div></div>';
+    '<th style="width:40px;'+thS+';text-align:center">#</th>'+
+    '<th style="'+thS+'">Rider</th><th style="'+thS+'">Team</th><th style="'+thS+'">OVR</th>'+
+    '<th style="'+thS+';text-align:right">Pts</th>'+
+    '</tr></thead><tbody>'+riderRows+'</tbody></table>'+
+    '<div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);border-top:2px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.85rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Team Ranking</div>'+
+    (teamRows?'<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">'+
+    '<th style="width:40px;'+thS+';text-align:center">#</th>'+
+    '<th style="'+thS+'">Team</th><th style="'+thS+';text-align:right">Pts</th>'+
+    '</tr></thead><tbody>'+teamRows+'</tbody></table>'
+    :'<div style="padding:16px;color:var(--muted);font-size:.82rem">No team points for this country yet.</div>')+
+    '</div></div>';
 }
 
 
@@ -3844,6 +3985,36 @@ function awardRacePoints(race, lastResults){
         if(stagePts[i]) awardUciPoints(r.rider.name, stagePts[i], getRiderTeamName(r.rider.name));
       });
     });
+    // Secondary classifications (points, mountains, sprints, teams)
+    if(lastResults.stageResults.length > 0){
+      const classif = computeClassifications(lastResults.stageResults, lastResults.riderList||[]);
+      const secPts = {
+        'GT.A':  {points:20, mountains:25, sprints:10},
+        'GT.B':  {points:15, mountains:20, sprints:8},
+        '2.UWT': {points:10, mountains:15, sprints:6},
+        '2.HC':  {points:6,  mountains:10, sprints:4},
+        '2.1':   {points:4,  mountains:6,  sprints:2},
+        '2.2':   {points:2,  mountains:3,  sprints:1},
+      }[cat]||{};
+      if(secPts.points && classif.pointsClassif){
+        classif.pointsClassif.slice(0,10).forEach((r,i)=>{
+          const p = Math.max(1,Math.round(secPts.points*(1-i*0.08)));
+          awardUciPoints(r.rider?.name||r.name, p, getRiderTeamName(r.rider?.name||r.name));
+        });
+      }
+      if(secPts.mountains && classif.mountainClassif){
+        classif.mountainClassif.slice(0,10).forEach((r,i)=>{
+          const p = Math.max(1,Math.round(secPts.mountains*(1-i*0.1)));
+          awardUciPoints(r.rider?.name||r.name, p, getRiderTeamName(r.rider?.name||r.name));
+        });
+      }
+      if(secPts.sprints && classif.sprintClassif){
+        classif.sprintClassif.slice(0,5).forEach((r,i)=>{
+          const p = Math.max(1,Math.round(secPts.sprints*(1-i*0.15)));
+          awardUciPoints(r.rider?.name||r.name, p, getRiderTeamName(r.rider?.name||r.name));
+        });
+      }
+    }
   } else {
     // One-day race
     const finPts = table.finish;
