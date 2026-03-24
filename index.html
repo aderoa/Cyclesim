@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v8.3</title>
+<title>CycleSim v8.4</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,14 +225,14 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.3</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.4</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
     <button class="nav-btn" id="nav-btn-nativeFA" onclick="showTab('nativeFA')" style="display:none">Native FA <span class="nav-badge" id="nav-nfa-count" style="background:var(--red)">—</span></button>
     <button class="nav-btn" id="nav-btn-updates" onclick="showTab('updates')" style="display:none">Available Riders <span class="nav-badge" id="nav-updates-count" style="background:var(--blue)">—</span></button>
-    <button class="nav-btn" onclick="showTab('draft')">Draft <span class="nav-badge" id="nav-draft-badge" style="display:none">✓</span></button>
-    <button class="nav-btn" id="nav-btn-race" onclick="showTab('race')">Race Setup</button>
+    <button class="nav-btn" onclick="showTab('draft')" style="display:none" id="nav-btn-draft">Draft <span class="nav-badge" id="nav-draft-badge" style="display:none">✓</span></button>
+    <button class="nav-btn" id="nav-btn-race" onclick="showTab('race')" style="display:none">Race Setup</button>
     <button class="nav-btn" onclick="showTab('results')">Results</button>
     <button class="nav-btn" id="nav-btn-calendar" onclick="showTab('calendar')">Calendar <span class="nav-badge" id="nav-calendar-count" style="background:var(--blue)">—</span></button>
     <button class="nav-btn" onclick="showTab('uci');renderUciRankings()">UCI Ranking</button>
@@ -457,6 +457,7 @@ tbody td{padding:6px 10px}
 <div id="tab-calendar" class="tab-content">
   <div class="toolbar">
     <button class="btn btn-accent" onclick="generateCalendar()" id="btn-gen-calendar">⚡ Generate Calendar</button>
+    <button class="btn btn-accent" id="btn-start-season" onclick="initSeason()" style="display:none">🏁 Start Season</button>
     <input type="text" class="search-input" id="cal-search" placeholder="Search races…" oninput="renderCalendar()" style="max-width:200px">
     <select class="form-select" id="cal-filter" onchange="calFilter=this.value;renderCalendar()">
       <option value="all">All races</option>
@@ -509,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '8.3';
+const CACHE_VERSION = '8.4';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3246,13 +3247,17 @@ function loadSeasonState(){
 }
 
 function saveSeasonState(){
+  // Always save country points separately (small, shouldn't fail)
+  try{ localStorage.setItem('cyclesim_country', JSON.stringify(countryPoints)); }catch(e){}
+  if(!seasonSim) return;
+  // Save season sim — prune log if too large
   try{
-    if(seasonSim) localStorage.setItem('cyclesim_season', JSON.stringify(seasonSim));
-    localStorage.setItem('cyclesim_country', JSON.stringify(countryPoints));
-  } catch(e){ console.warn('Season state too large, pruning logs'); 
-    // Prune day log if too big
-    if(seasonSim) seasonSim.dayLog=seasonSim.dayLog.slice(-50);
-    try{ localStorage.setItem('cyclesim_season', JSON.stringify(seasonSim)); } catch(e2){}
+    localStorage.setItem('cyclesim_season', JSON.stringify(seasonSim));
+  }catch(e){
+    console.warn('Season state too large, pruning logs');
+    seasonSim.dayLog = seasonSim.dayLog.slice(-30);
+    // Also prune stageResults from completed races to save space
+    try{ localStorage.setItem('cyclesim_season', JSON.stringify(seasonSim)); }catch(e2){}
   }
 }
 
@@ -3604,9 +3609,12 @@ function simulateSeasonWeek(){
 
 function renderSeasonPanel(){
   const panel = document.getElementById('season-panel');
+  // Toggle start button in toolbar
+  const startBtn = document.getElementById('btn-start-season');
+  if(startBtn) startBtn.style.display = (!seasonSim && calendar.length) ? '' : 'none';
   if(!panel) return;
   if(!seasonSim){
-    panel.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:8px 0"><button class="btn btn-accent" onclick="initSeason()">\uD83C\uDFC1 Start Season Simulation</button><span style="color:var(--muted);font-size:.82rem">Simulate the full calendar day by day</span></div>';
+    panel.innerHTML = '';
     return;
   }
   const isComplete = seasonSim.currentDay > 348;
