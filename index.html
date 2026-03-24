@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v7.8</title>
+<title>CycleSim v8.0</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v7.8</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.0</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -552,7 +552,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '7.8';
+const CACHE_VERSION = '8.0';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2216,8 +2216,7 @@ function renderCalendar(){
       : seasonSim.activeRaces?.[race.id] ? 'active'
       : race.startDay > (seasonSim?.currentDay||0) ? 'future'
       : 'available';
-    const rowOpacity = raceStatus==='future' ? 'opacity:.45;' : '';
-    html += `<div class="cal-race-row" data-race-id="${race.id}" onclick="openRace(${race.id})" style="${rowOpacity}">
+    html += `<div class="cal-race-row" data-race-id="${race.id}" onclick="openRace(${race.id})">
         <span style="min-width:46px;padding:1px 5px;border-radius:3px;background:${UCI_CAT_COLOR[race.category]||color};font-family:'Barlow Condensed',sans-serif;font-size:.65rem;font-weight:800;color:#000;text-align:center;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${race.category||''}</span>
         <span style="flex:1">
           <span style="font-family:'Barlow Condensed',sans-serif;font-size:.92rem;font-weight:700;text-transform:uppercase;color:var(--text)">${race.name}</span>
@@ -2243,32 +2242,23 @@ function openRace(id){
 }
 
 function seasonRaceButton(race){
-  // No season running — always allow manual simulation
-  if(!seasonSim){
-    return '<button class="btn btn-accent" onclick="loadRaceIntoBuilder('+race.id+')">📋 Race Builder</button>';
-  }
-  const raceDay = race.startDay;
-  const today = seasonSim.currentDay;
-  const endDay = raceDay + race.stages.length - 1;
+  // Always show Race Builder — season sim runs separately
+  const btn = '<button class="btn btn-accent" onclick="loadRaceIntoBuilder('+race.id+')">📋 Race Builder</button>';
+  if(!seasonSim) return btn;
 
-  // Already completed in season
+  // Add a status badge alongside the button
   const wasSimulated = seasonSim.dayLog.some(d=>d.events.some(e=>e.raceId===race.id&&e.complete));
-  if(wasSimulated){
-    return '<span style="color:var(--green);font-size:.82rem;font-family:Barlow Condensed,sans-serif;font-weight:700">✓ COMPLETED IN SEASON</span>';
-  }
-  // Currently running
-  const isActive = seasonSim.activeRaces && seasonSim.activeRaces[race.id];
-  if(isActive){
-    const stagesDone = isActive.rs.currentStageIndex;
-    return '<span style="color:var(--accent);font-size:.82rem;font-family:Barlow Condensed,sans-serif;font-weight:700">⚡ IN PROGRESS (Stage '+stagesDone+'/'+race.stages.length+')</span>';
-  }
-  // Future — locked
-  if(raceDay > today){
-    const daysAway = raceDay - today;
-    return '<span style="color:var(--muted);font-size:.78rem">🔒 Starts '+fmtDate(raceDay)+' ('+daysAway+' day'+(daysAway!==1?'s':'')+' away)</span>';
-  }
-  // Past but not in log — missed (shouldn't happen)
-  return '<span style="color:var(--muted);font-size:.78rem">⚠ Not yet simulated</span>';
+  const isActive = seasonSim.activeRaces?.[race.id];
+  const isFuture = race.startDay > seasonSim.currentDay;
+
+  const badge = wasSimulated
+    ? '<span style="color:var(--green);font-size:.75rem;font-family:Barlow Condensed,sans-serif;font-weight:700">✓ DONE</span>'
+    : isActive
+      ? '<span style="color:var(--accent);font-size:.75rem;font-family:Barlow Condensed,sans-serif;font-weight:700">⚡ LIVE</span>'
+      : isFuture
+        ? '<span style="color:var(--muted);font-size:.72rem">'+fmtDate(race.startDay)+'</span>'
+        : '';
+  return '<div style="display:flex;align-items:center;gap:8px">'+btn+badge+'</div>';
 }
 
 function renderRaceDetail(){
@@ -2938,6 +2928,13 @@ function simulateRace(){
 
 // Continue race: simulate next stage
 function simulateNextStage(){
+  // In season mode: "Next Race" or "Finish Day"
+  if(raceState?._seasonRaceId!=null && seasonSim){
+    const complete = raceState.currentStageIndex>=stages.length;
+    if(complete){
+      advanceSeasonQueue(); return;
+    }
+  }
   if(!raceState){simulateRace();return;}
   if(raceState.currentStageIndex>=stages.length){alert('Race complete!');return;}
   runNextStage();
@@ -2986,6 +2983,42 @@ function runNextStage(){
     awardRacePoints(calSelectedRace, lastResults);
   }
   activeResultTab='stage-'+(rs.stageResults.length-1);
+
+  // Sync back to season state if this is a season race
+  if(rs._seasonRaceId!=null && seasonSim){
+    const entry = seasonSim.activeRaces[rs._seasonRaceId];
+    if(entry){
+      entry.rs.stageResults = rs.stageResults;
+      entry.rs.fatigue = rs.fatigue;
+      entry.rs.gcTimes = rs.gcTimes;
+      entry.rs.activeRiders = rs.activeRiders;
+      entry.rs.allAbandoned = rs.allAbandoned;
+      entry.rs.currentStageIndex = rs.currentStageIndex;
+      // If complete, finalize
+      const race = entry.race;
+      const complete = rs.currentStageIndex >= race.stages.length;
+      if(complete){
+        const lrForPts = {gcResult:lastResults.gcResult,stageResults:rs.stageResults,race,riderList:rs.riderList};
+        awardRacePoints(race, lrForPts);
+        awardCountryPoints(race, lastResults.gcResult);
+        seasonSim.currentDayEvents = seasonSim.currentDayEvents||[];
+        seasonSim.currentDayEvents.push({raceId:rs._seasonRaceId,raceName:race.name,category:race.category||'',
+          country:race.country,stageNum:rs.currentStageIndex,totalStages:race.stages.length,
+          stageName:race.stages[rs.currentStageIndex-1]?.name||'',
+          stageWinner:lastResults.gcResult?.[0]?.rider?.name||'—',complete:true,
+          gcLeader:lastResults.gcResult?.[0]?.rider?.name||null,gcResult:lastResults.gcResult});
+        delete seasonSim.activeRaces[rs._seasonRaceId];
+      } else {
+        seasonSim.currentDayEvents = seasonSim.currentDayEvents||[];
+        seasonSim.currentDayEvents.push({raceId:rs._seasonRaceId,raceName:race.name,category:race.category||'',
+          country:race.country,stageNum:rs.currentStageIndex,totalStages:race.stages.length,
+          stageWinner:lastResults.stageResults?.[lastResults.stageResults.length-1]?.result?.[0]?.rider?.name||'—',
+          complete:false});
+      }
+      saveSeasonState();
+    }
+  }
+
   showTab('results');
   renderResults();
 }
@@ -3352,136 +3385,154 @@ function initSeason(){
 }
 
 // ── SIMULATE ONE DAY ────────────────────────────────────────────
-function simulateSeasonDay(){
+// Season queue: races/stages to run today, processed one at a time through Race Builder
+// seasonSim.queue = [{raceId}] — populated when day starts
+
+function startSeasonDay(){
   if(!seasonSim){ alert('Start season first.'); return; }
-  if(transferMarket){ showTransferMarket(); alert('Complete the transfer window before continuing.'); return; }
+  if(transferMarket){ showTransferMarket(); return; }
   if(seasonSim.currentDay > 348){ alert('Season complete!'); return; }
 
   const day = seasonSim.currentDay;
-  const date = fmtDate(day);
-  const dayEvents = [];
 
-  // 1. Initialize new races starting today
+  // Build today's queue of race events
+  const queue = [];
+
+  // Init new races starting today
   calendar.filter(r=>r.startDay===day).forEach(race=>{
     const rs = buildSeasonRaceState(race);
     if(!rs) return;
     seasonSim.activeRaces[race.id] = {race, rs};
   });
 
-  // 2. Run today's stage for every active race
-  const toFinish = [];
+  // Collect everything running today
   Object.entries(seasonSim.activeRaces).forEach(([id, {race,rs}])=>{
-    const raceId = parseInt(id);
-    // Which stage runs today?
-    const expectedStage = day - race.startDay; // 0-indexed
-    if(rs.currentStageIndex !== expectedStage) return; // not their day
-
-    const stageRes = runSeasonStage(race, rs);
-    if(!stageRes) return;
-
-    const complete = rs.currentStageIndex >= race.stages.length;
-    const gcResult = complete || race.stages.length===1 ? buildSeasonGC(rs) : null;
-
-    dayEvents.push({
-      raceId, raceName:race.name, category:race.category||'',
-      country:race.country,
-      stageNum:rs.currentStageIndex,
-      totalStages:race.stages.length,
-      stageName:stageRes.stage.name,
-      terrain:stageRes.stage.terrain,
-      stageWinner:stageRes.result?.[0]?.rider?.name||'—',
-      breakaway:stageRes.breakaway,
-      complete,
-      gcLeader: gcResult?.[0]?.rider?.name||null,
-      gcResult
-    });
-
-    if(complete){
-      // Award UCI + country points
-      const lrForPoints = {
-        gcResult, stageResults:rs.stageResults,
-        race, riderList:rs.riderList
-      };
-      awardRacePoints(race, lrForPoints);
-      awardCountryPoints(race, gcResult);
-      toFinish.push(raceId);
-    }
+    const expectedStage = day - race.startDay;
+    if(rs.currentStageIndex === expectedStage) queue.push(parseInt(id));
   });
 
-  toFinish.forEach(id=>delete seasonSim.activeRaces[id]);
+  if(!queue.length){
+    // Rest day — just advance
+    seasonSim.dayLog.push({day, date:fmtDate(day), events:[]});
+    seasonSim.currentDay++;
+    saveSeasonState();
+    renderSeasonPanel();
+    renderCalendar();
+    // Auto-advance if next day also empty? No — let user click again.
+    return;
+  }
 
-  seasonSim.dayLog.push({day, date, events:dayEvents});
+  seasonSim.dayQueue = queue;
+  seasonSim.dayQueueIndex = 0;
+  seasonSim.currentDayEvents = [];
+  saveSeasonState();
+  runSeasonQueueItem();
+}
+// Keep old name as alias
+function simulateSeasonDay(){ startSeasonDay(); }
+
+function runSeasonQueueItem(){
+  if(!seasonSim||!seasonSim.dayQueue) return;
+  const raceId = seasonSim.dayQueue[seasonSim.dayQueueIndex];
+  if(raceId==null) return finishSeasonDay();
+
+  const entry = seasonSim.activeRaces[raceId];
+  if(!entry) { advanceSeasonQueue(); return; }
+  const {race, rs} = entry;
+
+  // Load race into Race Builder UI (with existing team state if already running)
+  calSelectedRace = race;
+  stageIdSeq = 0;
+  stages = race.stages.map((s,i)=>({id:stageIdSeq++, name:s.name, terrain:s.terrain, distance:s.distance}));
+  const nameEl = document.getElementById('race-name');
+  if(nameEl) nameEl.value = race.name;
+
+  // If stage race already has teams selected (continuing), reuse raceState
+  // Otherwise build fresh raceState from season rs
+  raceState = {
+    raceName: race.name,
+    riderList: rs.riderList,
+    fatigue: rs.fatigue,
+    gcTimes: rs.gcTimes,
+    stageResults: rs.stageResults,
+    allAbandoned: rs.allAbandoned,
+    activeRiders: rs.activeRiders,
+    currentStageIndex: rs.currentStageIndex,
+    raceVariance: rs.raceVariance,
+    totalStages: race.stages.length,
+    _seasonRaceId: raceId, // mark as season race
+  };
+
+  // Auto-simulate the stage
+  runNextStage();
+}
+
+function advanceSeasonQueue(){
+  if(!seasonSim) return;
+  seasonSim.dayQueueIndex++;
+  if(seasonSim.dayQueueIndex >= (seasonSim.dayQueue?.length||0)){
+    finishSeasonDay();
+  } else {
+    runSeasonQueueItem();
+  }
+}
+
+function finishSeasonDay(){
+  if(!seasonSim) return;
+  const day = seasonSim.currentDay;
+  seasonSim.dayLog.push({day, date:fmtDate(day), events: seasonSim.currentDayEvents||[]});
+  seasonSim.dayQueue = null;
+  seasonSim.dayQueueIndex = 0;
+  seasonSim.currentDayEvents = null;
   seasonSim.currentDay++;
   saveSeasonState();
   saveUciPoints();
   checkTransferMarket();
-  if(!transferMarket) renderSeasonPanel();
-}
-
-// ── RENDER SEASON PANEL ─────────────────────────────────────────
-function renderSeasonPanel(){
-  const panel = document.getElementById('season-panel');
-  if(!panel) return;
-
-  if(!seasonSim){
-    panel.innerHTML=`<div style="display:flex;align-items:center;gap:10px;padding:8px 0">
-      <button class="btn btn-accent" onclick="initSeason()">🏁 Start Season Simulation</button>
-      <span style="color:var(--muted);font-size:.82rem">Simulate the full calendar day by day</span>
-    </div>`;
-    return;
-  }
-
-  const isComplete = seasonSim.currentDay > 348;
-  const dayDate = isComplete ? 'Season Complete' : fmtDate(seasonSim.currentDay)+' 2026';
-  const activeCount = Object.keys(seasonSim.activeRaces).length;
-
-  panel.innerHTML=`
-    <div style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap">
-      <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:800;color:var(--accent)">${dayDate}</span>
-      ${!isComplete?`<button class="btn btn-accent" onclick="simulateSeasonDay()">▶ Simulate Day</button>`:''}
-      <button class="btn btn-ghost btn-sm" onclick="simulateSeasonWeek()">▶▶ Week</button>
-      <span class="pill">${activeCount} race${activeCount!==1?'s':''} in progress</span>
-      ${transferMarket?'<button class="btn btn-accent btn-sm" onclick="showTransferMarket()">💼 Transfer Window Open!</button>':''}
-      <button class="btn btn-danger btn-sm" onclick="initSeason()" style="margin-left:auto">↺ Reset</button>
-    </div>
-    ${renderDayLog()}`;
-}
-
-function renderDayLog(){
-  if(!seasonSim||!seasonSim.dayLog.length) return '';
-  // Show last 3 days
-  const recent = seasonSim.dayLog.slice(-3).reverse();
-  return recent.map(({date,events})=>{
-    if(!events.length) return `<div style="padding:4px 0;color:var(--muted);font-size:.78rem">${date} — Rest day</div>`;
-    const evHTML = events.map(ev=>{
-      const catColor = UCI_CAT_COLOR[ev.category]||'var(--muted)';
-      const stageInfo = ev.totalStages>1
-        ? `Stage ${ev.stageNum}/${ev.totalStages}`
-        : '1-day';
-      const winnerLine = ev.complete && ev.gcResult
-        ? `<span style="color:var(--green)"> · GC: ${ev.gcLeader}</span>`
-        : `<span style="color:var(--muted)"> · ${ev.stageWinner}${ev.breakaway?' 🏇':''}</span>`;
-      const finBadge = ev.complete?'<span style="color:var(--green);font-weight:700"> ✓</span>':'';
-      return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:.82rem;border-bottom:1px solid var(--border)">
-        <span style="min-width:46px;padding:1px 5px;border-radius:3px;background:${catColor};font-family:'Barlow Condensed',sans-serif;font-size:.62rem;font-weight:800;color:#000;text-align:center">${ev.category||'—'}</span>
-        <span style="font-weight:700;color:var(--text)">${ev.raceName}</span>
-        <span class="pill" style="font-size:.65rem">${stageInfo}</span>
-        ${winnerLine}${finBadge}
-      </div>`;
-    }).join('');
-    return `<div style="margin-top:6px">
-      <div style="font-family:'Barlow Condensed',sans-serif;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:3px 0">${date}</div>
-      ${evHTML}
-    </div>`;
-  }).join('');
+  renderSeasonPanel();
+  renderCalendar();
 }
 
 function simulateSeasonWeek(){
+  // Week mode: simulate 7 days silently (batch), no Race Builder UI
   for(let i=0;i<7;i++){
     if(!seasonSim||seasonSim.currentDay>348) break;
-    simulateSeasonDay();
+    const day=seasonSim.currentDay;
+    const dayEvents=[];
+    calendar.filter(r=>r.startDay===day).forEach(race=>{
+      const rs=buildSeasonRaceState(race);
+      if(!rs) return;
+      seasonSim.activeRaces[race.id]={race,rs};
+    });
+    const toFinish=[];
+    Object.entries(seasonSim.activeRaces).forEach(([id,{race,rs}])=>{
+      const raceId=parseInt(id);
+      const expectedStage=day-race.startDay;
+      if(rs.currentStageIndex!==expectedStage) return;
+      const stageRes=runSeasonStage(race,rs);
+      if(!stageRes) return;
+      const complete=rs.currentStageIndex>=race.stages.length;
+      const gcResult=complete||race.stages.length===1?buildSeasonGC(rs):null;
+      dayEvents.push({raceId,raceName:race.name,category:race.category||'',country:race.country,
+        stageNum:rs.currentStageIndex,totalStages:race.stages.length,stageName:stageRes.stage.name,
+        terrain:stageRes.stage.terrain,stageWinner:stageRes.result?.[0]?.rider?.name||'—',
+        breakaway:stageRes.breakaway,complete,gcLeader:gcResult?.[0]?.rider?.name||null,gcResult});
+      if(complete){
+        awardRacePoints(race,{gcResult,stageResults:rs.stageResults,race,riderList:rs.riderList});
+        awardCountryPoints(race,gcResult);
+        toFinish.push(raceId);
+      }
+    });
+    toFinish.forEach(id=>delete seasonSim.activeRaces[id]);
+    seasonSim.dayLog.push({day,date:fmtDate(day),events:dayEvents});
+    seasonSim.currentDay++;
   }
+  saveSeasonState();
+  saveUciPoints();
+  checkTransferMarket();
+  renderSeasonPanel();
+  renderCalendar();
 }
+
 
 // ── COUNTRY RANKINGS ────────────────────────────────────────────
 function renderCountryRankings(){
@@ -3865,8 +3916,19 @@ function renderResults(){
   const{raceName,stageResults,gcResult,riderCount,teamCount,abandoned=[],currentStage,totalStages,complete}=lastResults;
   const nextBtn=document.getElementById('next-stage-btn');
   const rerunBtn=document.getElementById('rerun-btn');
-  if(nextBtn) nextBtn.style.display=(totalStages>1&&!complete)?'':'none';
-  if(nextBtn&&totalStages>1&&!complete) nextBtn.textContent='▶ Stage '+(currentStage+1)+' of '+totalStages;
+  const inSeason = raceState?._seasonRaceId!=null && seasonSim;
+  const hasMoreQueue = inSeason && seasonSim.dayQueue && seasonSim.dayQueueIndex+1 < seasonSim.dayQueue.length;
+  if(nextBtn){
+    if(inSeason && complete && hasMoreQueue){
+      nextBtn.style.display=''; nextBtn.textContent='▶ Next Race';
+    } else if(totalStages>1&&!complete){
+      nextBtn.style.display=''; nextBtn.textContent='▶ Stage '+(currentStage+1)+' of '+totalStages;
+    } else if(inSeason && complete && !hasMoreQueue){
+      nextBtn.style.display=''; nextBtn.textContent='▶ Finish Day';
+    } else {
+      nextBtn.style.display='none';
+    }
+  }
   if(rerunBtn) rerunBtn.style.display='';
   const isMulti=stageResults.length>1;
   document.getElementById('res-race-name').textContent=raceName;
