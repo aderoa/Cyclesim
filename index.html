@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v9.2</title>
+<title>CycleSim v9.3</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v9.2</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v9.3</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '9.2';
+const CACHE_VERSION = '9.3';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2250,81 +2250,158 @@ function renderRaceDetail(){
 function simulateCalendarRace(raceId){ loadRaceIntoBuilder(raceId); }
 
 // ── AUTO TEAM SELECTION FOR RACES ──────────────────────────────
+// Category priority (higher = more important)
+const CAT_PRIORITY = {
+  'GT.A':10,'GT.B':9,'monument':8,
+  '1.UWT':7,'2.UWT':7,
+  '1.HC':6,'2.HC':6,
+  '1.1':5,'2.1':5,
+  '1.2':4,'2.2':4
+};
+
+// Get teams that are "reserved" for higher-priority races overlapping with this race's dates
+function getReservedTeams(race){
+  const reserved = new Set();
+  if(!calendar||!race.startDay) return reserved;
+  const raceEnd = race.startDay + (race.stages?.length||1) - 1;
+  const myPriority = CAT_PRIORITY[race.category]||0;
+  const byAvgAll = [...teams].filter(t=>t.riders.length>0).sort((a,b)=>teamAvg(b)-teamAvg(a));
+
+  calendar.forEach(other=>{
+    if(other.id===race.id) return;
+    const oStart = other.startDay;
+    const oEnd = oStart + (other.stages?.length||1) - 1;
+    // Overlapping dates?
+    if(oStart>raceEnd || oEnd<race.startDay) return;
+    const oPriority = CAT_PRIORITY[other.category]||0;
+    if(oPriority <= myPriority) return; // only block for strictly higher priority
+
+    // Add the reserved pool for that higher race to blocked set
+    const oCountry = other.country;
+    const oNational = byAvgAll.filter(t=>t.country===oCountry);
+
+    if(oPriority>=8){ // GT / monument: top-20 + all national
+      byAvgAll.slice(0,20).forEach(t=>reserved.add(t.id));
+      oNational.forEach(t=>reserved.add(t.id));
+    } else if(oPriority>=7){ // 1.UWT / 2.UWT: top-35 + all national
+      byAvgAll.slice(0,35).forEach(t=>reserved.add(t.id));
+      oNational.forEach(t=>reserved.add(t.id));
+    } else if(oPriority>=6){ // 1.HC / 2.HC: top-50 + all national
+      byAvgAll.slice(0,50).forEach(t=>reserved.add(t.id));
+      oNational.forEach(t=>reserved.add(t.id));
+    } else if(oPriority>=5){ // 1.1 / 2.1: all national
+      oNational.forEach(t=>reserved.add(t.id));
+    } else { // 1.2 / 2.2: all national
+      oNational.forEach(t=>reserved.add(t.id));
+    }
+  });
+  return reserved;
+}
+
 function autoSelectTeamsForRace(race){
   if(!teams.length) return;
   const cat = race.category || '';
   const country = race.country;
   const region = getRegionLabel(country);
+  const myPriority = CAT_PRIORITY[cat]||0;
 
-  // Teams currently in an active season race can't join another race today
+  // Build busy set: teams already in an active race today
   const busyTeams = new Set();
   if(seasonSim){
     Object.values(seasonSim.activeRaces||{}).forEach(({rs})=>{
       if(!rs||!rs.riderList) return;
-      rs.riderList.forEach(r=>{
-        const tid = riderTeamMap[r.name];
-        if(tid!=null) busyTeams.add(tid);
-      });
+      rs.riderList.forEach(r=>{ const tid=riderTeamMap[r.name]; if(tid!=null) busyTeams.add(tid); });
+    });
+    (seasonSim.currentDayEvents||[]).forEach(ev=>{
+      if(ev.teamIds) ev.teamIds.forEach(tid=>busyTeams.add(tid));
     });
   }
-  // Sort all teams by avg desc, exclude busy teams
-  const byAvg = [...teams].filter(t=>t.riders.length>0&&!busyTeams.has(t.id))
-    .sort((a,b)=>teamAvg(b)-teamAvg(a));
 
-  // National teams: same country first, then same region
-  function getNationalTeams(n){
-    const countryTeams = byAvg.filter(t=>t.country===country);
-    if(countryTeams.length>=n) return countryTeams.slice(0,n);
-    const regionTeams = byAvg.filter(t=>t.country!==country && getRegionLabel(t.country)===region);
-    return [...countryTeams,...regionTeams].slice(0,n);
+  // Get reserved teams for higher-priority overlapping races
+  const reserved = getReservedTeams(race);
+
+  // Available pool: not busy AND not reserved for a higher race
+  // Exception: national teams can override if this race is >= their reserved race's priority
+  // (handled by getReservedTeams only blocking STRICTLY higher priority)
+  const isEligible = t => t.riders.length>0 && !busyTeams.has(t.id) && !reserved.has(t.id);
+
+  const byAvg = [...teams].filter(isEligible).sort((a,b)=>teamAvg(b)-teamAvg(a));
+
+  // National pool: same country first, then same region (only eligible teams)
+  function getNational(n){
+    const sameCountry = byAvg.filter(t=>t.country===country);
+    if(sameCountry.length>=n) return sameCountry.slice(0,n);
+    const sameRegion = byAvg.filter(t=>t.country!==country && getRegionLabel(t.country)===region);
+    return [...sameCountry,...sameRegion].slice(0,n);
+  }
+
+  // National ranking: sort national teams by UCI team points
+  function getNationalRanking(){
+    return byAvg.filter(t=>t.country===country)
+      .sort((a,b)=>(teamUciPoints[b.name]||0)-(teamUciPoints[a.name]||0));
   }
 
   function pickRandom(pool, n){
-    const shuffled=[...pool].sort(()=>Math.random()-0.5);
-    return shuffled.slice(0,Math.min(n,shuffled.length));
+    const s=[...pool].sort(()=>Math.random()-0.5);
+    return s.slice(0,Math.min(n,s.length));
   }
-
-  function exclude(pool, excluded){
-    const ids=new Set(excluded.map(t=>t.id));
+  function excl(pool, already){
+    const ids=new Set(already.map(t=>t.id));
     return pool.filter(t=>!ids.has(t.id));
   }
 
   let selected=[];
 
   if(cat==='GT.A'||cat==='GT.B'||cat==='monument'){
-    const top20=byAvg.slice(0,20);
-    const national5=getNationalTeams(5).filter(t=>!top20.some(x=>x.id===t.id));
-    selected=[...top20,...national5.slice(0,5)];
+    // Top-20 by avg, 2 best national not in top-20, 3 best from national UCI ranking not yet included
+    const top20 = byAvg.slice(0,20);
+    const natRank = getNationalRanking();
+    const nat2 = excl(natRank,top20).slice(0,2);
+    const nat3 = excl(excl(natRank,top20),nat2).slice(0,3);
+    selected = [...top20,...nat2,...nat3];
 
-  }else if(cat==='1.UWT'||cat==='2.UWT'){
-    const top15=byAvg.slice(0,15);
-    const national5=getNationalTeams(5).filter(t=>!top15.some(x=>x.id===t.id));
-    const pool=exclude(byAvg.slice(0,35),top15);
-    const random5=pickRandom(exclude(pool,national5),5);
-    selected=[...top15,...national5.slice(0,5),...random5];
+  } else if(cat==='1.UWT'||cat==='2.UWT'){
+    // Best 15, top-3 national, 2 best from national UCI ranking, random 5 of remaining top-20 best
+    const top15 = byAvg.slice(0,15);
+    const nat3 = excl(getNational(3),top15);
+    const natRank = getNationalRanking();
+    const natRank2 = excl(excl(natRank,top15),nat3).slice(0,2);
+    const already = [...top15,...nat3,...natRank2];
+    const worldPool = excl(byAvg.slice(0,35), already);
+    const rand5 = pickRandom(worldPool,5);
+    selected = [...already,...rand5];
 
-  }else if(cat==='1.HC'||cat==='2.HC'){
-    const national5=getNationalTeams(5);
-    const pool=exclude(byAvg.slice(0,55),national5);
-    const random20=pickRandom(pool,20);
-    selected=[...national5,...random20];
+  } else if(cat==='1.HC'||cat==='2.HC'){
+    // Best 5 national, 5 best from national UCI ranking, random 15 of 50 remaining
+    const nat5 = getNational(5);
+    const natRank = getNationalRanking();
+    const natRankTop5 = excl(natRank,nat5).slice(0,5);
+    const already = [...nat5,...natRankTop5];
+    const worldPool = excl(byAvg.slice(0,55), already);
+    const rand15 = pickRandom(worldPool,15);
+    selected = [...already,...rand15];
 
-  }else if(cat==='1.1'||cat==='2.1'){
-    const nationalPool=getNationalTeams(20);
-    const random12=pickRandom(nationalPool,12);
-    const worldPool=exclude(byAvg,random12);
-    const random13=pickRandom(worldPool,13);
-    selected=[...random12,...random13];
+  } else if(cat==='1.1'||cat==='2.1'){
+    // Random 12 national, 3 best from national UCI ranking, 10 random world
+    const natAll = byAvg.filter(t=>t.country===country);
+    const rand12 = pickRandom(natAll,12);
+    const natRank = getNationalRanking();
+    const natRank3 = excl(natRank,rand12).slice(0,3);
+    const already = [...rand12,...natRank3];
+    const worldPool = excl(byAvg,already);
+    const rand10 = pickRandom(worldPool,10);
+    selected = [...already,...rand10];
 
-  }else{ // 1.2, 2.2, default
-    const nationalPool=getNationalTeams(25);
-    const random15=pickRandom(nationalPool,15);
-    const worldPool=exclude(byAvg,random15);
-    const random10=pickRandom(worldPool,10);
-    selected=[...random15,...random10];
+  } else { // 1.2, 2.2, default
+    // Random 15 national, random 10 world
+    const natAll = byAvg.filter(t=>t.country===country);
+    const rand15 = pickRandom(natAll,15);
+    const worldPool = excl(byAvg, rand15);
+    const rand10 = pickRandom(worldPool,10);
+    selected = [...rand15,...rand10];
   }
 
-  selectedTeams=new Set(selected.map(t=>t.id));
+  selectedTeams = new Set(selected.map(t=>t.id));
 }
 
 function loadRaceIntoBuilder(raceId){
@@ -3207,11 +3284,13 @@ function renderMarket(){
   poolHTML += unassigned.map(({mr,rd})=>{
     const ft = teams.find(t=>t.id===mr.fromTeamId);
     const isSel = sel===rd.name;
+    const uciPts = uciPoints[rd.name]||0;
     return '<div class="market-pool-row" data-name="'+rd.name+'" style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:pointer;background:'+(isSel?'rgba(245,196,0,.18)':'')+'">'+
       flagImg(rd.country,12)+
       '<span style="flex:1;font-size:.85rem;font-weight:'+(isSel?'700':'400')+';color:'+(isSel?'var(--accent)':'var(--text)')+'">'+rd.name+'</span>'+
-      '<span style="font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">'+rd.avg.toFixed(1)+'</span>'+
-      '<span style="font-size:.65rem;color:var(--red);margin-left:6px;font-family:Barlow Condensed,sans-serif">'+(ft?ft.name:'')+'</span>'+
+      '<span style="font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted);min-width:32px">'+rd.avg.toFixed(1)+'</span>'+
+      (uciPts?'<span style="font-family:JetBrains Mono,monospace;font-size:.68rem;color:var(--accent);margin-left:2px">'+uciPts+'p</span>':'')+
+      '<span style="font-size:.65rem;color:var(--red);margin-left:4px;font-family:Barlow Condensed,sans-serif">'+(ft?ft.name:'')+'</span>'+
       '</div>';
   }).join('');
   if(!unassigned.length) poolHTML += '<div style="padding:16px;text-align:center;color:var(--green);font-size:.82rem">✓ All assigned</div>';
