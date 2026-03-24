@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v8.8</title>
+<title>CycleSim v8.9</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -225,7 +225,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.8</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v8.9</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '8.8';
+const CACHE_VERSION = '8.9';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2256,8 +2256,19 @@ function autoSelectTeamsForRace(race){
   const country = race.country;
   const region = getRegionLabel(country);
 
-  // Sort all teams by avg desc
-  const byAvg = [...teams].filter(t=>t.riders.length>0)
+  // Teams currently in an active season race can't join another race today
+  const busyTeams = new Set();
+  if(seasonSim){
+    Object.values(seasonSim.activeRaces||{}).forEach(({rs})=>{
+      if(!rs||!rs.riderList) return;
+      rs.riderList.forEach(r=>{
+        const tid = riderTeamMap[r.name];
+        if(tid!=null) busyTeams.add(tid);
+      });
+    });
+  }
+  // Sort all teams by avg desc, exclude busy teams
+  const byAvg = [...teams].filter(t=>t.riders.length>0&&!busyTeams.has(t.id))
     .sort((a,b)=>teamAvg(b)-teamAvg(a));
 
   // National teams: same country first, then same region
@@ -3050,7 +3061,7 @@ function renderMarket(){
   const wrap = document.getElementById('market-wrap');
   if(!wrap) return;
   if(!transferMarket){
-    wrap.innerHTML='<div class="empty-state"><div class="empty-icon">💼</div><div>No active transfer market. Simulate at least 7 days to trigger the first window.</div></div>';
+    wrap.innerHTML='<div class="empty-state"><div class="empty-icon">💼</div><div>No active transfer market.</div></div>';
     return;
   }
   const {riders, pendingSlots} = transferMarket;
@@ -3059,127 +3070,97 @@ function renderMarket(){
   const filledSlots = Object.values(pendingSlots).reduce((s,a)=>s+a.filter(Boolean).length,0);
   const allFilled = filledSlots===totalSlots;
 
-  // Sort pool by avg desc
   const unassigned = riders
     .filter(r=>!assignedNames.has(r.name))
-    .map(r=>({...r, riderData:allRiders.find(x=>x.name===r.name)}))
-    .filter(r=>r.riderData)
-    .sort((a,b)=>b.riderData.avg-a.riderData.avg);
+    .map(r=>({mr:r, rd:allRiders.find(x=>x.name===r.name)}))
+    .filter(x=>x.rd)
+    .sort((a,b)=>b.rd.avg-a.rd.avg);
 
-  // Sort teams by avg desc
-  const sortedTeamEntries = Object.entries(pendingSlots)
+  const sortedTeams = Object.entries(pendingSlots)
     .map(([tid,slots])=>({tid, slots, team:teams.find(t=>t.id===+tid)}))
     .filter(e=>e.team)
     .sort((a,b)=>teamAvg(b.team)-teamAvg(a.team));
 
-  let poolHTML = unassigned.map(mr=>{
-    const r = mr.riderData;
-    const ft = teams.find(t=>t.id===mr.fromTeamId);
-    return '<div class="nfa-rider-row market-rider" data-name="'+encodeURIComponent(r.name)+'" draggable="true" style="cursor:grab">'+
-      '<span class="nfa-flag">'+flagImg(r.country,12)+'</span>'+
-      '<span class="nfa-name" style="flex:1">'+r.name+'</span>'+
-      '<span class="nfa-avg" style="margin-right:4px">'+r.avg.toFixed(1)+'</span>'+
-      '<span style="font-size:.65rem;color:var(--red);font-family:Barlow Condensed,sans-serif;white-space:nowrap">'+(ft?ft.name:'')+'</span>'+
-      '</div>';
-  }).join('') + (unassigned.length===0?'<div style="padding:20px;text-align:center;color:var(--green);font-size:.82rem">✓ All riders assigned</div>':'');
+  // Selected rider state (stored on the wrap element)
+  const sel = wrap._selectedRider || null;
 
-  let teamsHTML = sortedTeamEntries.map(({tid,slots,team})=>{
+  let poolHTML = '<div style="font-family:Barlow Condensed,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:5px 12px;background:var(--surface2);border-bottom:1px solid var(--border)">Click a rider to select, then click a slot</div>';
+  poolHTML += unassigned.map(({mr,rd})=>{
+    const ft = teams.find(t=>t.id===mr.fromTeamId);
+    const isSel = sel===rd.name;
+    return '<div class="market-pool-row" data-name="'+rd.name+'" style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:pointer;background:'+(isSel?'rgba(245,196,0,.18)':'')+'">'+
+      flagImg(rd.country,12)+
+      '<span style="flex:1;font-size:.85rem;font-weight:'+(isSel?'700':'400')+';color:'+(isSel?'var(--accent)':'var(--text)')+'">'+rd.name+'</span>'+
+      '<span style="font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">'+rd.avg.toFixed(1)+'</span>'+
+      '<span style="font-size:.65rem;color:var(--red);margin-left:6px;font-family:Barlow Condensed,sans-serif">'+(ft?ft.name:'')+'</span>'+
+      '</div>';
+  }).join('');
+  if(!unassigned.length) poolHTML += '<div style="padding:16px;text-align:center;color:var(--green);font-size:.82rem">✓ All assigned</div>';
+
+  let teamsHTML = sortedTeams.map(({tid,slots,team})=>{
     const avg = teamAvg(team).toFixed(1);
     const filled = slots.filter(Boolean).length;
     let slotsHTML = slots.map((assigned,si)=>{
       if(assigned){
         const ar = allRiders.find(x=>x.name===assigned);
-        return '<div class="nfa-rider-row market-assigned-slot" data-teamid="'+tid+'" data-slot="'+si+'" style="background:rgba(62,207,110,.06);cursor:grab" draggable="true" data-name="'+encodeURIComponent(assigned)+'">'+
-          '<span style="font-size:.72rem;color:var(--green);width:14px">✓</span>'+
-          '<span class="nfa-flag">'+flagImg(ar?.country||'',12)+'</span>'+
-          '<span class="nfa-name" style="flex:1">'+assigned+'</span>'+
-          '<span class="nfa-avg" style="margin-right:4px">'+(ar?ar.avg.toFixed(1):'')+'</span>'+
-          '<span onclick="marketUnassign('+tid+','+si+')" style="color:var(--muted);cursor:pointer;font-size:.75rem;padding:0 4px">✕</span>'+
+        return '<div class="market-slot-assigned" data-teamid="'+tid+'" data-slot="'+si+'" style="display:flex;align-items:center;gap:6px;padding:5px 12px;border-bottom:1px solid var(--border);cursor:pointer;background:rgba(62,207,110,.06)" title="Click to unassign">'+
+          '<span style="color:var(--green);font-size:.7rem;width:12px">✓</span>'+
+          flagImg(ar?.country||'',11)+
+          '<span style="flex:1;font-size:.82rem">'+assigned+'</span>'+
+          '<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+(ar?ar.avg.toFixed(1):'')+'</span>'+
+          '<span style="color:var(--muted);font-size:.7rem;margin-left:4px">✕</span>'+
           '</div>';
       }
-      return '<div class="market-drop-slot" data-teamid="'+tid+'" data-slot="'+si+'" style="padding:7px 14px;font-size:.75rem;color:var(--muted);font-style:italic;border-top:1px dashed var(--border);background:rgba(245,196,0,.03);cursor:pointer">Drop rider here…</div>';
+      const canAssign = !!sel;
+      return '<div class="market-slot-empty" data-teamid="'+tid+'" data-slot="'+si+'" style="padding:6px 12px;font-size:.75rem;color:'+(canAssign?'var(--accent)':'var(--muted)')+';font-style:italic;border-bottom:1px dashed var(--border);cursor:'+(canAssign?'pointer':'default')+';background:'+(canAssign?'rgba(245,196,0,.05)':'')+'">'+
+        (canAssign?'← Click to assign '+sel:'Open slot')+'</div>';
     }).join('');
-    return '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)">'+
-      '<div style="padding:7px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">'+
+    return '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface);margin-bottom:6px">'+
+      '<div style="padding:6px 12px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">'+
       flagImg(team.country,13)+
-      '<span style="font-family:Barlow Condensed,sans-serif;font-size:.95rem;font-weight:700;text-transform:uppercase;flex:1;color:var(--text)">'+team.name+'</span>'+
+      '<span style="font-family:Barlow Condensed,sans-serif;font-size:.95rem;font-weight:700;text-transform:uppercase;flex:1">'+team.name+'</span>'+
       '<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+avg+' avg</span>'+
-      '<span class="pill" style="font-size:.65rem">'+filled+'/'+slots.length+' filled</span>'+
+      '<span class="pill" style="font-size:.65rem">'+filled+'/'+slots.length+'</span>'+
       '</div>'+slotsHTML+'</div>';
   }).join('');
 
-  wrap.innerHTML=
-    '<div style="display:grid;grid-template-columns:300px 1fr;gap:12px;height:calc(100vh - 140px)">'+
+  wrap.innerHTML =
+    '<div style="display:grid;grid-template-columns:280px 1fr;gap:12px;height:calc(100vh - 150px);overflow:hidden">'+
     '<div style="display:flex;flex-direction:column;border:1px solid rgba(245,196,0,.3);border-radius:8px;overflow:hidden;background:var(--surface)">'+
-    '<div style="padding:8px 14px;background:rgba(245,196,0,.08);border-bottom:1px solid rgba(245,196,0,.2);font-family:Barlow Condensed,sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;color:var(--accent);display:flex;justify-content:space-between">'+
-    '<span>Transfer Pool</span><span class="pill" style="color:var(--accent);border-color:rgba(245,196,0,.3)">'+unassigned.length+' available</span></div>'+
-    '<div id="market-pool" style="flex:1;overflow-y:auto">'+poolHTML+'</div></div>'+
-    '<div style="overflow-y:auto;display:flex;flex-direction:column;gap:8px" id="market-teams">'+teamsHTML+'</div></div>'+
+    '<div style="padding:7px 12px;background:rgba(245,196,0,.08);border-bottom:1px solid rgba(245,196,0,.2);font-family:Barlow Condensed,sans-serif;font-size:.8rem;font-weight:700;text-transform:uppercase;color:var(--accent);display:flex;justify-content:space-between">'+
+    '<span>Transfer Pool</span><span class="pill" style="color:var(--accent)">'+unassigned.length+'</span></div>'+
+    '<div style="flex:1;overflow-y:auto">'+poolHTML+'</div></div>'+
+    '<div style="overflow-y:auto">'+teamsHTML+'</div></div>'+
     '<div style="margin-top:10px;display:flex;gap:10px;align-items:center">'+
-    '<button class="btn btn-accent" onclick="confirmTransfers()" '+(allFilled?'':'disabled')+'>✓ Confirm Transfers &amp; Continue Season</button>'+
-    (!allFilled?'<span style="color:var(--muted);font-size:.82rem">'+(totalSlots-filledSlots)+' slot'+(totalSlots-filledSlots!==1?'s':'')+' still open</span>':'')+
+    '<button class="btn btn-accent" onclick="confirmTransfers()" '+(allFilled?'':'disabled')+'>✓ Confirm Transfers</button>'+
+    (!allFilled?'<span style="color:var(--muted);font-size:.82rem">'+(totalSlots-filledSlots)+' slot(s) open</span>':'')+
     '</div>';
 
-  // Wire drag + click events
-  let clickSelectedRider = null;
-  wrap.querySelectorAll('.market-rider').forEach(el=>{
-    el.addEventListener('dragstart',e=>{
-      marketDragRider = decodeURIComponent(el.dataset.name||'');
-      e.dataTransfer.effectAllowed='move';
-    });
+  // Wire click events
+  wrap.querySelectorAll('.market-pool-row').forEach(el=>{
     el.addEventListener('click',()=>{
-      clickSelectedRider = decodeURIComponent(el.dataset.name||'');
-      wrap.querySelectorAll('.market-rider').forEach(r=>r.style.background='');
-      el.style.background='rgba(245,196,0,.15)';
+      wrap._selectedRider = (wrap._selectedRider===el.dataset.name) ? null : el.dataset.name;
+      renderMarket();
     });
   });
-  wrap.querySelectorAll('.market-assigned-slot').forEach(el=>{
-    el.addEventListener('dragstart',e=>{
-      marketDragRider = decodeURIComponent(el.dataset.name||'');
-      e.dataTransfer.effectAllowed='move';
-    });
+  wrap.querySelectorAll('.market-slot-empty').forEach(el=>{
     el.addEventListener('click',()=>{
-      // Clicking assigned slot returns rider to pool
-      const name = decodeURIComponent(el.dataset.name||'');
-      const tid = el.dataset.teamid;
-      const si = parseInt(el.dataset.slot);
-      marketUnassign(tid, si);
-    });
-  });
-  wrap.querySelectorAll('.market-drop-slot').forEach(el=>{
-    el.addEventListener('dragover',e=>e.preventDefault());
-    el.addEventListener('drop',e=>{
-      e.preventDefault();
-      const name = marketDragRider;
-      if(!name||!transferMarket) return;
+      if(!wrap._selectedRider||!transferMarket) return;
+      const name = wrap._selectedRider;
       if(!transferMarket.riders.some(r=>r.name===name)) return;
       const tid = el.dataset.teamid; const si = parseInt(el.dataset.slot);
       Object.values(transferMarket.pendingSlots).forEach(slots=>{const i=slots.indexOf(name);if(i>=0)slots[i]=null;});
       if(transferMarket.pendingSlots[tid]) transferMarket.pendingSlots[tid][si]=name;
-      marketDragRider=null; saveTransferMarket(); renderMarket();
-    });
-    el.addEventListener('click',()=>{
-      if(!clickSelectedRider||!transferMarket) return;
-      const name = clickSelectedRider;
-      if(!transferMarket.riders.some(r=>r.name===name)) return;
-      const tid = el.dataset.teamid; const si = parseInt(el.dataset.slot);
-      Object.values(transferMarket.pendingSlots).forEach(slots=>{const i=slots.indexOf(name);if(i>=0)slots[i]=null;});
-      if(transferMarket.pendingSlots[tid]) transferMarket.pendingSlots[tid][si]=name;
-      clickSelectedRider=null; saveTransferMarket(); renderMarket();
+      wrap._selectedRider=null; saveTransferMarket(); renderMarket();
     });
   });
-  const pool = document.getElementById('market-pool');
-  if(pool){
-    pool.addEventListener('dragover',e=>e.preventDefault());
-    pool.addEventListener('drop',e=>{
-      e.preventDefault();
-      if(!marketDragRider||!transferMarket) return;
-      Object.values(transferMarket.pendingSlots).forEach(slots=>{const i=slots.indexOf(marketDragRider);if(i>=0)slots[i]=null;});
-      marketDragRider=null; saveTransferMarket(); renderMarket();
+  wrap.querySelectorAll('.market-slot-assigned').forEach(el=>{
+    el.addEventListener('click',()=>{
+      marketUnassign(el.dataset.teamid, parseInt(el.dataset.slot));
     });
-  }
-
+  });
 }
+
 function marketDragStart(e, name){
   marketDragRider = name;
   e.dataTransfer.effectAllowed = 'move';
@@ -3364,14 +3345,20 @@ function buildSeasonGC(rs){
 }
 
 function awardCountryPoints(race, gcResult){
+  // countryPoints[raceCountry][riderName] += pts earned
   const cat = race.category;
-  if(!cat || !UCI_POINTS[cat]) return;
+  if(!cat || !UCI_POINTS[cat] || !gcResult) return;
   const table = UCI_POINTS[cat];
   const isStageRace = !!table.gc;
   const country = race.country;
-  if(!countryPoints[country]) countryPoints[country]=0;
-  const pts = isStageRace ? (table.gc?.[0]||0) : (table.finish?.[0]||0);
-  countryPoints[country] += pts;
+  if(!countryPoints[country]) countryPoints[country]={};
+  const ptsList = isStageRace ? table.gc : table.finish;
+  if(!ptsList) return;
+  gcResult.slice(0, ptsList.length).forEach((r,i)=>{
+    const name = r.rider?.name||r.name;
+    if(!name||!ptsList[i]) return;
+    countryPoints[country][name] = (countryPoints[country][name]||0) + ptsList[i];
+  });
 }
 
 // ── SEASON INIT ─────────────────────────────────────────────────
@@ -3694,30 +3681,52 @@ function renderDayLog(){
 }
 
 
+let selectedCountry = null;
 function renderCountryRankings(){
   const wrap = document.getElementById('country-wrap');
   if(!wrap) return;
-  const sorted = Object.entries(countryPoints).sort((a,b)=>b[1]-a[1]);
-  if(!sorted.length){
+  const countries = Object.keys(countryPoints).filter(c=>Object.keys(countryPoints[c]).length>0);
+  if(!countries.length){
     wrap.innerHTML='<div class="empty-state"><div class="empty-icon">🌍</div><div>Simulate races to build country rankings.</div></div>';
     return;
   }
-  const rows = sorted.map(([country,pts],i)=>`
-    <tr>
-      <td class="cell-rank">${i+1}</td>
-      <td style="padding:7px 12px;font-weight:600">${flagImg(country,14)} ${country}</td>
-      <td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">${teams.filter(t=>t.country===country).length} teams</td>
-      <td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">${pts.toLocaleString()}</td>
-    </tr>`).join('');
-  wrap.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:.87rem">
-    <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
-      <th style="width:48px;padding:8px 10px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">#</th>
-      <th style="padding:8px 10px;text-align:left;font-family:'Barlow Condensed',sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">Country</th>
-      <th style="padding:8px 10px;text-align:left;font-family:'Barlow Condensed',sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">Teams</th>
-      <th style="padding:8px 10px;text-align:right;padding-right:16px;font-family:'Barlow Condensed',sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">Points</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+  // Sort countries by number of races held (entries in countryPoints)
+  const sorted = countries.sort((a,b)=>Object.values(countryPoints[b]).reduce((s,v)=>s+v,0)-Object.values(countryPoints[a]).reduce((s,v)=>s+v,0));
+  if(!selectedCountry||!countryPoints[selectedCountry]) selectedCountry=sorted[0];
+
+  const riders = Object.entries(countryPoints[selectedCountry]||{}).sort((a,b)=>b[1]-a[1]);
+
+  const countryList = sorted.map(c=>{
+    const total = Object.values(countryPoints[c]).reduce((s,v)=>s+v,0);
+    const isSel = c===selectedCountry;
+    return '<div onclick="selectedCountry=\'' + c.replace(/'/g,"\'") + '\';renderCountryRankings()" style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:pointer;background:'+(isSel?'rgba(245,196,0,.08)':'')+'">'+
+      flagImg(c,13)+'<span style="flex:1;font-size:.85rem;font-weight:'+(isSel?'700':'400')+'">'+c+'</span>'+
+      '<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+total.toLocaleString()+'</span></div>';
+  }).join('');
+
+  const riderRows = riders.slice(0,50).map(([name,pts],i)=>{
+    const rd = allRiders.find(r=>r.name===name);
+    const tid = riderTeamMap[name];
+    const team = tid!=null?teams.find(t=>t.id===tid):null;
+    return '<tr><td class="cell-rank">'+(i+1)+'</td>'+
+      '<td style="padding:7px 12px;font-weight:600">'+(rd?flagImg(rd.country,12)+' ':'')+name+'</td>'+
+      '<td style="padding:7px 12px"><span class="rteam">'+(team?team.name:'—')+'</span></td>'+
+      '<td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-size:.75rem;color:var(--muted)">'+(rd?rd.avg.toFixed(1):'')+'</td>'+
+      '<td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
+  }).join('');
+
+  wrap.innerHTML='<div style="display:grid;grid-template-columns:220px 1fr;gap:0;height:calc(100vh-130px);border:1px solid var(--border);border-radius:8px;overflow:hidden">'+
+    '<div style="border-right:1px solid var(--border);overflow-y:auto;background:var(--surface)">'+countryList+'</div>'+
+    '<div style="overflow-y:auto;background:var(--surface)">'+
+    '<div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.9rem;font-weight:700;text-transform:uppercase;color:var(--accent)">'+
+    flagImg(selectedCountry,14)+' '+selectedCountry+' Ranking</div>'+
+    '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">'+
+    '<th style="width:40px;padding:7px 10px;text-align:center;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase">#</th>'+
+    '<th style="padding:7px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase">Rider</th>'+
+    '<th style="padding:7px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase">Team</th>'+
+    '<th style="padding:7px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase">OVR</th>'+
+    '<th style="padding:7px 10px;text-align:right;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase">Pts</th>'+
+    '</tr></thead><tbody>'+riderRows+'</tbody></table></div></div>';
 }
 
 
