@@ -510,7 +510,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '8.9';
+const CACHE_VERSION = '9.0';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2936,6 +2936,9 @@ function runNextStage(){
     .sort((a,b)=>a.totalGap-b.totalGap)
     .map((r,i)=>({...r,position:i+1}));
 
+  // Sync gcTimes from stageResults so simulateStage's top25 protection reflects real GC
+  rs.riderList.forEach(r=>{ rs.gcTimes[r.name] = gcAccum[r.name]??0; });
+
   lastResults={
     raceName:rs.raceName, stageResults:rs.stageResults, gcResult, riderList:rs.riderList,
     riderCount:rs.riderList.length, teamCount:selectedTeams.size,
@@ -3078,7 +3081,7 @@ function renderMarket(){
 
   const sortedTeams = Object.entries(pendingSlots)
     .map(([tid,slots])=>({tid, slots, team:teams.find(t=>t.id===+tid)}))
-    .filter(e=>e.team)
+    .filter(e=>e.team && e.slots.some(s=>!s))
     .sort((a,b)=>teamAvg(b.team)-teamAvg(a.team));
 
   // Selected rider state (stored on the wrap element)
@@ -3358,6 +3361,12 @@ function awardCountryPoints(race, gcResult){
     const name = r.rider?.name||r.name;
     if(!name||!ptsList[i]) return;
     countryPoints[country][name] = (countryPoints[country][name]||0) + ptsList[i];
+    // Also track team points per country
+    const tn = getRiderTeamName(name);
+    if(tn){
+      const teamKey = '__team__'+tn;
+      countryPoints[country][teamKey] = (countryPoints[country][teamKey]||0) + ptsList[i];
+    }
   });
 }
 
@@ -3694,7 +3703,9 @@ function renderCountryRankings(){
   const sorted = countries.sort((a,b)=>Object.values(countryPoints[b]).reduce((s,v)=>s+v,0)-Object.values(countryPoints[a]).reduce((s,v)=>s+v,0));
   if(!selectedCountry||!countryPoints[selectedCountry]) selectedCountry=sorted[0];
 
-  const riders = Object.entries(countryPoints[selectedCountry]||{}).sort((a,b)=>b[1]-a[1]);
+  const allEntries = Object.entries(countryPoints[selectedCountry]||{}).sort((a,b)=>b[1]-a[1]);
+  const riders = allEntries.filter(([k])=>!k.startsWith('__team__'));
+  const countryTeams = allEntries.filter(([k])=>k.startsWith('__team__')).map(([k,v])=>[k.replace('__team__',''),v]);
 
   const countryList = sorted.map(c=>{
     const total = Object.values(countryPoints[c]).reduce((s,v)=>s+v,0);
@@ -3788,16 +3799,24 @@ const UCI_POINTS = {
 
 // Persistent UCI points store: riderName → total points
 let uciPoints = {};
+let teamUciPoints = {}; // {teamName: totalPts}
 
 function loadUciPoints(){
   try{ uciPoints = JSON.parse(localStorage.getItem('cyclesim_uci')||'{}'); } catch(e){ uciPoints={}; }
+  try{ teamUciPoints = JSON.parse(localStorage.getItem('cyclesim_teamuci')||'{}'); } catch(e){ teamUciPoints={}; }
 }
 function saveUciPoints(){
   localStorage.setItem('cyclesim_uci', JSON.stringify(uciPoints));
+  localStorage.setItem('cyclesim_teamuci', JSON.stringify(teamUciPoints));
 }
-function awardUciPoints(riderName, pts){
+function awardUciPoints(riderName, pts, teamName){
   if(!pts||pts<=0) return;
   uciPoints[riderName] = (uciPoints[riderName]||0) + pts;
+  if(teamName){ teamUciPoints[teamName] = (teamUciPoints[teamName]||0) + pts; }
+}
+function getRiderTeamName(riderName){
+  const tid = riderTeamMap[riderName];
+  return tid!=null ? (teams.find(t=>t.id===tid)?.name||null) : null;
 }
 
 // Award points after a race completes
@@ -3812,7 +3831,7 @@ function awardRacePoints(race, lastResults){
     if(lastResults.gcResult && table.gc){
       lastResults.gcResult.forEach((r,i)=>{
         const pts = table.gc[i];
-        if(pts) awardUciPoints(r.rider.name, pts);
+        if(pts) awardUciPoints(r.rider.name, pts, getRiderTeamName(r.rider.name));
       });
     }
     // Stage wins (each stage top finishers)
@@ -3822,7 +3841,7 @@ function awardRacePoints(race, lastResults){
       const stagePts = isTT ? table.tt : table.stage;
       if(!stagePts) return;
       result.slice(0, stagePts.length).forEach((r,i)=>{
-        if(stagePts[i]) awardUciPoints(r.rider.name, stagePts[i]);
+        if(stagePts[i]) awardUciPoints(r.rider.name, stagePts[i], getRiderTeamName(r.rider.name));
       });
     });
   } else {
@@ -3830,7 +3849,7 @@ function awardRacePoints(race, lastResults){
     const finPts = table.finish;
     if(!finPts||!lastResults.gcResult) return;
     lastResults.gcResult.slice(0, finPts.length).forEach((r,i)=>{
-      if(finPts[i]) awardUciPoints(r.rider.name, finPts[i]);
+      if(finPts[i]) awardUciPoints(r.rider.name, finPts[i], getRiderTeamName(r.rider.name));
     });
   }
   saveUciPoints();
@@ -3838,36 +3857,49 @@ function awardRacePoints(race, lastResults){
 
 // Render UCI rankings tab
 function renderUciRankings(){
-  const sorted = Object.entries(uciPoints)
-    .sort((a,b)=>b[1]-a[1])
-    .slice(0,200);
+  const sorted = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]).slice(0,200);
+  const teamSorted = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]).slice(0,100);
+  const wrap = document.getElementById('uci-wrap');
+  if(!wrap) return;
   if(!sorted.length){
-    document.getElementById('uci-wrap').innerHTML='<div class="empty-state"><div class="empty-icon">🏆</div><div>Simulate races to earn UCI points.</div></div>';
+    wrap.innerHTML='<div class="empty-state"><div class="empty-icon">🏆</div><div>Simulate races to earn UCI points.</div></div>';
     return;
   }
+  const th = 'padding:8px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase';
   const rows = sorted.map(([name,pts],i)=>{
     const rider = allRiders.find(r=>r.name===name);
     const teamId = riderTeamMap[name];
     const team = teamId!=null?teams.find(t=>t.id===teamId):null;
-    return `<tr>
-      <td class="cell-rank">${i+1}</td>
-      <td class="cell-name">${rider?flagImg(rider.country,12)+' ':''} ${name}</td>
-      <td class="rteam-cell">${team?flagImg(team.country,11)+' <span class="rteam">'+team.name+'</span>':'—'}</td>
-      <td class="cell-avg">${rider?rider.avg.toFixed(1):'—'}</td>
-      <td style="font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">${pts.toLocaleString()}</td>
-    </tr>`;
+    return '<tr><td class="cell-rank">'+(i+1)+'</td>'
+      +'<td class="cell-name">'+(rider?flagImg(rider.country,12)+' ':'')+name+'</td>'
+      +'<td class="rteam-cell">'+(team?flagImg(team.country,11)+' <span class="rteam">'+team.name+'</span>':'\u2014')+'</td>'
+      +'<td class="cell-avg">'+(rider?rider.avg.toFixed(1):'\u2014')+'</td>'
+      +'<td style="font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">'+pts.toLocaleString()+'</td></tr>';
   }).join('');
-  document.getElementById('uci-wrap').innerHTML=`
-    <table style="width:100%;border-collapse:collapse;font-size:.87rem">
-      <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">
-        <th style="width:48px;padding:8px 10px;text-align:center;font-family:Barlow Condensed,sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">#</th>
-        <th style="padding:8px 10px;text-align:left;font-family:Barlow Condensed,sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">Rider</th>
-        <th style="padding:8px 10px;text-align:left;font-family:Barlow Condensed,sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">Team</th>
-        <th style="padding:8px 10px;text-align:left;font-family:Barlow Condensed,sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">OVR</th>
-        <th style="padding:8px 10px;text-align:right;padding-right:16px;font-family:Barlow Condensed,sans-serif;font-size:.78rem;color:var(--muted);text-transform:uppercase">UCI Pts</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+  const trows = teamSorted.map(([name,pts],i)=>{
+    const team = teams.find(t=>t.name===name);
+    return '<tr><td class="cell-rank">'+(i+1)+'</td>'
+      +'<td style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:.9rem;text-transform:uppercase">'+(team?flagImg(team.country,12)+' ':'')+name+'</td>'
+      +'<td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">'+pts.toLocaleString()+'</td></tr>';
+  }).join('');
+  wrap.innerHTML =
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'
+    +'<div><div style="font-family:Barlow Condensed,sans-serif;font-weight:800;font-size:1rem;text-transform:uppercase;color:var(--accent);padding:8px 0 4px">Rider Rankings</div>'
+    +'<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:.85rem">'
+    +'<thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">'
+    +'<th style="width:40px;'+th+';text-align:center">#</th>'
+    +'<th style="'+th+'">Rider</th><th style="'+th+'">Team</th><th style="'+th+'">OVR</th>'
+    +'<th style="'+th+';text-align:right;padding-right:16px">Pts</th>'
+    +'</tr></thead><tbody>'+rows+'</tbody></table></div></div>'
+    +'<div><div style="font-family:Barlow Condensed,sans-serif;font-weight:800;font-size:1rem;text-transform:uppercase;color:var(--accent);padding:8px 0 4px">Team Rankings</div>'
+    +(trows?'<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:.85rem">'
+    +'<thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">'
+    +'<th style="width:40px;'+th+';text-align:center">#</th>'
+    +'<th style="'+th+'">Team</th>'
+    +'<th style="'+th+';text-align:right;padding-right:16px">Pts</th>'
+    +'</tr></thead><tbody>'+trows+'</tbody></table></div>'
+    :'<div class="empty-state" style="padding:20px">No team points yet.</div>')
+    +'</div></div>';
 }
 
 
@@ -4116,9 +4148,8 @@ function renderResults(){
       `<button class="stage-tab-btn ${activeResultTab==='points'?'active':''}" onclick="switchResultTab('points')">🟢 Points</button>`,
       `<button class="stage-tab-btn ${activeResultTab==='mountains'?'active':''}" onclick="switchResultTab('mountains')">🔴 Mountains</button>`,
       `<button class="stage-tab-btn ${activeResultTab==='intermed'?'active':''}" onclick="switchResultTab('intermed')">🔵 Sprints</button>`,
-      `<button class="stage-tab-btn ${activeResultTab==='teams'?'active':''}" onclick="switchResultTab('teams')">⚪ Teams</button>`,
     ].join(''):''
-  ].join('');
+  ].join('') + `<button class="stage-tab-btn ${activeResultTab==='teams'?'active':''}" onclick="switchResultTab('teams')">⚪ Teams</button>`;
   if(document.getElementById('stage-tabs')) document.getElementById('stage-tabs').innerHTML=tabsHtml;
 
   const classifTabs=['points','mountains','intermed','teams'];
