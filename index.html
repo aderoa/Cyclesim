@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.32</title>
+<title>CycleSim v12.33</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.32</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.33</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.32';
+const CACHE_VERSION = '12.33';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3948,7 +3948,7 @@ function runNationalChampionshipsDay(day, countries){
   seasonSim.champDay = day;
   seasonSim.currentDay++;
   // Seed an empty dayLog entry for this day's events
-  seasonSim.dayLog.push({day, date:fmtDate(day), events:[]});
+  seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events:[]});
   saveSeasonState();
   showNationalChampsPreview(day, countries);
 }
@@ -4215,7 +4215,7 @@ function finishWorldChamp(type, winner, gcResult){
     else championships.roadWorld=winner;
   }
   awardChampionshipPoints(type==='tt'?'WC_tt':'WC_road', gcResult);
-  seasonSim.dayLog.push({day:seasonSim.currentDay, date:fmtDate(seasonSim.currentDay), events:[{
+  seasonSim.dayLog.push({day:seasonSim.currentDay, date:fmtDate(seasonSim.currentDay), year:seasonSim.year||1, events:[{
     raceName:(type==='tt'?'TT':'Road')+' World Championship', category:'WC',
     stageNum:1, totalStages:1, stageWinner:winner, complete:true, gcResult
   }]});
@@ -4227,7 +4227,25 @@ function finishWorldChamp(type, winner, gcResult){
 function startSeasonDay(){
   if(!seasonSim){ alert('Start season first.'); return; }
   if(transferMarket){ showTransferMarket(); return; }
-  if(seasonSim.currentDay > 365){ renderSeasonPanel(); renderCalendar(); showSeasonEndScreen(); return; }
+  if(seasonSim.currentDay > 365){
+    // Auto year rollover — no interruption
+    // Archive championship state for the ending year before incrementing
+    const endingYear = seasonSim.year||1;
+    if(!allYearsLog[endingYear]) allYearsLog[endingYear]={};
+    allYearsLog[endingYear].championships = JSON.parse(JSON.stringify(championships));
+    allYearsLog[endingYear].uciSnapshot = {...uciPoints};
+    allYearsLog[endingYear].teamSnapshot = {...teamUciPoints};
+    saveUciPoints();
+    seasonSim.year = endingYear + 1;
+    seasonSim.currentDay = 0;
+    seasonSim.activeRaces = {};
+    seasonSim.champSchedule = null; // rebuild for new year
+    saveSeasonState();
+    renderSeasonPanel();
+    renderCalendar();
+    startSeasonDay();
+    return;
+  }
 
   const day = seasonSim.currentDay;
 
@@ -4240,7 +4258,7 @@ function startSeasonDay(){
       return;
     }
     // Rest day — advance
-    seasonSim.dayLog.push({day, date:fmtDate(day), events:[]});
+    seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events:[]});
     seasonSim.currentDay++; saveSeasonState(); renderSeasonPanel(); renderCalendar();
     startSeasonDay(); return;
   }
@@ -4259,7 +4277,7 @@ function startSeasonDay(){
 
   // Days 359, 360, 362, 364, 365: rest days / buffer
   if(day >= 349 && day <= 365){
-    seasonSim.dayLog.push({day, date:fmtDate(day), events:[]});
+    seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events:[]});
     seasonSim.currentDay++; saveSeasonState(); renderSeasonPanel(); renderCalendar();
     startSeasonDay(); return;
   }
@@ -4660,7 +4678,7 @@ function advanceSeasonQueue(){
 function finishSeasonDay(){
   if(!seasonSim) return;
   const day = seasonSim.currentDay;
-  seasonSim.dayLog.push({day, date:fmtDate(day), events: seasonSim.currentDayEvents||[]});
+  seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events: seasonSim.currentDayEvents||[]});
   seasonSim.dayQueue = null;
   seasonSim.dayQueueIndex = 0;
   seasonSim.currentDayEvents = null;
@@ -4669,7 +4687,7 @@ function finishSeasonDay(){
   saveUciPoints();
   checkTransferMarket();
   if(transferMarket){ renderSeasonPanel(); renderCalendar(); return; }
-  if(seasonSim.currentDay > 365){ renderSeasonPanel(); renderCalendar(); showSeasonEndScreen(); return; }
+  if(seasonSim.currentDay > 365){ /* handled in finishSeasonDay */ return; }
   // Auto-skip rest days and start next day with races
   startSeasonDay();
 }
@@ -4727,7 +4745,7 @@ function simulateSeasonWeek(){
       }
     });
     toFinish.forEach(id=>delete seasonSim.activeRaces[id]);
-    seasonSim.dayLog.push({day,date:fmtDate(day),events:dayEvents});
+    seasonSim.dayLog.push({day,date:fmtDate(day),year:seasonSim.year||1,events:dayEvents});
     seasonSim.currentDay++;
   }
   saveSeasonState();
@@ -4831,43 +4849,48 @@ let historySelectedYear = null;
 function renderHistoryTab(){
   const wrap = document.getElementById('history-wrap');
   if(!wrap) return;
+  if(!seasonSim){ wrap.innerHTML='<div class="empty-state"><div class="empty-icon">📅</div><div>No season data yet.</div></div>'; return; }
 
-  // Build year list: archived seasons + current live season
-  const archivedYears = Object.values(allYearsLog).sort((a,b)=>b.year-a.year);
-  const currentYear = seasonSim ? { year: seasonSim.year, calYear: getSeasonYear(), _live: true } : null;
-  const allSeasons = currentYear ? [currentYear, ...archivedYears] : archivedYears;
+  // Build year list from dayLog year fields + current year
+  const yearsInLog = [...new Set(seasonSim.dayLog.map(d=>d.year||1))].sort((a,b)=>b-a);
+  const currentYear = seasonSim.year||1;
+  const allYearNums = [...new Set([currentYear,...yearsInLog])].sort((a,b)=>b-a);
 
-  if(!allSeasons.length){
-    wrap.innerHTML='<div class="empty-state"><div class="empty-icon">📅</div><div>No season data yet.</div></div>';
-    return;
-  }
-
-  // Default to most recent
-  if(!historySelectedYear || !allSeasons.find(s=>s.year===historySelectedYear)){
-    historySelectedYear = allSeasons[0].year;
+  if(!historySelectedYear || !allYearNums.includes(historySelectedYear)){
+    historySelectedYear = allYearNums[0];
   }
 
   const th='padding:7px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase';
 
-  // Year sub-tab buttons
-  const tabs = allSeasons.map(s=>{
-    const active = s.year===historySelectedYear;
-    const yr = 2025+s.year;
-    return '<button onclick="historySelectedYear='+s.year+';renderHistoryTab()" style="'+
+  // Year tabs
+  const tabs = allYearNums.map(yr=>{
+    const active = yr===historySelectedYear;
+    const calYr = 2025+yr;
+    const isLive = yr===currentYear;
+    return '<button onclick="historySelectedYear='+yr+';renderHistoryTab()" style="'+
       'padding:5px 14px;border:none;border-radius:4px;cursor:pointer;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:.85rem;text-transform:uppercase;'+
       'background:'+(active?'var(--accent)':'var(--surface2)')+';color:'+(active?'#000':'var(--muted)')+'">'+
-      (s._live?'⚡ ':'')+yr+(s._live?' (Live)':'')+'</button>';
+      (isLive?'⚡ ':'')+calYr+(isLive?' ▸':'')+'</button>';
   }).join('');
 
-  // Get data for selected year
-  const sel = allSeasons.find(s=>s.year===historySelectedYear);
-  let content = '';
+  // Build top 10 riders/teams from events in selected year's dayLog
+  const yearPts = {};   // riderName → pts
+  const yearTeamPts = {}; // teamName → pts
+  const yearEvents = seasonSim.dayLog
+    .filter(d=>(d.year||1)===historySelectedYear)
+    .flatMap(d=>d.events||[])
+    .filter(ev=>ev.complete);
 
-  if(sel._live || !sel.uciSnapshot){
-    // Current live season — use live state
+  // Tally from raceContributions for events in this year
+  // Since contributions are global (replaced), approximate from dayLog events
+  // Just show the live snapshots for current year, or filtered per event for past
+  const showingCurrentYear = historySelectedYear === currentYear;
+
+  let rRows='', tRows='';
+  if(showingCurrentYear){
     const topRiders = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]).slice(0,10);
     const topTeams  = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]).slice(0,10);
-    const rRows = topRiders.map(([name,pts],i)=>{
+    rRows = topRiders.map(([name,pts],i)=>{
       const rd=allRiders.find(r=>r.name===name);
       const t=riderTeamMap[name]!=null?teams.find(x=>x.id===riderTeamMap[name]):null;
       return '<tr><td class="cell-rank">'+(i+1)+'</td>'+
@@ -4875,79 +4898,46 @@ function renderHistoryTab(){
         '<td style="padding:6px 12px"><span class="rteam">'+(t?t.name:'—')+'</span></td>'+
         '<td style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
     }).join('');
-    const tRows = topTeams.map(([name,pts],i)=>{
+    tRows = topTeams.map(([name,pts],i)=>{
       const t=teams.find(x=>x.name===name);
       return '<tr><td class="cell-rank">'+(i+1)+'</td>'+
         '<td style="padding:6px 12px">'+(t?flagImg(t.country,12)+' ':'')+name+'</td>'+
         '<td style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
     }).join('');
-    const champs = championships;
-    const natChamps = Object.entries(champs.national||{}).sort((a,b)=>a[0].localeCompare(b[0]));
-    let champsHtml='';
-    if(champs.roadWorld||champs.ttWorld||natChamps.length){
-      const worldRows=[
-        champs.roadWorld?('<tr><td style="padding:5px 12px">'+champFrame('🌐')+'&nbsp;Road World</td><td style="padding:5px 12px">'+flagImg(allRiders.find(r=>r.name===champs.roadWorld)?.country||'',12)+' '+champs.roadWorld+'</td></tr>'):'',
-        champs.ttWorld?('<tr><td style="padding:5px 12px">'+champFrame('<span style="font-size:.75em">⏱️🌐</span>')+'&nbsp;TT World</td><td style="padding:5px 12px">'+flagImg(allRiders.find(r=>r.name===champs.ttWorld)?.country||'',12)+' '+champs.ttWorld+'</td></tr>'):'',
-        ...natChamps.slice(0,30).map(([c,w])=>'<tr><td style="padding:4px 12px">'+champFrame(flagImg(c,11))+'&nbsp;'+c+'</td><td style="padding:4px 12px">'+flagImg(allRiders.find(r=>r.name===w)?.country||'',11)+' '+w+'</td></tr>')
-      ].filter(Boolean).join('');
-      champsHtml='<div style="border-top:2px solid var(--border)"><div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">🏅 Current Champions</div>'+
-        '<table style="width:100%;border-collapse:collapse;font-size:.82rem"><tbody>'+worldRows+'</tbody></table></div>';
-    }
-    content = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0">'+
-      '<div style="border-right:1px solid var(--border)">'+
-        '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">World Rider Rankings (Live)</div>'+
-        '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2)"><th style="'+th+'">Rider</th><th style="'+th+'">Team</th><th style="'+th+';text-align:right">Pts</th></tr></thead><tbody>'+rRows+'</tbody></table>'+
-      '</div>'+
-      '<div>'+
-        '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">World Team Rankings (Live)</div>'+
-        '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2)"><th style="'+th+'">Team</th><th style="'+th+';text-align:right">Pts</th></tr></thead><tbody>'+tRows+'</tbody></table>'+
-      '</div>'+
-    '</div>'+champsHtml;
   } else {
-    // Archived season
-    const topRiders=Object.entries(sel.uciSnapshot||{}).sort((a,b)=>b[1]-a[1]).slice(0,10);
-    const topTeams=Object.entries(sel.teamSnapshot||{}).sort((a,b)=>b[1]-a[1]).slice(0,10);
-    const rRows=topRiders.map(([name,pts],i)=>{
-      const rd=allRiders.find(r=>r.name===name);
-      const t=teams.find(x=>x.name===getRiderTeamName(name));
-      return '<tr><td class="cell-rank">'+(i+1)+'</td>'+
-        '<td style="padding:6px 12px">'+(rd?flagImg(rd.country,12)+' ':'')+name+'</td>'+
-        '<td style="padding:6px 12px"><span class="rteam">'+(t?t.name:'—')+'</span></td>'+
-        '<td style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
-    }).join('');
-    const tRows=topTeams.map(([name,pts],i)=>{
-      const t=teams.find(x=>x.name===name);
-      return '<tr><td class="cell-rank">'+(i+1)+'</td>'+
-        '<td style="padding:6px 12px">'+(t?flagImg(t.country,12)+' ':'')+name+'</td>'+
-        '<td style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
-    }).join('');
-    const champs=sel.championships||{};
-    const natChamps=Object.entries(champs.national||{}).sort((a,b)=>a[0].localeCompare(b[0]));
-    let champsHtml='';
-    if(champs.roadWorld||champs.ttWorld||natChamps.length){
-      const worldRows=[
-        champs.roadWorld?('<tr><td style="padding:5px 12px">'+champFrame('🌐')+'&nbsp;Road World</td><td style="padding:5px 12px">'+flagImg(allRiders.find(r=>r.name===champs.roadWorld)?.country||'',12)+' '+champs.roadWorld+'</td></tr>'):'',
-        champs.ttWorld?('<tr><td style="padding:5px 12px">'+champFrame('<span style="font-size:.75em">⏱️🌐</span>')+'&nbsp;TT World</td><td style="padding:5px 12px">'+flagImg(allRiders.find(r=>r.name===champs.ttWorld)?.country||'',12)+' '+champs.ttWorld+'</td></tr>'):'',
-        ...natChamps.slice(0,30).map(([c,w])=>'<tr><td style="padding:4px 12px">'+champFrame(flagImg(c,11))+'&nbsp;'+c+'</td><td style="padding:4px 12px">'+flagImg(allRiders.find(r=>r.name===w)?.country||'',11)+' '+w+'</td></tr>')
-      ].filter(Boolean).join('');
-      champsHtml='<div style="border-top:2px solid var(--border)"><div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">🏅 Champions</div>'+
-        '<table style="width:100%;border-collapse:collapse;font-size:.82rem"><tbody>'+worldRows+'</tbody></table></div>';
-    }
-    content = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0">'+
-      '<div style="border-right:1px solid var(--border)">'+
-        '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">World Rider Rankings</div>'+
-        '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2)"><th style="'+th+'">Rider</th><th style="'+th+'">Team</th><th style="'+th+';text-align:right">Pts</th></tr></thead><tbody>'+rRows+'</tbody></table>'+
-      '</div>'+
-      '<div>'+
-        '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">World Team Rankings</div>'+
-        '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2)"><th style="'+th+'">Team</th><th style="'+th+';text-align:right">Pts</th></tr></thead><tbody>'+tRows+'</tbody></table>'+
-      '</div>'+
-    '</div>'+champsHtml;
+    rRows='<tr><td colspan="4" style="padding:12px;color:var(--muted);font-size:.82rem;text-align:center">Year archive — points replaced by Year '+(historySelectedYear+1)+'+ results.</td></tr>';
+    tRows=rRows;
+  }
+
+  // Champions for this year — from current championships if current year,
+  // or from previous year championship data stored in allYearsLog
+  const champData = showingCurrentYear ? championships : (allYearsLog[historySelectedYear]?.championships||{});
+  const natChamps = Object.entries(champData.national||{}).sort((a,b)=>a[0].localeCompare(b[0]));
+  let champsHtml='';
+  if(champData.roadWorld||champData.ttWorld||natChamps.length){
+    const worldRows=[
+      champData.roadWorld?('<tr><td style="padding:5px 12px">'+champFrame('🌐')+'&nbsp;Road World</td><td style="padding:5px 12px">'+flagImg(allRiders.find(r=>r.name===champData.roadWorld)?.country||'',12)+' '+champData.roadWorld+'</td></tr>'):'',
+      champData.ttWorld?('<tr><td style="padding:5px 12px">'+champFrame('<span style="font-size:.75em">⏱️🌐</span>')+'&nbsp;TT World</td><td style="padding:5px 12px">'+flagImg(allRiders.find(r=>r.name===champData.ttWorld)?.country||'',12)+' '+champData.ttWorld+'</td></tr>'):'',
+      ...natChamps.slice(0,40).map(([c,w])=>'<tr><td style="padding:4px 12px">'+champFrame(flagImg(c,11))+'&nbsp;'+c+'</td><td style="padding:4px 12px">'+flagImg(allRiders.find(r=>r.name===w)?.country||'',11)+' '+w+'</td></tr>')
+    ].filter(Boolean).join('');
+    champsHtml='<div style="border-top:2px solid var(--border)"><div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">🏅 Champions</div>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:.82rem"><tbody>'+worldRows+'</tbody></table></div>';
   }
 
   wrap.innerHTML =
     '<div style="padding:8px 0 12px;display:flex;gap:6px;flex-wrap:wrap">'+tabs+'</div>'+
-    '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">'+content+'</div>';
+    '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0">'+
+      '<div style="border-right:1px solid var(--border)">'+
+        '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">World Rider Rankings'+(showingCurrentYear?' (Live)':'')+'</div>'+
+        '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2)"><th style="'+th+'">Rider</th><th style="'+th+'">Team</th><th style="'+th+';text-align:right">Pts</th></tr></thead><tbody>'+rRows+'</tbody></table>'+
+      '</div>'+
+      '<div>'+
+        '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">World Team Rankings'+(showingCurrentYear?' (Live)':'')+'</div>'+
+        '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2)"><th style="'+th+'">Team</th><th style="'+th+';text-align:right">Pts</th></tr></thead><tbody>'+tRows+'</tbody></table>'+
+      '</div>'+
+    '</div>'+champsHtml+
+    '</div>';
 }
 
 function renderSeasonPanel(){
@@ -4960,9 +4950,8 @@ function renderSeasonPanel(){
     panel.innerHTML = '';
     return;
   }
-  const isComplete = seasonSim.currentDay > 365;
   const yr=getSeasonYear();
-  const dayDate = isComplete ? 'Year '+seasonSim.year+' Complete — '+yr : fmtDate(seasonSim.currentDay)+' '+yr;
+  const dayDate = fmtDate(seasonSim.currentDay)+' '+yr;
   const activeCount = Object.keys(seasonSim.activeRaces||{}).length;
   const inQueue = !!(seasonSim.dayQueue && seasonSim.dayQueueIndex < (seasonSim.dayQueue.length||0));
   let html = '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap">';
