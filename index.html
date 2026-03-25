@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.62</title>
+<title>CycleSim v12.63</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.62</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.63</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -487,7 +487,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.62';
+const CACHE_VERSION = '12.63';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -6171,17 +6171,31 @@ function renderResults(){
   if(prevBtn) prevBtn.style.display=resultsHistory.length>0?'':'none';
   if(nxtBtn) nxtBtn.style.display='none';
   if(!lastResults){
-    const area = document.getElementById('results-area');
-    const rn = document.getElementById('res-race-name');
-    const rm = document.getElementById('res-race-meta');
-    if(rn) rn.textContent = seasonSim ? 'Season in progress' : 'No race simulated yet';
-    if(rm) rm.textContent = seasonSim ? fmtDate(seasonSim.currentDay)+' '+getSeasonYear() : 'Start the season from the Calendar tab.';
-    if(area) area.innerHTML = seasonSim
-      ? `<div class="empty-state"><div class="empty-icon">🏁</div><div>Ready to simulate.</div><button class="btn btn-accent" style="margin-top:12px" onclick="startSeasonDay()">▶ Simulate Day</button></div>`
-      : `<div class="empty-state"><div class="empty-icon">🏔️</div><div>Start the season from the Calendar tab.</div></div>`;
-    const nextBtn=document.getElementById('next-stage-btn');
-    if(nextBtn) nextBtn.style.display='none';
-    return;
+    // Try to reconstruct lastResults from active raceState
+    if(raceState && !raceState._restoredStub && raceState.stageResults?.length > 0){
+      const rs = raceState;
+      const gcAccum = {};
+      (rs.riderList||[]).forEach(r=>gcAccum[r.name]=0);
+      (rs.stageResults||[]).forEach(({result})=>{ (result||[]).forEach(({rider,gap})=>{ if(gcAccum[rider?.name]!=null) gcAccum[rider.name]+=gap; }); });
+      const lastSR = rs.stageResults[rs.stageResults.length-1];
+      const stagePos = {}; (lastSR?.result||[]).forEach(r=>{ stagePos[r.rider?.name]=r.position; });
+      const gcResult = (rs.riderList||[]).filter(r=>rs.fatigue?.[r.name]!==null).map(r=>({rider:r,totalGap:gcAccum[r.name]??0,stagePos:stagePos[r.name]??9999})).sort((a,b)=>a.totalGap!==b.totalGap?a.totalGap-b.totalGap:a.stagePos-b.stagePos).map((r,i)=>({...r,position:i+1}));
+      lastResults = {raceName:rs.raceName,stageResults:rs.stageResults,gcResult,riderList:rs.riderList,riderCount:rs.riderList?.length||0,teamCount:0,abandoned:rs.allAbandoned||[],currentStage:rs.currentStageIndex,totalStages:rs.totalStages,complete:rs.currentStageIndex>=(rs.totalStages||1),race:calSelectedRace,_seasonRaceId:rs._seasonRaceId,_worldChampType:rs._worldChampType,_nationalChampCountry:rs._nationalChampCountry};
+      activeResultTab = 'stage-'+(rs.stageResults.length-1);
+      // Fall through to normal render below
+    } else {
+      const area = document.getElementById('results-area');
+      const rn = document.getElementById('res-race-name');
+      const rm = document.getElementById('res-race-meta');
+      if(rn) rn.textContent = seasonSim ? 'Season in progress' : 'No race simulated yet';
+      if(rm) rm.textContent = seasonSim ? fmtDate(seasonSim.currentDay)+' '+getSeasonYear() : 'Start the season from the Calendar tab.';
+      if(area) area.innerHTML = seasonSim
+        ? `<div class="empty-state"><div class="empty-icon">🏁</div><div>Ready to simulate.</div><button class="btn btn-accent" style="margin-top:12px" onclick="startSeasonDay()">▶ Simulate Day</button></div>`
+        : `<div class="empty-state"><div class="empty-icon">🏔️</div><div>Start the season from the Calendar tab.</div></div>`;
+      const nextBtn=document.getElementById('next-stage-btn');
+      if(nextBtn) nextBtn.style.display='none';
+      return;
+    }
   }
   const{raceName,stageResults,riderCount,teamCount,abandoned=[],currentStage,totalStages,complete}=lastResults;
   // Sort numerically — totalGap may be string after season serialization
