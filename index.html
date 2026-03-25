@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.16</title>
+<title>CycleSim v12.18</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.16</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.18</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.16';
+const CACHE_VERSION = '12.18';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2363,8 +2363,18 @@ function autoSelectTeamsForRace(race){
   }
 
   function pickRandom(pool, n){
-    const s=[...pool].sort(()=>Math.random()-0.5);
-    return s.slice(0,Math.min(n,s.length));
+    // Bias toward teams with fewer races (inverse weighting)
+    const rc=getTeamRaceCounts();
+    const maxR=Math.max(1,...pool.map(t=>rc[t.name]||0));
+    const weighted=[];
+    pool.forEach(t=>{
+      const w=Math.max(1,maxR-(rc[t.name]||0)+1);
+      for(let i=0;i<w;i++) weighted.push(t);
+    });
+    const s=[...weighted].sort(()=>Math.random()-0.5);
+    const seen=new Set();const out=[];
+    for(const t of s){if(!seen.has(t.id)){out.push(t);seen.add(t.id);}if(out.length>=n)break;}
+    return out;
   }
   function excl(pool, already){
     const ids=new Set(already.map(t=>t.id));
@@ -3401,7 +3411,14 @@ function renderMarket(){
       }
       const canAssign = !!sel;
       const selOrigTeam = sel ? (riders.find(r=>r.name===sel)?.fromTeamId) : null;
-      const isOrigTeam = canAssign && selOrigTeam!=null && +tid===selOrigTeam;
+      // Block assigning to original team
+      let isOrigTeam = canAssign && selOrigTeam!=null && +tid===selOrigTeam;
+      // Deadlock prevention: if only 1 unassigned rider left and only 1 open slot remains,
+      // force them to the remaining slot even if it happens to be original team
+      if(isOrigTeam){
+        const totalOpen = Object.values(pendingSlots).reduce((s,sl)=>s+sl.filter(x=>!x).length,0);
+        if(totalOpen===1) isOrigTeam=false; // last slot — allow it regardless
+      }
       return '<div class="market-slot-empty" data-teamid="'+tid+'" data-slot="'+si+'" style="padding:6px 12px;font-size:.75rem;color:'+(isOrigTeam?'var(--red)':canAssign?'var(--accent)':'var(--muted)')+';font-style:italic;border-bottom:1px dashed var(--border);cursor:'+(isOrigTeam||!canAssign?'not-allowed':'pointer')+';background:'+(canAssign&&!isOrigTeam?'rgba(245,196,0,.05)':'')+'">'+(isOrigTeam?'🚫 Original team':canAssign?'← Assign '+sel:'Open slot')+'</div>';
     }).join('');
     return '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface);margin-bottom:6px">'+
@@ -3539,16 +3556,85 @@ function confirmTransfers(){
     });
   });
 
+  // Capture team avg changes for recap (before rebuilding map)
+  const recapTeams = {};
+  [...new Set([
+    ...riders.map(r=>r.fromTeamId),
+    ...Object.keys(pendingSlots).map(Number)
+  ])].filter(id=>id!=null).forEach(id=>{
+    const t=teams.find(x=>x.id===id);
+    if(t) recapTeams[id]={name:t.name, country:t.country, before:teamAvg(t)};
+  });
+
   // Rebuild map + save
   buildRiderTeamMap();
   saveTeams();
 
+  // Compute after-avg for recap
+  const recapRows = Object.entries(recapTeams).map(([id,info])=>{
+    const t=teams.find(x=>x.id===+id);
+    const after=t?teamAvg(t):0;
+    const diff=after-info.before;
+    const diffStr=diff===0?'<span style="color:var(--muted)">—</span>':
+      diff>0?'<span style="color:var(--green);font-weight:700">▲'+diff.toFixed(2)+'</span>':
+             '<span style="color:var(--red);font-weight:700">▼'+Math.abs(diff).toFixed(2)+'</span>';
+    return '<tr>'+
+      '<td style="padding:5px 12px">'+flagImg(info.country,12)+' <span style="font-family:Barlow Condensed,sans-serif;font-weight:700;text-transform:uppercase">'+info.name+'</span></td>'+
+      '<td style="padding:5px 12px;font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">'+info.before.toFixed(2)+'</td>'+
+      '<td style="padding:5px 12px;font-family:JetBrains Mono,monospace;font-size:.78rem">'+after.toFixed(2)+'</td>'+
+      '<td style="padding:5px 12px;text-align:center">'+diffStr+'</td>'+
+      '</tr>';
+  }).join('');
+
   transferMarket=null;
   saveTransferMarket();
 
-  showTab('calendar');
-  renderSeasonPanel();
-  renderCalendar();
+  // Show recap screen instead of going straight to calendar
+  showTab('race');
+  const wrap=document.getElementById('race-setup-wrap');
+  if(wrap){
+    const day=seasonSim?.currentDay||0;
+    wrap.innerHTML=
+      '<div style="max-width:700px;margin:0 auto;padding:16px 0">'+
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">'+
+        '<div>'+
+          '<div style="font-family:Barlow Condensed,sans-serif;font-size:1.8rem;font-weight:800;color:var(--accent)">💼 Transfer Window</div>'+
+          '<div style="font-size:.82rem;color:var(--muted)">'+fmtDate(day)+' 2026 · '+(movesLog.length)+' transfer'+(movesLog.length!==1?'s':'')+'</div>'+
+        '</div>'+
+        '<button class="btn btn-accent" style="margin-left:auto" onclick="showTab(\'calendar\');renderSeasonPanel();renderCalendar()">▶ Continue</button>'+
+      '</div>'+
+      // Move log
+      (movesLog.length?
+        '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px">'+
+        '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Transfers</div>'+
+        movesLog.map(m=>
+          '<div style="display:flex;align-items:center;gap:8px;padding:5px 14px;border-bottom:1px solid var(--border);font-size:.82rem">'+
+          flagImg(m.country,11)+' <span style="flex:1;font-weight:600">'+m.riderName+'</span>'+
+          '<span style="color:var(--red);font-size:.72rem">'+m.fromTeam+'</span>'+
+          '<span style="color:var(--muted);font-size:.8rem;padding:0 4px">→</span>'+
+          '<span style="color:var(--green);font-size:.72rem">'+m.toTeam+'</span>'+
+          '<span style="font-family:JetBrains Mono,monospace;font-size:.7rem;color:var(--muted);margin-left:6px">'+m.avg.toFixed(1)+'</span>'+
+          '</div>'
+        ).join('')+
+        '</div>' : '')+
+      // Team recap
+      (recapRows?
+        '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">'+
+        '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Team Average Changes</div>'+
+        '<table style="width:100%;border-collapse:collapse;font-size:.85rem">'+
+        '<thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">'+
+        '<th style="padding:5px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Team</th>'+
+        '<th style="padding:5px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Before</th>'+
+        '<th style="padding:5px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">After</th>'+
+        '<th style="padding:5px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase;text-align:center">Δ</th>'+
+        '</tr></thead><tbody>'+recapRows+'</tbody></table>'+
+        '</div>' : '')+
+      '</div>';
+  } else {
+    showTab('calendar');
+    renderSeasonPanel();
+    renderCalendar();
+  }
 }
 
 
@@ -4473,6 +4559,144 @@ function awardRacePoints(race, lastResults){
 }
 
 // Render UCI rankings tab
+// ── PALMARES / RACE COUNT HELPERS ─────────────────────────────
+function getTeamRaceCounts(){
+  // {teamName: Set of raceIds} → count
+  const counts = {};
+  if(!seasonSim) return counts;
+  seasonSim.dayLog.forEach(d=>{
+    (d.events||[]).forEach(ev=>{
+      if(!ev.teamIds) return;
+      [...ev.teamIds].forEach(tid=>{
+        const t=teams.find(x=>x.id===tid);
+        if(!t) return;
+        if(!counts[t.name]) counts[t.name]=new Set();
+        counts[t.name].add(ev.raceId);
+      });
+    });
+  });
+  return Object.fromEntries(Object.entries(counts).map(([n,s])=>[n,s.size]));
+}
+
+function getRiderPalmares(riderName){
+  const pal={stageWins:[],gcWins:[],podiums:[],totalPts:uciPoints[riderName]||0,totalRaces:0};
+  if(!seasonSim) return pal;
+  const racesSeen=new Set();
+  seasonSim.dayLog.forEach(d=>{
+    (d.events||[]).forEach(ev=>{
+      if(!ev.teamIds) return;
+      const myTeamId=riderTeamMap[riderName];
+      if(myTeamId==null||![...ev.teamIds].includes(myTeamId)) return;
+      racesSeen.add(ev.raceId);
+      if(ev.stageWinner===riderName) pal.stageWins.push({race:ev.raceName,stage:ev.stageName,terrain:ev.terrain,cat:ev.category,date:d.date});
+      if(ev.complete&&ev.gcResult){
+        const pos=ev.gcResult.findIndex(r=>(r.rider?.name||r.name)===riderName);
+        if(pos===0) pal.gcWins.push({race:ev.raceName,cat:ev.category,date:d.date});
+        else if(pos===1||pos===2) pal.podiums.push({race:ev.raceName,pos:pos+1,cat:ev.category,date:d.date});
+      }
+    });
+  });
+  pal.totalRaces=racesSeen.size;
+  return pal;
+}
+
+function getTeamPalmares(teamId){
+  const team=teams.find(t=>t.id===teamId);
+  if(!team) return null;
+  const pal={name:team.name,country:team.country,stageWins:[],gcWins:[],teamClassifWins:[],totalPts:teamUciPoints[team.name]||0,raceCounts:0};
+  if(!seasonSim) return pal;
+  const racesSeen=new Set();
+  seasonSim.dayLog.forEach(d=>{
+    (d.events||[]).forEach(ev=>{
+      if(!ev.teamIds) return;
+      if(![...ev.teamIds].includes(teamId)) return;
+      racesSeen.add(ev.raceId);
+      if(ev.stageWinner){
+        const tid2=riderTeamMap[ev.stageWinner];
+        if(tid2===teamId) pal.stageWins.push({rider:ev.stageWinner,race:ev.raceName,stage:ev.stageName,terrain:ev.terrain,cat:ev.category,date:d.date});
+      }
+      if(ev.complete&&ev.gcResult){
+        const winner=ev.gcResult[0];
+        const wname=winner?.rider?.name||winner?.name;
+        if(wname&&riderTeamMap[wname]===teamId) pal.gcWins.push({rider:wname,race:ev.raceName,cat:ev.category,date:d.date});
+      }
+    });
+  });
+  pal.raceCounts=racesSeen.size;
+  return pal;
+}
+
+function showPalmaresModal(html){
+  let modal=document.getElementById('palmares-modal');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='palmares-modal';
+    modal.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.onclick=e=>{if(e.target===modal)modal.remove();};
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:700px;width:100%;max-height:85vh;overflow-y:auto;padding:0">'+html+'</div>';
+  // Wire close button and roster rider clicks
+  const closeBtn = modal.querySelector('#pal-close-btn');
+  if(closeBtn) closeBtn.onclick = () => modal.remove();
+  modal.addEventListener('click', e => {
+    const rr = e.target.closest('[data-rider-palmares]');
+    if(rr && rr !== modal){ showRiderPalmares(rr.dataset.riderPalmares); return; }
+  });
+}
+
+function showRiderPalmares(name){
+  const rd=allRiders.find(r=>r.name===name);
+  const pal=getRiderPalmares(name);
+  const team=riderTeamMap[name]!=null?teams.find(t=>t.id===riderTeamMap[name]):null;
+  const gcW=pal.gcWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--accent);font-size:.8rem">'+w.cat+'</span><span style="flex:1;font-weight:600">'+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
+  const stW=pal.stageWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span class="tbadge tbadge-'+(w.terrain||'FLA')+'" style="font-size:.6rem">'+(w.terrain||'')+'</span><span style="flex:1">'+w.race+(w.stage&&w.stage!==w.race?' · '+w.stage:'')+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
+  const pod=pal.podiums.map(p=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--muted)">'+(p.pos===2?'🥈':'🥉')+'</span><span style="flex:1">'+p.race+'</span><span style="color:var(--muted);font-size:.72rem">'+p.date+'</span></div>').join('');
+  showPalmaresModal(
+    '<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">'+
+      '<div style="flex:1">'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:1.5rem;font-weight:800;text-transform:uppercase">'+
+          (rd?flagImg(rd.country,14)+' ':'')+name+'</div>'+
+        '<div style="font-size:.8rem;color:var(--muted);margin-top:2px">'+
+          (team?flagImg(team.country,11)+' '+team.name+'&nbsp;·&nbsp;':'')+(rd?'OVR '+rd.avg.toFixed(1)+'&nbsp;·&nbsp;':'')+'Races: '+pal.totalRaces+'&nbsp;·&nbsp;UCI Pts: '+(pal.totalPts||0).toLocaleString()+'</div>'+
+      '</div>'+
+      '<button id="pal-close-btn" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:4px 8px">✕</button>'+
+    '</div>'+
+    (pal.gcWins.length?'<div style="padding:6px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--accent)">🏆 Race Wins ('+pal.gcWins.length+')</div>'+gcW:'')+
+    (pal.stageWins.length?'<div style="padding:6px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">⚡ Stage Wins ('+pal.stageWins.length+')</div>'+stW:'')+
+    (pal.podiums.length?'<div style="padding:6px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">🥈 Podiums ('+pal.podiums.length+')</div>'+pod:'')+
+    (!pal.gcWins.length&&!pal.stageWins.length&&!pal.podiums.length?'<div style="padding:24px;text-align:center;color:var(--muted);font-size:.85rem">No results recorded yet.</div>':'')+
+    // Attribute bar
+    '<div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px">'+
+      (rd?ATTRS.map(a=>'<span style="font-size:.7rem;background:var(--surface2);border-radius:4px;padding:2px 7px"><span style="color:var(--muted)">'+a+'</span> <b style="color:var(--text)">'+rd[a]+'</b></span>').join(''):'')+'</div>'
+  );
+}
+
+function showTeamPalmares(teamId){
+  const pal=getTeamPalmares(teamId);
+  if(!pal) return;
+  const team=teams.find(t=>t.id===teamId);
+  if(!team) return;
+  const gcW=pal.gcWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--accent);font-size:.8rem">'+w.cat+'</span>'+flagImg(allRiders.find(r=>r.name===w.rider)?.country||'',11)+' <span style="flex:1">'+w.rider+' — '+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
+  const stW=pal.stageWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span class="tbadge tbadge-'+(w.terrain||'FLA')+'" style="font-size:.6rem">'+(w.terrain||'')+'</span>'+flagImg(allRiders.find(r=>r.name===w.rider)?.country||'',11)+' <span style="flex:1">'+w.rider+' — '+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
+  const roster=team.riders.map(n=>{
+    const r=allRiders.find(x=>x.name===n);
+    return '<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px;cursor:pointer" data-rider-palmares="'+n.replace(/"/g,'&quot;')+'">'+(r?flagImg(r.country,11)+' ':'')+'<span style="flex:1">'+n+'</span>'+(r?'<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+r.avg.toFixed(1)+'</span>':'')+'<span style="color:var(--blue);font-size:.7rem;margin-left:6px">↗</span></div>';
+  }).join('');
+  showPalmaresModal(
+    '<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">'+
+      '<div style="flex:1">'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:1.5rem;font-weight:800;text-transform:uppercase">'+flagImg(team.country,14)+' '+team.name+'</div>'+
+        '<div style="font-size:.8rem;color:var(--muted);margin-top:2px">'+team.country+'&nbsp;·&nbsp;Races: '+pal.raceCounts+'&nbsp;·&nbsp;UCI Pts: '+(pal.totalPts||0).toLocaleString()+'&nbsp;·&nbsp;Avg: '+teamAvg(team).toFixed(2)+'</div>'+
+      '</div>'+
+      '<button id="pal-close-btn" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:4px 8px">✕</button>'+
+    '</div>'+
+    (pal.gcWins.length?'<div style="padding:6px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--accent)">🏆 Race Wins ('+pal.gcWins.length+')</div>'+gcW:'')+
+    (pal.stageWins.length?'<div style="padding:6px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">⚡ Stage Wins ('+pal.stageWins.length+')</div>'+stW:'')+
+    '<div style="padding:6px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted)">👥 Roster ('+team.riders.length+')</div>'+roster
+  );
+}
+
 function renderUciRankings(){
   const sorted = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]).slice(0,200);
   const teamSorted = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]).slice(0,100);
@@ -4493,11 +4717,27 @@ function renderUciRankings(){
       +'<td class="cell-avg">'+(rider?rider.avg.toFixed(1):'\u2014')+'</td>'
       +'<td style="font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">'+pts.toLocaleString()+'</td></tr>';
   }).join('');
+  const raceCounts = getTeamRaceCounts();
   const trows = teamSorted.map(([name,pts],i)=>{
     const team = teams.find(t=>t.name===name);
-    return '<tr><td class="cell-rank">'+(i+1)+'</td>'
-      +'<td style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:.9rem;text-transform:uppercase">'+(team?flagImg(team.country,12)+' ':'')+name+'</td>'
+    const rc = raceCounts[name]||0;
+    const tIcons = getLeaderIcons(name,true);
+    return '<tr style="cursor:pointer" onclick="showTeamPalmares('+(team?team.id:'null')+')"><td class="cell-rank">'+(i+1)+'</td>'
+      +'<td style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:.9rem;text-transform:uppercase">'+(team?flagImg(team.country,12)+' ':'')+name+tIcons+'</td>'
+      +'<td style="padding:7px 12px;text-align:center;font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">'+rc+'</td>'
       +'<td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">'+pts.toLocaleString()+'</td></tr>';
+  }).join('');
+  // Rider rows: make rider name + team clickable
+  const rows2 = sorted.map(([name,pts],i)=>{
+    const rider = allRiders.find(r=>r.name===name);
+    const teamId2 = riderTeamMap[name];
+    const team2 = teamId2!=null?teams.find(t=>t.id===teamId2):null;
+    const rIcons = getLeaderIcons(name,false);
+    return '<tr style="cursor:pointer" data-rider-palmares="'+name.replace(/"/g,'&quot;')+'">'+'<td class="cell-rank">'+(i+1)+'</td>'
+      +'<td class="cell-name">'+(rider?flagImg(rider.country,12)+' ':'')+name+rIcons+'</td>'
+      +'<td class="rteam-cell" '+(team2?'data-team-palmares="'+teamId2+'"':'')+'>'+(team2?flagImg(team2.country,11)+' <span class="rteam">'+team2.name+'</span>':'\u2014')+'</td>'
+      +'<td class="cell-avg">'+(rider?rider.avg.toFixed(1):'\u2014')+'</td>'
+      +'<td style="font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">'+pts.toLocaleString()+'</td></tr>';
   }).join('');
   wrap.innerHTML =
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'
@@ -4507,16 +4747,24 @@ function renderUciRankings(){
     +'<th style="width:40px;'+th+';text-align:center">#</th>'
     +'<th style="'+th+'">Rider</th><th style="'+th+'">Team</th><th style="'+th+'">OVR</th>'
     +'<th style="'+th+';text-align:right;padding-right:16px">Pts</th>'
-    +'</tr></thead><tbody>'+rows+'</tbody></table></div></div>'
+    +'</tr></thead><tbody>'+rows2+'</tbody></table></div></div>'
     +'<div><div style="font-family:Barlow Condensed,sans-serif;font-weight:800;font-size:1rem;text-transform:uppercase;color:var(--accent);padding:8px 0 4px">Team Rankings</div>'
     +(trows?'<div class="table-wrap"><table style="width:100%;border-collapse:collapse;font-size:.85rem">'
     +'<thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">'
     +'<th style="width:40px;'+th+';text-align:center">#</th>'
     +'<th style="'+th+'">Team</th>'
+    +'<th style="'+th+';text-align:center">Races</th>'
     +'<th style="'+th+';text-align:right;padding-right:16px">Pts</th>'
     +'</tr></thead><tbody>'+trows+'</tbody></table></div>'
     :'<div class="empty-state" style="padding:20px">No team points yet.</div>')
     +'</div></div>';
+  // Event delegation for palmares clicks
+  wrap.onclick = e => {
+    const rr = e.target.closest('[data-rider-palmares]');
+    if(rr){ showRiderPalmares(rr.dataset.riderPalmares); return; }
+    const tr = e.target.closest('[data-team-palmares]');
+    if(tr){ showTeamPalmares(+tr.dataset.teamPalmares); }
+  };
 }
 
 
@@ -4685,9 +4933,10 @@ function renderClassification(classif, type){
     const rows=classif.teams.map((x,i)=>{
       const gap=Math.round(x.time-leader);
       const gapCell=i===0?'<span class="rgap-winner">— BEST —</span>':gap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':'<span style="font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">+'+fmtGap(gap)+'</span>';
+      const tIcons=getLeaderIcons(x.team.name,true);
       return `<tr>
         <td>${posLabel(i+1)}</td>
-        <td class="rteam-cell">${flagImg(x.team.country,12)} <span class="rteam">${x.team.name}</span></td>
+        <td class="rteam-cell">${flagImg(x.team.country,12)} <span class="rteam">${x.team.name}</span>${tIcons}</td>
         <td class="ravg">${teamAvg(x.team).toFixed(1)}</td>
         <td>${gapCell}</td>
       </tr>`;
@@ -4742,17 +4991,26 @@ function getTeamName(riderName){
   return t?t.name:'—';
 }
 
-function getLeaderIcons(riderName){
-  // 🌐 if world ranking leader
-  // flag(s) if country ranking leader(s)
+function getLeaderIcons(name, isTeam){
+  // 🌐 if UCI world ranking leader; flag(s) if leading country ranking(s)
   let icons = '';
-  if(!Object.keys(uciPoints).length) return icons;
-  const worldLeader = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1])[0]?.[0];
-  if(worldLeader && riderName === worldLeader) icons += '🌐';
-  Object.entries(countryPoints).forEach(([country, pts]) => {
-    const top = Object.entries(pts).filter(([k])=>!k.startsWith('__team__')).sort((a,b)=>b[1]-a[1])[0]?.[0];
-    if(top && top === riderName) icons += flagImg(country, 11);
-  });
+  if(isTeam){
+    if(!Object.keys(teamUciPoints).length) return icons;
+    const worldTeamLeader = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1])[0]?.[0];
+    if(worldTeamLeader && name === worldTeamLeader) icons += '🌐';
+    Object.entries(countryPoints).forEach(([country, pts]) => {
+      const top = Object.entries(pts).filter(([k])=>k.startsWith('__team__')).sort((a,b)=>b[1]-a[1])[0]?.[0]?.replace('__team__','');
+      if(top && top === name) icons += flagImg(country, 11);
+    });
+  } else {
+    if(!Object.keys(uciPoints).length) return icons;
+    const worldLeader = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1])[0]?.[0];
+    if(worldLeader && name === worldLeader) icons += '🌐';
+    Object.entries(countryPoints).forEach(([country, pts]) => {
+      const top = Object.entries(pts).filter(([k])=>!k.startsWith('__team__')).sort((a,b)=>b[1]-a[1])[0]?.[0];
+      if(top && top === name) icons += flagImg(country, 11);
+    });
+  }
   return icons ? '<span style="margin-left:4px;vertical-align:middle">'+icons+'</span>' : '';
 }
 
@@ -4862,17 +5120,18 @@ function renderResults(){
       let arrow='';
       if(prev&&stageResults.length>1){const d=prev-(i+1);arrow=d>0?'<span style="color:var(--green);font-size:.7rem;font-weight:700">▲'+d+'</span>':d<0?'<span style="color:var(--red);font-size:.7rem;font-weight:700">▼'+(-d)+'</span>':'<span style="color:var(--muted);font-size:.65rem">—</span>';}
       const jerseys=(r.rider.name===gcLdrBefore?'🟡':'')+(r.rider.name===ptsLdr?'🟢':'')+(r.rider.name===mtnLdr?'🔴':'')+(r.rider.name===sprLdr?'🔵':'');
-      const ldrIcons=getLeaderIcons(r.rider.name);
+      const ldrIcons=getLeaderIcons(r.rider.name,false);
       const teamId2=riderTeamMap[r.rider.name];
       const team2=teamId2!=null?teams.find(t=>t.id===teamId2):null;
       const teamCell2=team2?flagImg(team2.country,11)+' <span class="rteam">'+team2.name+'</span>':'<span style="color:var(--muted)">—</span>';
       const leaderTotal=Number(gcResult[0]?.totalGap)||0;
       const relGap=Number(r.totalGap)-leaderTotal;
       const gapCell2=i===0?'<span class="rgap-winner">— WINNER —</span>':relGap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':fmtGap(relGap);
+      const tn2id=riderTeamMap[r.rider.name];
       return '<tr>' +
         '<td>'+posLabel(r.position)+'</td>' +
-        '<td class="rname">'+flagImg(r.rider.country,12)+' '+r.rider.name+(jerseys?'<span style="font-size:.78rem;margin-left:3px">'+jerseys+'</span>':'')+ldrIcons+'</td>' +
-        '<td class="rteam-cell">'+teamCell2+'</td>' +
+        '<td class="rname" style="cursor:pointer" data-rider-palmares="'+r.rider.name.replace(/"/g,'&quot;')+'">'+flagImg(r.rider.country,12)+' '+r.rider.name+(jerseys?'<span style="font-size:.78rem;margin-left:3px">'+jerseys+'</span>':'')+ldrIcons+'</td>' +
+        '<td class="rteam-cell" style="cursor:pointer" '+(tn2id!=null?'data-team-palmares="'+tn2id+'"':'')+'>'+teamCell2+'</td>' +
         '<td class="ravg">'+r.rider.avg.toFixed(1)+'</td>' +
         '<td>'+gapCell2+'</td>' +
         '<td style="width:44px;text-align:center">'+arrow+'</td>' +
@@ -4912,21 +5171,18 @@ function renderResults(){
 
     rows=sr.result.map((r,i)=>{
       const jerseys=(r.rider.name===sjGCLdr?'🟡':'')+(r.rider.name===sjPtsLdr?'🟢':'')+(r.rider.name===sjMtnLdr?'🔴':'')+(r.rider.name===sjSprLdr?'🔵':'');
-      const ldrIcons=getLeaderIcons(r.rider.name);
-      const prev=prevStagePos[r.rider.name];
-      let arrow='';
-      if(prev!==undefined&&stageIdx>0){const d=prev-r.position;arrow=d>0?'<span style="color:var(--green);font-size:.7rem;font-weight:700">▲'+d+'</span>':d<0?'<span style="color:var(--red);font-size:.7rem;font-weight:700">▼'+(-d)+'</span>':'<span style="color:var(--muted);font-size:.65rem">—</span>';}
+      const ldrIcons=getLeaderIcons(r.rider.name,false);
       const teamId3=riderTeamMap[r.rider.name];
       const team3=teamId3!=null?teams.find(t=>t.id===teamId3):null;
       const teamCell3=team3?flagImg(team3.country,11)+' <span class="rteam">'+team3.name+'</span>':'<span style="color:var(--muted)">—</span>';
       const gapCell3=i===0?'<span class="rgap-winner">— WINNER —</span>':r.gap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':fmtGap(r.gap);
+      const tn3id=riderTeamMap[r.rider.name];
       return '<tr>' +
         '<td>'+posLabel(r.position)+'</td>' +
-        '<td class="rname">'+flagImg(r.rider.country,12)+' '+r.rider.name+(jerseys?'<span style="font-size:.78rem;margin-left:3px">'+jerseys+'</span>':'')+ldrIcons+'</td>' +
-        '<td class="rteam-cell">'+teamCell3+'</td>' +
+        '<td class="rname" style="cursor:pointer" data-rider-palmares="'+r.rider.name.replace(/"/g,'&quot;')+'">'+flagImg(r.rider.country,12)+' '+r.rider.name+(jerseys?'<span style="font-size:.78rem;margin-left:3px">'+jerseys+'</span>':'')+ldrIcons+'</td>' +
+        '<td class="rteam-cell" style="cursor:pointer" '+(tn3id!=null?'data-team-palmares="'+tn3id+'"':'')+'>'+teamCell3+'</td>' +
         '<td class="ravg">'+r.rider.avg.toFixed(1)+'</td>' +
         '<td>'+gapCell3+'</td>' +
-        '<td style="width:44px;text-align:center">'+arrow+'</td>' +
         '</tr>';
     });
     // Append DNF riders: those who abandoned in this stage, then prior stage DNFs
@@ -4955,7 +5211,8 @@ function buildResultRow(pos,rider,gap,isWinner){
   </tr>`;
 }
 function renderResultTable(rows,subtitle,abandoned,headers){
-  document.getElementById('results-area').innerHTML=`
+  const area = document.getElementById('results-area');
+  area.innerHTML=`
     <div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">${subtitle}</div>
     <div class="result-wrap">
       <table class="result-table">
@@ -4968,7 +5225,14 @@ function renderResultTable(rows,subtitle,abandoned,headers){
       </table>
     </div>
     ${abandoned&&abandoned.length>0?'<div style="margin-top:8px;padding:8px 12px;background:rgba(232,64,64,.08);border-radius:6px;font-size:.78rem;color:var(--red)">🚩 Abandoned: '+abandoned.map(a=>a.rider.name+' ('+a.stage+')').join(', ')+'</div>':''}
-    <div class="info-bar">💡 Ratings drive probability weights — each run produces different results.</div>`;
+    <div class="info-bar">💡 Click a rider or team name to see their palmares.</div>`;
+  // Event delegation for palmares clicks
+  area.onclick=e=>{
+    const rr=e.target.closest('[data-rider-palmares]');
+    if(rr){ showRiderPalmares(rr.dataset.riderPalmares); return; }
+    const tr=e.target.closest('[data-team-palmares]');
+    if(tr){ showTeamPalmares(+tr.dataset.teamPalmares); }
+  };
 }
 function switchResultTab(tab){activeResultTab=tab;renderResults();}
 
