@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.19</title>
+<title>CycleSim v12.20</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.19</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.20</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.19';
+const CACHE_VERSION = '12.20';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3186,7 +3186,7 @@ function showFinishScreen(lr){
     return '<tr style="'+(i===0?'background:rgba(245,196,0,.06)':'')+'">'+
       '<td style="padding:5px 10px;text-align:center;font-size:'+(med?'.9rem':'.75rem')+';color:var(--muted)">'+(med||i+1)+'</td>'+
       '<td style="padding:5px 12px">'+flagImg(r.rider.country,12)+' '+r.rider.name+'</td>'+
-      '<td style="padding:5px 12px"><span class="rteam">'+(t?t.name:'—')+'</span></td>'+
+      '<td style="padding:5px 12px"><span class="rteam">'+(t?t.name+getLeaderIcons(t.name,true):'—')+'</span></td>'+
       '<td style="padding:5px 8px;font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+r.rider.avg.toFixed(1)+'</td>'+
       '<td style="padding:5px 12px;text-align:right">'+gap+'</td>'+
       '</tr>';
@@ -3199,7 +3199,7 @@ function showFinishScreen(lr){
     return '<tr>'+
       '<td style="padding:4px 10px;color:var(--muted);font-size:.72rem;white-space:nowrap">'+sr.stage.name+'</td>'+
       '<td style="padding:4px 12px">'+flagImg(w.rider.country,11)+' '+w.rider.name+'</td>'+
-      '<td style="padding:4px 12px"><span class="rteam">'+(t?t.name:'—')+'</span></td>'+
+      '<td style="padding:4px 12px"><span class="rteam">'+(t?t.name+getLeaderIcons(t.name,true):'—')+'</span></td>'+
       '<td style="padding:4px 8px"><span class="tbadge tbadge-'+sr.stage.terrain+'" style="font-size:.6rem">'+sr.stage.terrain+'</span>'+(sr.breakaway?' 🏇':'')+'</td></tr>';
   }).join('') : '';
 
@@ -3210,7 +3210,7 @@ function showFinishScreen(lr){
       return '<tr>'+
         '<td style="padding:3px 8px;color:var(--muted);font-size:.7rem;text-align:center">'+(i+1)+'</td>'+
         '<td style="padding:3px 10px;font-size:.82rem">'+flagImg(x.rider.country,11)+' '+x.rider.name+'</td>'+
-        '<td style="padding:3px 8px"><span class="rteam" style="font-size:.7rem">'+(t?t.name:'—')+'</span></td>'+
+        '<td style="padding:3px 8px"><span class="rteam" style="font-size:.7rem">'+(t?t.name+getLeaderIcons(t.name,true):'—')+'</span></td>'+
         '<td style="padding:3px 8px;text-align:right;font-family:JetBrains Mono,monospace;font-size:.72rem;color:'+color+'">'+x.val+' pts</td></tr>';
     }).join('');
     return '<div style="margin-bottom:10px"><div style="padding:5px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:'+color+'">'+title+'</div>'+
@@ -3227,7 +3227,7 @@ function showFinishScreen(lr){
         : '<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">+'+fmtGap(timeDiff)+'</span>';
       return '<tr>'+
         '<td style="padding:3px 8px;color:var(--muted);font-size:.7rem;text-align:center">'+(i+1)+'</td>'+
-        '<td style="padding:3px 10px;font-size:.82rem">'+flagImg(x.team.country,11)+' '+x.team.name+'</td>'+
+        '<td style="padding:3px 10px;font-size:.82rem">'+flagImg(x.team.country,11)+' '+x.team.name+getLeaderIcons(x.team.name,true)+'</td>'+
         '<td style="padding:3px 8px;text-align:right;font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+gap+'</td></tr>';
     }).join('');
     return '<div style="margin-bottom:10px"><div style="padding:5px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">⚪ Teams Classification</div>'+
@@ -4153,7 +4153,7 @@ function renderSeasonTeamPicker(){
     return '<div class="team-select-card '+(sel?'selected':'')+(busy?' tsc-busy':'')+'" onclick="'+(busy?'':('toggleSeasonTeam('+t.id+')'))+'" style="'+(busy?'opacity:.4;cursor:not-allowed':'')+'">'+
       '<span class="tsc-flag">'+flagImg(t.country,14)+'</span>'+
       '<div class="tsc-info">'+
-        '<div class="tsc-name">'+t.name+(busy?' <span style="color:var(--red);font-size:.65rem;font-family:Barlow Condensed,sans-serif">RACING</span>':'')+'</div>'+
+        '<div class="tsc-name">'+t.name+(busy?' <span style="color:var(--red);font-size:.65rem;font-family:Barlow Condensed,sans-serif">RACING</span>':'')+getLeaderIcons(t.name,true)+'</div>'+
         '<div class="tsc-meta">'+t.country+' · '+avg+' avg</div>'+
       '</div>'+
       (busy?'<span style="color:var(--muted);font-size:.7rem">🔒</span>':'<span class="tsc-check">✓</span>')+
@@ -4396,7 +4396,7 @@ function renderCountryRankings(){
     const team = tid!=null?teams.find(t=>t.id===tid):null;
     return '<tr><td class="cell-rank">'+(i+1)+'</td>'+
       '<td style="padding:7px 12px;font-weight:600">'+(rd?flagImg(rd.country,12)+' ':'')+name+'</td>'+
-      '<td style="padding:7px 12px"><span class="rteam">'+(team?team.name:'—')+'</span></td>'+
+      '<td style="padding:7px 12px"><span class="rteam">'+(team?team.name+getLeaderIcons(team.name,true):'—')+'</span></td>'+
       '<td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-size:.75rem;color:var(--muted)">'+(rd?rd.avg.toFixed(1):'')+'</td>'+
       '<td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
   }).join('');
@@ -4696,7 +4696,7 @@ function showRiderPalmares(name){
         '<div style="font-family:Barlow Condensed,sans-serif;font-size:1.5rem;font-weight:800;text-transform:uppercase">'+
           (rd?flagImg(rd.country,14)+' ':'')+name+'</div>'+
         '<div style="font-size:.8rem;color:var(--muted);margin-top:2px">'+
-          (team?flagImg(team.country,11)+' '+team.name+'&nbsp;·&nbsp;':'')+(rd?'OVR '+rd.avg.toFixed(1)+'&nbsp;·&nbsp;':'')+'Races: '+pal.totalRaces+'&nbsp;·&nbsp;UCI Pts: '+(pal.totalPts||0).toLocaleString()+'</div>'+
+          (team?flagImg(team.country,11)+' '+team.name+getLeaderIcons(team.name,true)+'&nbsp;·&nbsp;':'')+(rd?'OVR '+rd.avg.toFixed(1)+'&nbsp;·&nbsp;':'')+'Races: '+pal.totalRaces+'&nbsp;·&nbsp;UCI Pts: '+(pal.totalPts||0).toLocaleString()+'</div>'+
       '</div>'+
       '<button id="pal-close-btn" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:4px 8px">✕</button>'+
     '</div>'+
@@ -4717,7 +4717,10 @@ function showTeamPalmares(teamId){
   if(!team) return;
   const gcW=pal.gcWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--accent);font-size:.8rem">'+w.cat+'</span>'+flagImg(allRiders.find(r=>r.name===w.rider)?.country||'',11)+' <span style="flex:1">'+w.rider+' — '+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
   const stW=pal.stageWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span class="tbadge tbadge-'+(w.terrain||'FLA')+'" style="font-size:.6rem">'+(w.terrain||'')+'</span>'+flagImg(allRiders.find(r=>r.name===w.rider)?.country||'',11)+' <span style="flex:1">'+w.rider+' — '+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
-  const roster=team.riders.map(n=>{
+  const roster=[...team.riders].sort((a,b)=>{
+    const ra=allRiders.find(x=>x.name===a),rb=allRiders.find(x=>x.name===b);
+    return (rb?.avg||0)-(ra?.avg||0);
+  }).map(n=>{
     const r=allRiders.find(x=>x.name===n);
     return '<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px;cursor:pointer" data-rider-palmares="'+n.replace(/"/g,'&quot;')+'">'+(r?flagImg(r.country,11)+' ':'')+'<span style="flex:1">'+n+'</span>'+(r?'<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+r.avg.toFixed(1)+'</span>':'')+'<span style="color:var(--blue);font-size:.7rem;margin-left:6px">↗</span></div>';
   }).join('');
@@ -4751,7 +4754,7 @@ function renderUciRankings(){
     const team = teamId!=null?teams.find(t=>t.id===teamId):null;
     return '<tr><td class="cell-rank">'+(i+1)+'</td>'
       +'<td class="cell-name">'+(rider?flagImg(rider.country,12)+' ':'')+name+'</td>'
-      +'<td class="rteam-cell">'+(team?flagImg(team.country,11)+' <span class="rteam">'+team.name+'</span>':'\u2014')+'</td>'
+      +'<td class="rteam-cell">'+(team?flagImg(team.country,11)+' <span class="rteam">'+team.name+getLeaderIcons(team.name,true)+'</span>':'\u2014')+'</td>'
       +'<td class="cell-avg">'+(rider?rider.avg.toFixed(1):'\u2014')+'</td>'
       +'<td style="font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">'+pts.toLocaleString()+'</td></tr>';
   }).join('');
@@ -4773,7 +4776,7 @@ function renderUciRankings(){
     const rIcons = getLeaderIcons(name,false);
     return '<tr style="cursor:pointer" data-rider-palmares="'+name.replace(/"/g,'&quot;')+'">'+'<td class="cell-rank">'+(i+1)+'</td>'
       +'<td class="cell-name">'+(rider?flagImg(rider.country,12)+' ':'')+name+rIcons+'</td>'
-      +'<td class="rteam-cell" '+(team2?'data-team-palmares="'+teamId2+'"':'')+'>'+(team2?flagImg(team2.country,11)+' <span class="rteam">'+team2.name+'</span>':'\u2014')+'</td>'
+      +'<td class="rteam-cell" '+(team2?'data-team-palmares="'+teamId2+'"':'')+'>'+(team2?flagImg(team2.country,11)+' <span class="rteam">'+team2.name+getLeaderIcons(team2.name,true)+'</span>':'\u2014')+'</td>'
       +'<td class="cell-avg">'+(rider?rider.avg.toFixed(1):'\u2014')+'</td>'
       +'<td style="font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">'+pts.toLocaleString()+'</td></tr>';
   }).join('');
@@ -4992,7 +4995,7 @@ function renderClassification(classif, type){
   const rows=data.filter(x=>x.val>0).map((x,i)=>{
     const tid=riderTeamMap[x.rider.name];
     const team=tid!=null?teams.find(t=>t.id===tid):null;
-    const teamCell=team?flagImg(team.country,11)+' <span class="rteam">'+team.name+'</span>':'—';
+    const teamCell=team?flagImg(team.country,11)+' <span class="rteam">'+team.name+getLeaderIcons(team.name,true)+'</span>':'—';
     return `<tr>
       <td>${posLabel(i+1)}</td>
       <td class="rname">${flagImg(x.rider.country,12)} ${x.rider.name}</td>
@@ -5061,7 +5064,7 @@ function buildDNFRows(abandonedInStage, alreadyAbandoned){
     rows += '<tr style="opacity:.5;background:rgba(232,64,64,.04)">' +
       '<td><span style="font-size:.72rem;color:var(--red);font-weight:700">DNF</span></td>' +
       '<td class="rname">'+flagImg(rd.country,12)+' '+rd.name+'</td>' +
-      '<td class="rteam-cell">'+(team?flagImg(team.country,11)+' <span class="rteam">'+team.name+'</span>':'—')+'</td>' +
+      '<td class="rteam-cell">'+(team?flagImg(team.country,11)+' <span class="rteam">'+team.name+getLeaderIcons(team.name,true)+'</span>':'—')+'</td>' +
       '<td class="ravg">'+rd.avg.toFixed(1)+'</td>' +
       '<td><span style="font-size:.7rem;color:var(--red)">DNF</span></td>' +
       '<td></td></tr>';
@@ -5073,7 +5076,7 @@ function buildDNFRows(abandonedInStage, alreadyAbandoned){
     rows += '<tr style="opacity:.35;background:rgba(232,64,64,.02)">' +
       '<td><span style="font-size:.7rem;color:var(--muted)">DNF</span></td>' +
       '<td class="rname">'+flagImg(rd.country,12)+' '+rd.name+'</td>' +
-      '<td class="rteam-cell">'+(team?flagImg(team.country,11)+' <span class="rteam">'+team.name+'</span>':'—')+'</td>' +
+      '<td class="rteam-cell">'+(team?flagImg(team.country,11)+' <span class="rteam">'+team.name+getLeaderIcons(team.name,true)+'</span>':'—')+'</td>' +
       '<td class="ravg">'+rd.avg.toFixed(1)+'</td>' +
       '<td><span style="font-size:.68rem;color:var(--muted)">'+sn+'</span></td>' +
       '<td></td></tr>';
@@ -5161,7 +5164,7 @@ function renderResults(){
       const ldrIcons=getLeaderIcons(r.rider.name,false);
       const teamId2=riderTeamMap[r.rider.name];
       const team2=teamId2!=null?teams.find(t=>t.id===teamId2):null;
-      const teamCell2=team2?flagImg(team2.country,11)+' <span class="rteam">'+team2.name+'</span>':'<span style="color:var(--muted)">—</span>';
+      const teamCell2=team2?flagImg(team2.country,11)+' <span class="rteam">'+team2.name+getLeaderIcons(team2.name,true)+'</span>':'<span style="color:var(--muted)">—</span>';
       const leaderTotal=Number(gcResult[0]?.totalGap)||0;
       const relGap=Number(r.totalGap)-leaderTotal;
       const gapCell2=i===0?'<span class="rgap-winner">— WINNER —</span>':relGap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':fmtGap(relGap);
@@ -5212,7 +5215,7 @@ function renderResults(){
       const ldrIcons=getLeaderIcons(r.rider.name,false);
       const teamId3=riderTeamMap[r.rider.name];
       const team3=teamId3!=null?teams.find(t=>t.id===teamId3):null;
-      const teamCell3=team3?flagImg(team3.country,11)+' <span class="rteam">'+team3.name+'</span>':'<span style="color:var(--muted)">—</span>';
+      const teamCell3=team3?flagImg(team3.country,11)+' <span class="rteam">'+team3.name+getLeaderIcons(team3.name,true)+'</span>':'<span style="color:var(--muted)">—</span>';
       const gapCell3=i===0?'<span class="rgap-winner">— WINNER —</span>':r.gap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':fmtGap(r.gap);
       const tn3id=riderTeamMap[r.rider.name];
       return '<tr>' +
@@ -5636,7 +5639,7 @@ function renderHistory(){
       '<td style="padding:6px 12px"><span style="padding:1px 6px;border-radius:3px;background:'+catColor+';font-family:Barlow Condensed,sans-serif;font-size:.62rem;font-weight:800;color:#000">'+ev.category+'</span></td>'+
       '<td style="padding:6px 12px"><span style="font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:.9rem;text-transform:uppercase">'+ev.raceName+'</span> '+
         '<span style="color:var(--muted);font-size:.72rem">'+flagImg(ev.country||'',10)+' '+stagesInfo+'</span></td>'+
-      '<td style="padding:6px 12px;font-size:.82rem">'+pod(winner,'🥇')+'<br><span style="font-size:.7rem;color:var(--muted)">'+(winTeam?'<span class="rteam">'+winTeam.name+'</span>':'')+'</span></td>'+
+      '<td style="padding:6px 12px;font-size:.82rem">'+pod(winner,'🥇')+'<br><span style="font-size:.7rem;color:var(--muted)">'+(winTeam?'<span class="rteam">'+winTeam.name+getLeaderIcons(winTeam.name,true)+'</span>':'')+'</span></td>'+
       '<td style="padding:6px 12px;font-size:.82rem">'+pod(p2,'🥈')+'</td>'+
       '<td style="padding:6px 12px;font-size:.82rem">'+pod(p3,'🥉')+'</td>'+
       '</tr>';
