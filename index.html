@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.33</title>
+<title>CycleSim v12.34</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.33</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.34</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.33';
+const CACHE_VERSION = '12.34';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3252,7 +3252,7 @@ function showFinishScreen(lr){
       const timeDiff = Math.round(Number(x.time)-Number(leader));
       const gap = i===0?'<span style="color:var(--accent);font-size:.72rem">LEADER</span>'
         : timeDiff<=0?'<span style="color:var(--muted);font-size:.72rem">s.t.</span>'
-        : '<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">+'+fmtGap(timeDiff)+'</span>';
+        : fmtGap(timeDiff);
       return '<tr>'+
         '<td style="padding:3px 8px;color:var(--muted);font-size:.7rem;text-align:center">'+(i+1)+'</td>'+
         '<td style="padding:3px 10px;font-size:.82rem">'+flagImg(x.team.country,11)+' '+x.team.name+getLeaderIcons(x.team.name,true)+'</td>'+
@@ -3304,12 +3304,7 @@ function showFinishScreen(lr){
     '</div></div>';
 }
 
-function fmtGap(secs){
-  secs = Math.round(Number(secs)||0);
-  if(!secs) return "0''";
-  if(secs < 60) return secs+'"';
-  return Math.floor(secs/60)+"'"+String(secs%60).padStart(2,'0')+'"';
-}
+
 
 
 
@@ -4956,8 +4951,8 @@ function renderSeasonPanel(){
   const inQueue = !!(seasonSim.dayQueue && seasonSim.dayQueueIndex < (seasonSim.dayQueue.length||0));
   let html = '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap">';
   html += '<span style="font-family:Barlow Condensed,sans-serif;font-size:1.1rem;font-weight:800;color:var(--accent)">'+dayDate+'</span>';
-  if(!isComplete && !inQueue) html += '<button class="btn btn-accent" onclick="startSeasonDay()">&#9654; Simulate Day</button>';
-  if(!isComplete) html += '<button class="btn btn-ghost btn-sm" onclick="simulateSeasonWeek()">&#9654;&#9654; Week</button>';
+  if(!inQueue) html += '<button class="btn btn-accent" onclick="startSeasonDay()">&#9654; Simulate Day</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="simulateSeasonWeek()">&#9654;&#9654; Week</button>';
   if(transferMarket) html += '<button class="btn btn-accent btn-sm" onclick="showTransferMarket()">\uD83D\uDCBC Transfer Window Open!</button>';
   html += '<span class="pill">'+activeCount+' race'+(activeCount!==1?'s':'')+' in progress</span>';
   html += '<button class="btn btn-danger btn-sm" onclick="initSeason()" style="margin-left:auto">&#x21BA; Reset</button>';
@@ -5617,7 +5612,7 @@ function renderClassification(classif, type){
     const leader=eligible[0].time;
     const rows=eligible.map((x,i)=>{
       const gap=Math.round(x.time-leader);
-      const gapCell=i===0?'<span class="rgap-winner">— BEST —</span>':gap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':'<span style="font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">+'+fmtGap(gap)+'</span>';
+      const gapCell=i===0?'<span class="rgap-winner">— BEST —</span>':gap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':fmtGap(gap);
       const tIcons=getLeaderIcons(x.team.name,true);
       return `<tr>
         <td>${posLabel(i+1)}</td>
