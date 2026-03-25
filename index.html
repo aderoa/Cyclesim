@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.30</title>
+<title>CycleSim v12.31</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.30</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.31</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.30';
+const CACHE_VERSION = '12.31';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3130,7 +3130,8 @@ function runNextStage(){
   }
   if(rs._nationalChampCountry && rs.currentStageIndex>=stages.length){
     championships.national[rs._nationalChampCountry] = lastResults.gcResult?.[0]?.rider?.name||null;
-    awardChampionshipPoints('NC', lastResults.gcResult);
+    awardChampionshipPoints('NC', lastResults.gcResult, rs._nationalChampCountry);
+    saveSeasonState();
     const ncDay = seasonSim.champDay;
     const ncDayEntry = seasonSim.dayLog.find(d=>d.day===ncDay);
     if(ncDayEntry) ncDayEntry.events.push({raceName:'National Championship '+rs._nationalChampCountry, category:'NC',
@@ -4184,14 +4185,25 @@ const CHAMP_POINTS = {
   'NC':      { finish:[50,40,32,26,22,18,14,10,7,5,4,3,2,1] },
 };
 
-function awardChampionshipPoints(type, gcResult){
+function awardChampionshipPoints(type, gcResult, country){
   // type: 'WC_road', 'WC_tt', 'NC'
   const table = CHAMP_POINTS[type];
   if(!table||!gcResult||!gcResult.length) return;
   const pts = table.finish;
   gcResult.slice(0, pts.length).forEach((r,i)=>{
     const name = r.rider?.name||r.name;
-    if(name && pts[i]) awardUciPoints(name, pts[i], getRiderTeamName(name));
+    if(!name||!pts[i]) return;
+    const tn = getRiderTeamName(name);
+    awardUciPoints(name, pts[i], tn);
+    // National championships count for country rankings
+    if(type==='NC' && country){
+      if(!countryPoints[country]) countryPoints[country]={};
+      countryPoints[country][name] = (countryPoints[country][name]||0) + pts[i];
+      if(tn){
+        const tk='__team__'+tn;
+        countryPoints[country][tk] = (countryPoints[country][tk]||0) + pts[i];
+      }
+    }
   });
   saveUciPoints();
 }
@@ -4850,7 +4862,7 @@ function renderHistoryTab(){
   const sel = allSeasons.find(s=>s.year===historySelectedYear);
   let content = '';
 
-  if(sel._live){
+  if(sel._live || !sel.uciSnapshot){
     // Current live season — use live state
     const topRiders = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]).slice(0,10);
     const topTeams  = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]).slice(0,10);
