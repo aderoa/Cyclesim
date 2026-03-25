@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.10</title>
+<title>CycleSim v12.12</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.10</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.12</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.10';
+const CACHE_VERSION = '12.12';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -517,7 +517,7 @@ const TERRAIN_WEIGHTS = {
   COB:{COB:.35,FLA:.20,STA:.20,RES:.15,ATT:.10},
   HTF:{TTR:.60,MTN:.40}, // uphill TT: 60% TT ability + 40% mountain
 };
-const NOISE    = {FLA:4,MTN:8,MM:6.5,HIL:5,TTR:3,PRL:3,COB:6,HTF:4};
+const NOISE    = {FLA:4,MTN:8,MM:6.5,HIL:5,TTR:3,PRL:3,COB:6,HTF:6};
 const GAP_SPD  = {FLA:1.5,MTN:11,MM:8,HIL:5,TTR:4,PRL:2.5,COB:5};
 
 // ═══════════════════════════════════════════════════════════════
@@ -2707,7 +2707,7 @@ function updateRaceTeamCount(){
 // ═══════════════════════════════════════════════════════════════
 
 // ── BREAKAWAY PROBABILITY BY TERRAIN ───────────────────────────
-const BREAKAWAY_CHANCE = {FLA:.10, HIL:.30, MM:.35, MTN:.40, COB:.25, PRL:0, TTR:0};
+const BREAKAWAY_CHANCE = {FLA:.10, HIL:.30, MM:.35, MTN:.40, COB:.25, PRL:0, TTR:0, HTF:0};
 // GC contenders are less likely to be in a breakaway on hard terrain
 // ATT drives breakaway participation, FLA/STA drives survival, SPR drives sprint finish
 
@@ -2754,7 +2754,7 @@ function simulateStage(riderList, stage, fatigue, gcTimes){
 
   // ── Time Trials: individual times, no groups
   if(isTT){
-    const ttGapPt=terrain==='PRL'?4:terrain==='HTF'?30:20;
+    const ttGapPt=terrain==='PRL'?4:terrain==='HTF'?8:20;
     const scored=active.map(r=>({rider:r,score:scoreRider(r)})).sort((a,b)=>b.score-a.score);
     const best=scored[0].score;
     const result=scored.map((s,i)=>{
@@ -4750,7 +4750,8 @@ function renderResults(){
     const prevGCMap = {};
     if(stageResults.length>1){
       const pa={};
-      (lastResults.riderList||[]).forEach(r=>pa[r.name]=0);
+      // Only include riders still active (same set as gcResult) to avoid DNF riders distorting positions
+      gcResult.forEach(r=>pa[r.rider.name]=0);
       stageResults.slice(0,-1).forEach(({result})=>{result.forEach(({rider,gap})=>{if(pa[rider.name]!=null)pa[rider.name]+=gap;});});
       const psp={};
       (stageResults[stageResults.length-2]?.result||[]).forEach(r=>{psp[r.rider.name]=r.position;});
@@ -4794,8 +4795,9 @@ function renderResults(){
     let sjGCLdr='', sjPtsLdr='', sjMtnLdr='', sjSprLdr='';
     if(stageIdx>0){
       const prv=computeClassifications(stageResults.slice(0,stageIdx),lastResults.riderList||[],raceState?.officialTeamIds);
-      // GC before this stage
-      const prvGCA={}; (lastResults.riderList||[]).forEach(r=>prvGCA[r.name]=0);
+      // GC before this stage — only active riders (exclude DNFs to avoid position distortion)
+      const activeNames = new Set(gcResult.map(r=>r.rider.name));
+      const prvGCA={}; gcResult.forEach(r=>prvGCA[r.rider.name]=0);
       stageResults.slice(0,stageIdx).forEach(({result})=>{result.forEach(({rider,gap})=>{if(prvGCA[rider.name]!=null)prvGCA[rider.name]+=gap;});});
       const prvSPM={}; (stageResults[stageIdx-1]?.result||[]).forEach(r=>{prvSPM[r.rider.name]=r.position;});
       const prvGCSorted=Object.keys(prvGCA).map(n=>({n,g:prvGCA[n],sp:prvSPM[n]??9999})).sort((a,b)=>a.g!==b.g?a.g-b.g:a.sp-b.sp);
