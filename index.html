@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.61</title>
+<title>CycleSim v12.62</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.61</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.62</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -487,7 +487,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.61';
+const CACHE_VERSION = '12.62';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3087,15 +3087,20 @@ function simulateRace(){
 
 // Continue race: simulate next stage
 function simulateNextStage(){
-  // Restored stub from reload: clear stub and go to Calendar so user can resume from there
-  if(raceState?._restoredStub){
-    lastResults = null;
+  // No live raceState (navigated away, restored stub, etc.) — resume day from season queue
+  if(!raceState || raceState._restoredStub){
     raceState = null;
     localStorage.removeItem('cyclesim_lastresult');
+    lastResults = null;
     updateNavPhase();
-    showTab('calendar');
-    renderSeasonPanel();
-    renderCalendar();
+    if(seasonSim){
+      // If there's an active day queue, resume it; otherwise start a new day
+      startSeasonDay();
+    } else {
+      showTab('calendar');
+      renderSeasonPanel();
+      renderCalendar();
+    }
     return;
   }
   if((raceState?._seasonRaceId!=null || raceState?._worldChampType || raceState?._nationalChampCountry) && seasonSim){
@@ -6165,7 +6170,19 @@ function renderResults(){
   const nxtBtn=document.getElementById('next-result-btn');
   if(prevBtn) prevBtn.style.display=resultsHistory.length>0?'':'none';
   if(nxtBtn) nxtBtn.style.display='none';
-  if(!lastResults) return;
+  if(!lastResults){
+    const area = document.getElementById('results-area');
+    const rn = document.getElementById('res-race-name');
+    const rm = document.getElementById('res-race-meta');
+    if(rn) rn.textContent = seasonSim ? 'Season in progress' : 'No race simulated yet';
+    if(rm) rm.textContent = seasonSim ? fmtDate(seasonSim.currentDay)+' '+getSeasonYear() : 'Start the season from the Calendar tab.';
+    if(area) area.innerHTML = seasonSim
+      ? `<div class="empty-state"><div class="empty-icon">🏁</div><div>Ready to simulate.</div><button class="btn btn-accent" style="margin-top:12px" onclick="startSeasonDay()">▶ Simulate Day</button></div>`
+      : `<div class="empty-state"><div class="empty-icon">🏔️</div><div>Start the season from the Calendar tab.</div></div>`;
+    const nextBtn=document.getElementById('next-stage-btn');
+    if(nextBtn) nextBtn.style.display='none';
+    return;
+  }
   const{raceName,stageResults,riderCount,teamCount,abandoned=[],currentStage,totalStages,complete}=lastResults;
   // Sort numerically — totalGap may be string after season serialization
   const gcResult=[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999));
@@ -6174,8 +6191,13 @@ function renderResults(){
   const inSeason = (raceState?._seasonRaceId!=null || raceState?._worldChampType || raceState?._nationalChampCountry) && seasonSim;
   const hasMoreQueue = inSeason && seasonSim.dayQueue && seasonSim.dayQueueIndex+1 < (seasonSim.dayQueue?.length||0);
   if(nextBtn){
-    if(raceState?._restoredStub){
-      nextBtn.style.display=''; nextBtn.textContent='▶ Resume Season';
+    // Always show a "continue" button when season is active
+    const hasActiveSeason = !!seasonSim;
+    const isStub = raceState?._restoredStub;
+    const noRaceState = !raceState || isStub;
+    if(isStub || (noRaceState && hasActiveSeason)){
+      // Navigated away mid-day or restored from reload — always offer to resume
+      nextBtn.style.display=''; nextBtn.textContent='▶ Continue Season';
     } else if(inSeason && complete && raceState?._worldChampType){
       nextBtn.style.display=''; nextBtn.textContent='▶ Continue Season';
     } else if(inSeason && complete && raceState?._nationalChampCountry){
