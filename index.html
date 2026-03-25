@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.56</title>
+<title>CycleSim v12.58</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.56</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.58</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -424,6 +424,7 @@ tbody td{padding:6px 10px}
     </div>
   </div>
   <div id="stage-tabs" class="stage-tabs"></div>
+  <div id="jersey-bar" style="padding:6px 14px;display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);min-height:0"></div>
   <div id="results-area">
     <div class="empty-state"><div class="empty-icon">🏔️</div>Configure a race in the Race Builder tab, then hit Simulate.</div>
   </div>
@@ -486,7 +487,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.56';
+const CACHE_VERSION = '12.58';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -760,7 +761,7 @@ async function loadData() {
       if(nStages > 0) activeResultTab = 'stage-'+(nStages-1);
       showTab('results');
       renderResults();
-    } else if(seasonSim && !raceState){
+    } else if(seasonSim){
       showTab('calendar');
     }
   } catch(e) {
@@ -2380,9 +2381,31 @@ function autoSelectTeamsForRace(race){
       .sort((a,b)=>(teamUciPoints[b.name]||0)-(teamUciPoints[a.name]||0));
   }
 
+  // Get former winners of this race (teams whose rider won in a past year)
+  const formerWinners = new Set();
+  if(seasonSim){
+    seasonSim.dayLog.forEach(d=>{
+      (d.events||[]).forEach(ev=>{
+        if(ev.raceName===race.name && ev.complete && ev.gcLeader){
+          const winTeamId = riderTeamMap[ev.gcLeader];
+          if(winTeamId!=null) formerWinners.add(winTeamId);
+        }
+      });
+    });
+  }
+  // Get teams with riders in top-5 country ranking for this race's country
+  const countryTop5Riders = new Set(
+    Object.entries(countryPoints[country]||{})
+      .filter(([k])=>!k.startsWith('__team__'))
+      .sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k])=>k)
+  );
+  const countryContenderTeams = new Set(
+    [...countryTop5Riders].map(name=>riderTeamMap[name]).filter(id=>id!=null)
+  );
+
   function pickRandom(pool, n){
     // Bias toward teams with fewer races (inverse weighting)
-    // New teams (no entry) start at the minimum count of existing teams, not 0
+    // + extra weight for former race winners + country ranking contenders
     const rc=getTeamRaceCounts();
     const existingCounts=Object.values(rc).map(s=>s instanceof Set?s.size:s);
     const minExisting=existingCounts.length?Math.min(...existingCounts):0;
@@ -2390,7 +2413,9 @@ function autoSelectTeamsForRace(race){
     const weighted=[];
     pool.forEach(t=>{
       const rawCount=rc[t.name]? (rc[t.name] instanceof Set?rc[t.name].size:rc[t.name]) :minExisting;
-      const w=Math.max(1,maxR-rawCount+1);
+      let w=Math.max(1,maxR-rawCount+1);
+      if(formerWinners.has(t.id)) w*=4;         // former winner: 4x more likely
+      if(countryContenderTeams.has(t.id)) w*=3; // country ranking contender: 3x
       for(let i=0;i<w;i++) weighted.push(t);
     });
     const s=[...weighted].sort(()=>Math.random()-0.5);
@@ -3864,9 +3889,9 @@ function saveSeasonState(){
       };
       localStorage.setItem('cyclesim_lastresult', JSON.stringify(snap));
     }catch(e){}
-  } else {
-    localStorage.removeItem('cyclesim_lastresult');
   }
+  // Note: we do NOT clear lastresult when lastResults is null in JS memory —
+  // it persists until explicitly cleared by advanceSeasonQueue or finishSeasonDay
   if(!seasonSim) return;
   // Save season sim — prune log if too large
   try{
@@ -4420,8 +4445,9 @@ function startSeasonDay(){
       runNationalChampionshipsDay(day, countries);
       return;
     }
-    // Rest day — advance
-    seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events:[]});
+    // Rest day — advance (only log if not already in log)
+    if(!seasonSim.dayLog.find(d=>d.day===day&&(d.year||1)===(seasonSim.year||1)))
+      seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events:[]});
     seasonSim.currentDay++; saveSeasonState(); renderSeasonPanel(); renderCalendar();
     startSeasonDay(); return;
   }
@@ -4440,7 +4466,8 @@ function startSeasonDay(){
 
   // Days 359, 360, 362, 364, 365: rest days / buffer
   if(day >= 349 && day <= 365){
-    seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events:[]});
+    if(!seasonSim.dayLog.find(d=>d.day===day&&(d.year||1)===(seasonSim.year||1)))
+      seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events:[]});
     seasonSim.currentDay++; saveSeasonState(); renderSeasonPanel(); renderCalendar();
     startSeasonDay(); return;
   }
@@ -4465,7 +4492,8 @@ function startSeasonDay(){
 
   if(!queue.length){
     // Rest day — just advance
-    seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events:[]});
+    if(!seasonSim.dayLog.find(d=>d.day===day&&(d.year||1)===(seasonSim.year||1)))
+      seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events:[]});
     seasonSim.currentDay++;
     saveSeasonState();
     renderSeasonPanel();
@@ -4568,10 +4596,9 @@ function showDayPreview(day, queue){
     const catColor = UCI_CAT_COLOR[cat]||'var(--muted)';
     const color = RACE_TYPE_COLOR[race.type]||'var(--muted)';
 
-    // GC Leader for ongoing races
+    // GC Leader + completed stages for ongoing races
     let leaderHtml = '';
     if(!isNew && entry?.rs?.stageResults?.length){
-      // Use buildSeasonGC to properly exclude DNF riders from leader calculation
       try {
         const gcForPreview = buildSeasonGC(entry.rs);
         const leaderEntry = gcForPreview[0];
@@ -4584,6 +4611,19 @@ function showDayPreview(day, queue){
             '<span style="flex:1;font-size:.85rem;font-weight:600">' + flagImg(lr.country,11)+' '+lr.name + '</span>' +
             '<span style="font-size:.72rem;color:var(--muted)">' + (lrt?lrt.name:'') + '</span>' +
             '</div>';
+        }
+        // Completed stage winners summary
+        if(entry.rs.stageResults.length > 0){
+          const stageWinRows = entry.rs.stageResults.map((sr,i)=>{
+            const w=sr.result?.[0]; if(!w) return '';
+            return '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:.78rem;color:var(--muted)">'+
+              '<span style="font-size:.65rem;min-width:52px;color:var(--muted)">'+(race.stages[i]?.name||'Stage '+(i+1))+'</span>'+
+              '<span class="tbadge tbadge-'+sr.stage.terrain+'" style="font-size:.6rem">'+sr.stage.terrain+'</span>'+
+              '<span>'+flagImg(w.rider.country,10)+' <b style="color:var(--text)">'+w.rider.name+'</b></span>'+
+              '</div>';
+          }).join('');
+          leaderHtml += '<div style="margin-top:6px;padding:5px 10px;background:var(--surface2);border-radius:5px;font-family:Barlow Condensed,sans-serif;font-size:.68rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:2px">Stages completed</div>'+
+            '<div style="padding:3px 10px">'+stageWinRows+'</div>';
         }
       } catch(e) {}
     }
@@ -4867,6 +4907,8 @@ function finishSeasonDay(){
   seasonSim.currentDayEvents = null;
   seasonSim.completedToday = [];
   seasonSim.currentDay++;
+  lastResults = null; raceState = null;
+  localStorage.removeItem('cyclesim_lastresult');
   saveSeasonState();
   saveUciPoints();
   checkTransferMarket();
@@ -5141,7 +5183,6 @@ function renderSeasonPanel(){
   let html = '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap">';
   html += '<span style="font-family:Barlow Condensed,sans-serif;font-size:1.1rem;font-weight:800;color:var(--accent)">'+dayDate+'</span>';
   if(!inQueue) html += '<button class="btn btn-accent" onclick="startSeasonDay()">&#9654; Simulate Day</button>';
-  html += '<button class="btn btn-ghost btn-sm" onclick="simulateSeasonWeek()">&#9654;&#9654; Week</button>';
   if(transferMarket) html += '<button class="btn btn-accent btn-sm" onclick="showTransferMarket()">\uD83D\uDCBC Transfer Window Open!</button>';
   html += '<span class="pill">'+activeCount+' race'+(activeCount!==1?'s':'')+' in progress</span>';
   html += '<button class="btn btn-danger btn-sm" onclick="initSeason()" style="margin-left:auto">&#x21BA; Reset</button>';
@@ -6144,11 +6185,12 @@ function renderResults(){
   if(document.getElementById('rerun-btn')) document.getElementById('rerun-btn').style.display='inline-flex';
 
   const tabsHtml=[
-    ...stageResults.map((sr,i)=>`
-      <button class="stage-tab-btn ${activeResultTab===`stage-${i}`?'active':''}" onclick="switchResultTab('stage-${i}')">
+    ...stageResults.map((sr,i)=>{
+      const dnfCount=(lastResults?.abandoned||[]).filter(a=>a.stage===sr.stage.name).length;
+      return `<button class="stage-tab-btn ${activeResultTab===`stage-${i}`?'active':''}" onclick="switchResultTab('stage-${i}')">
         ${T_ICONS[sr.stage.terrain]} ${sr.stage.name}${sr.breakaway?' 🏇':''}
-        <span style="font-size:.68rem;opacity:.55;margin-left:3px">${sr.stage.distance}km</span>
-      </button>`),
+        <span style="font-size:.68rem;opacity:.55;margin-left:3px">${sr.stage.distance}km</span>${dnfCount>0?`<span style="color:var(--red);font-size:.65rem;margin-left:3px">${dnfCount}✕</span>`:''}
+      </button>`;}),
     isMulti?[`<button class="stage-tab-btn gc-tab ${activeResultTab==='gc'?'active':''}" onclick="switchResultTab('gc')">🟡 GC</button>`,
       `<button class="stage-tab-btn ${activeResultTab==='points'?'active':''}" onclick="switchResultTab('points')">🟢 Points</button>`,
       `<button class="stage-tab-btn ${activeResultTab==='mountains'?'active':''}" onclick="switchResultTab('mountains')">🔴 Mountains</button>`,
@@ -6156,6 +6198,24 @@ function renderResults(){
     ].join(''):''
   ].join('') + `<button class="stage-tab-btn ${activeResultTab==='teams'?'active':''}" onclick="switchResultTab('teams')">⚪ Teams</button>`;
   if(document.getElementById('stage-tabs')) document.getElementById('stage-tabs').innerHTML=tabsHtml;
+  // Jersey leaders bar (GC + secondary classifications)
+  if(isMulti && classif){
+    const gcLdr = gcResult?.[0]?.rider;
+    const ptLdr = classif.points?.[0]?.rider;
+    const mtnLdr = classif.mountains?.[0]?.rider;
+    const sprLdr = classif.intermed?.[0]?.rider;
+    const jerseys = [
+      gcLdr?`<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;background:rgba(245,196,0,.12);border:1px solid rgba(245,196,0,.3);font-size:.75rem">🟡 ${flagImg(gcLdr.country,10)} ${gcLdr.name}</span>`:'',
+      ptLdr?`<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;background:rgba(62,207,110,.1);border:1px solid rgba(62,207,110,.3);font-size:.75rem">🟢 ${flagImg(ptLdr.country,10)} ${ptLdr.name}</span>`:'',
+      mtnLdr?`<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;background:rgba(255,100,100,.1);border:1px solid rgba(255,100,100,.3);font-size:.75rem">🔴 ${flagImg(mtnLdr.country,10)} ${mtnLdr.name}</span>`:'',
+      sprLdr?`<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;background:rgba(77,159,255,.1);border:1px solid rgba(77,159,255,.3);font-size:.75rem">🔵 ${flagImg(sprLdr.country,10)} ${sprLdr.name}</span>`:'',
+    ].filter(Boolean).join('');
+    const jerseyBar = document.getElementById('jersey-bar');
+    if(jerseyBar) jerseyBar.innerHTML = jerseys;
+  } else {
+    const jerseyBar = document.getElementById('jersey-bar');
+    if(jerseyBar) jerseyBar.innerHTML = '';
+  }
 
   const classifTabs=['points','mountains','intermed','teams'];
   let rows;
