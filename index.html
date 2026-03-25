@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.25';
+const CACHE_VERSION = '12.26';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3051,12 +3051,11 @@ function simulateNextStage(){
       return;
     }
     if(lastResults?.complete){
-      // World championship: advance day and continue after viewing result
       if(raceState?._worldChampType){
-        renderSeasonPanel();
-        renderCalendar();
-        startSeasonDay();
-        return;
+        renderSeasonPanel(); renderCalendar(); startSeasonDay(); return;
+      }
+      if(raceState?._nationalChampCountry){
+        runNextNationalChamp(); return;
       }
       showFinishScreen(lastResults);
       return;
@@ -3127,6 +3126,16 @@ function runNextStage(){
     const wcType = rs._worldChampType;
     const wcWinner = lastResults.gcResult?.[0]?.rider?.name||null;
     finishWorldChamp(wcType, wcWinner, lastResults.gcResult);
+  }
+  if(rs._nationalChampCountry && rs.currentStageIndex>=stages.length){
+    championships.national[rs._nationalChampCountry] = lastResults.gcResult?.[0]?.rider?.name||null;
+    saveUciPoints();
+    const ncDay = seasonSim.champDay;
+    const ncDayEntry = seasonSim.dayLog.find(d=>d.day===ncDay);
+    if(ncDayEntry) ncDayEntry.events.push({raceName:'National Championship '+rs._nationalChampCountry, category:'NC',
+      country:rs._nationalChampCountry, stageNum:1, totalStages:1,
+      stageWinner:lastResults.gcResult?.[0]?.rider?.name||'—', complete:true});
+    saveSeasonState();
   }
   activeResultTab='stage-'+(rs.stageResults.length-1);
   // Flag that we want to show GC after this stage result (multi-stage races only, including final)
@@ -3910,22 +3919,64 @@ function buildWorldChampRiderList(sortAttr, maxPerCountry){
 
 // ── RUN NATIONAL CHAMPIONSHIPS DAY (batch simulate all countries) ──
 function runNationalChampionshipsDay(day, countries){
-  const results = [];
-  countries.forEach(country=>{
-    const res = simNationalChamp(country);
-    if(res && res.winner){
-      championships.national[country] = res.winner;
-      results.push({country, winner:res.winner, terrain:res.terrain, dist:res.dist, top10:res.result});
-    }
-  });
-  seasonSim.dayLog.push({day, date:fmtDate(day), events: results.map(r=>({
-    raceName:'National Championship '+r.country, category:'NC', country:r.country,
-    stageNum:1, totalStages:1, stageWinner:r.winner, complete:true
-  }))});
+  // Set up queue for one-by-one simulation
+  seasonSim.champQueue = [...countries];
+  seasonSim.champQueueIndex = 0;
+  seasonSim.champDay = day;
   seasonSim.currentDay++;
+  // Seed an empty dayLog entry for this day's events
+  seasonSim.dayLog.push({day, date:fmtDate(day), events:[]});
   saveSeasonState();
-  saveUciPoints();
-  showNationalChampsResults(day, results);
+  runNextNationalChamp();
+}
+
+function runNextNationalChamp(){
+  const queue = seasonSim.champQueue||[];
+  const idx = seasonSim.champQueueIndex||0;
+  if(idx >= queue.length){
+    // All done for this day
+    seasonSim.champQueue = null;
+    seasonSim.champQueueIndex = 0;
+    saveSeasonState();
+    renderSeasonPanel(); renderCalendar();
+    startSeasonDay();
+    return;
+  }
+  const country = queue[idx];
+  seasonSim.champQueueIndex = idx + 1;
+  saveSeasonState();
+  startNationalChampRace(country);
+}
+
+function startNationalChampRace(country){
+  const riders = allRiders.filter(r=>r.country===country)
+    .sort((a,b)=>b.avg-a.avg).slice(0,175);
+  if(!riders.length){ runNextNationalChamp(); return; }
+
+  const terrains = ['PRL','FLA','HIL','MM','MTN'];
+  const terrain = terrains[Math.floor(Math.random()*terrains.length)];
+  const dist = randDist(terrain);
+  const stageObj = {id:0, name:'National Championship '+country, terrain, distance:dist};
+
+  raceState = {
+    raceName: '🏅 '+country+' National Championship',
+    riderList: riders,
+    fatigue: Object.fromEntries(riders.map(r=>[r.name,0])),
+    gcTimes: Object.fromEntries(riders.map(r=>[r.name,0])),
+    stageResults: [],
+    allAbandoned: [],
+    activeRiders: [...riders],
+    currentStageIndex: 0,
+    raceVariance: makeVariance(riders, 0.10),
+    totalStages: 1,
+    officialTeamIds: new Set([...new Set(riders.map(r=>riderTeamMap[r.name]).filter(Boolean))]),
+    _nationalChampCountry: country,
+    _champTerrain: terrain,
+  };
+  stages = [stageObj];
+  calSelectedRace = null;
+  lastResults = null;
+  runNextStage();
 }
 
 function showNationalChampsResults(day, results){
@@ -5489,11 +5540,16 @@ function renderResults(){
   const gcResult=[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999));
   const nextBtn=document.getElementById('next-stage-btn');
   const rerunBtn=document.getElementById('rerun-btn');
-  const inSeason = raceState?._seasonRaceId!=null && seasonSim;
+  const inSeason = (raceState?._seasonRaceId!=null || raceState?._worldChampType || raceState?._nationalChampCountry) && seasonSim;
   const hasMoreQueue = inSeason && seasonSim.dayQueue && seasonSim.dayQueueIndex+1 < (seasonSim.dayQueue?.length||0);
   if(nextBtn){
     if(inSeason && complete && raceState?._worldChampType){
       nextBtn.style.display=''; nextBtn.textContent='▶ Continue Season';
+    } else if(inSeason && complete && raceState?._nationalChampCountry){
+      const qIdx = (seasonSim.champQueueIndex||0);
+      const qLen = (seasonSim.champQueue||[]).length;
+      nextBtn.style.display='';
+      nextBtn.textContent = qIdx < qLen ? '▶ Next Championship ('+(qLen-qIdx)+' left)' : '▶ Finish Day';
     } else if(inSeason && complete){
       nextBtn.style.display=''; nextBtn.textContent='🏁 Race Summary';
     } else if(inSeason && !complete && lastResults?._pendingGCShow){
