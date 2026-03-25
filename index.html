@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.41</title>
+<title>CycleSim v12.42</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.41</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.42</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.41';
+const CACHE_VERSION = '12.42';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -4296,10 +4296,13 @@ function startSeasonDay(){
     if(!seasonSim.activeRaces[race.id]) queue.push(race.id);
   });
 
-  // Also queue continuing stage races — queue any active race that still has stages to run
-  // (Don't use expectedStage: after a transfer day the race is behind by 1 and would be dropped)
+  // Queue continuing stage races — only if they haven't already run their stage today
+  // expectedStageIndex = today - startDay (zero-based). If stageIndex > expected, already ran today (reload case).
   Object.entries(seasonSim.activeRaces).forEach(([id, {race,rs}])=>{
-    if(rs.currentStageIndex < race.stages.length) queue.push(parseInt(id));
+    if(rs.currentStageIndex >= race.stages.length) return; // fully complete
+    const expectedStageIndex = day - (race.startDay||0);
+    if(rs.currentStageIndex > expectedStageIndex) return; // already ran today's stage (mid-day reload)
+    queue.push(parseInt(id));
   });
 
   if(!queue.length){
