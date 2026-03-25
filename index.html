@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.27</title>
+<title>CycleSim v12.28</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.27</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.28</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.27';
+const CACHE_VERSION = '12.28';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1902,6 +1902,7 @@ function confirmUpdateTeams(){
   saveTeams();
   savePendingPool();
   saveKnownRiders();
+  autoAddChampionshipForNewCountries();
   renderTeams();
   renderRaceTeamPicker();
 
@@ -3877,6 +3878,26 @@ function buildChampSchedule(){
   return schedule;
 }
 
+
+function autoAddChampionshipForNewCountries(){
+  if(!seasonSim) return; // only active during a season
+  const sched = seasonSim.champSchedule;
+  if(!sched) return; // schedule not yet built
+  // Find countries that now have ≥10 riders but aren't in the schedule
+  const scheduled = new Set(Object.values(sched).flat());
+  const allCountries = [...new Set(allRiders.map(r=>r.country))];
+  allCountries.forEach(country=>{
+    if(scheduled.has(country)) return;
+    const count = allRiders.filter(r=>r.country===country).length;
+    if(count >= 10){
+      const day = 349 + Math.floor(Math.random()*10);
+      if(!sched[day]) sched[day]=[];
+      sched[day].push(country);
+      console.log('Auto-added championship for '+country+' on day '+day);
+    }
+  });
+  saveSeasonState();
+}
 function getOrBuildChampSchedule(){
   if(!seasonSim) return {};
   if(!seasonSim.champSchedule){
@@ -4018,7 +4039,7 @@ function showNationalChampsRecap(){
 function startNationalChampRace(country){
   const riders = allRiders.filter(r=>r.country===country)
     .sort((a,b)=>b.avg-a.avg).slice(0,175);
-  if(!riders.length){ runNextNationalChamp(); return; }
+  if(!riders.length){ runNextNationalChamp(); return; } // cancel only if 0 riders
 
   const terrains = ['PRL','FLA','HIL','MM','MTN'];
   const terrain = terrains[Math.floor(Math.random()*terrains.length)];
@@ -4173,7 +4194,7 @@ function finishWorldChamp(type, winner, gcResult){
 function startSeasonDay(){
   if(!seasonSim){ alert('Start season first.'); return; }
   if(transferMarket){ showTransferMarket(); return; }
-  if(seasonSim.currentDay > 365){ alert('Season complete!'); return; }
+  if(seasonSim.currentDay > 365){ renderSeasonPanel(); renderCalendar(); showSeasonEndScreen(); return; }
 
   const day = seasonSim.currentDay;
 
@@ -4830,8 +4851,9 @@ function renderHistoryTab(){
           '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">World Team Rankings</div>'+
           '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2)"><th style="'+th+'">Team</th><th style="'+th+';text-align:right">Pts</th></tr></thead><tbody>'+tRows+'</tbody></table>'+
         '</div>'+
+      '</div>'+
       champsHtml+
-      '</div></div>';});
+      '</div>';});
   html+='</div>';
   wrap.innerHTML=html;
 }
