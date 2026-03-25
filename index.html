@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.26';
+const CACHE_VERSION = '12.27';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3064,7 +3064,7 @@ function simulateNextStage(){
     return;
   }
   if(!raceState){return;}
-  if(raceState.currentStageIndex>=stages.length){alert('Race complete!');return;}
+  if(raceState.currentStageIndex>=stages.length){return;} // already complete
   runNextStage();
 }
 
@@ -3927,25 +3927,92 @@ function runNationalChampionshipsDay(day, countries){
   // Seed an empty dayLog entry for this day's events
   seasonSim.dayLog.push({day, date:fmtDate(day), events:[]});
   saveSeasonState();
-  runNextNationalChamp();
+  showNationalChampsPreview(day, countries);
+}
+
+function showNationalChampsPreview(day, countries){
+  showTab('race');
+  const wrap = document.getElementById('race-setup-wrap');
+  if(!wrap){ runNextNationalChamp(); return; }
+  const yr = getSeasonYear();
+  const rows = countries.map(country=>{
+    const riders = allRiders.filter(r=>r.country===country);
+    const top = riders.sort((a,b)=>b.avg-a.avg)[0];
+    return '<div style="display:flex;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid var(--border)">'+
+      flagImg(country,14)+
+      '<span style="font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:.95rem;text-transform:uppercase;flex:1">'+country+'</span>'+
+      '<span style="font-size:.78rem;color:var(--muted)">'+riders.length+' riders</span>'+
+      (top?'<span style="font-size:.78rem;color:var(--muted);margin-left:8px">Fav: '+flagImg(top.country,11)+' '+top.name+' ('+top.avg.toFixed(1)+')</span>':'')+
+      '</div>';
+  }).join('');
+  wrap.innerHTML =
+    '<div style="max-width:800px;margin:0 auto;padding:14px 0">'+
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+      '<div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:2rem;font-weight:800;color:var(--accent);text-transform:uppercase">🏅 National Championships</div>'+
+        '<div style="font-size:.82rem;color:var(--muted)">'+fmtDate(day)+' '+yr+' · '+countries.length+' championship'+(countries.length!==1?'s':'')+' today</div>'+
+      '</div>'+
+      '<button class="btn btn-accent" style="margin-left:auto" onclick="runNextNationalChamp()">▶ Simulate</button>'+
+    '</div>'+
+    '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">'+
+    '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Today - Championships</div>'+
+    rows+'</div></div>';
 }
 
 function runNextNationalChamp(){
   const queue = seasonSim.champQueue||[];
   const idx = seasonSim.champQueueIndex||0;
   if(idx >= queue.length){
-    // All done for this day
-    seasonSim.champQueue = null;
-    seasonSim.champQueueIndex = 0;
-    saveSeasonState();
-    renderSeasonPanel(); renderCalendar();
-    startSeasonDay();
+    // All done — show final recap of the day
+    showNationalChampsRecap();
     return;
   }
   const country = queue[idx];
   seasonSim.champQueueIndex = idx + 1;
   saveSeasonState();
   startNationalChampRace(country);
+}
+
+function showNationalChampsRecap(){
+  seasonSim.champQueue = null;
+  seasonSim.champQueueIndex = 0;
+  saveSeasonState();
+  showTab('race');
+  const wrap = document.getElementById('race-setup-wrap');
+  if(!wrap){ renderSeasonPanel(); renderCalendar(); startSeasonDay(); return; }
+  const day = seasonSim.champDay;
+  const yr = getSeasonYear();
+  // Gather results from today's dayLog events
+  const dayEntry = seasonSim.dayLog.find(d=>d.day===day);
+  const results = (dayEntry?.events||[]).filter(ev=>ev.category==='NC');
+  const rows = results.map(r=>{
+    const rd = allRiders.find(x=>x.name===r.stageWinner);
+    const tid = rd?riderTeamMap[r.stageWinner]:null;
+    const team = tid!=null?teams.find(t=>t.id===tid):null;
+    return '<tr style="border-bottom:1px solid var(--border)">'+
+      '<td style="padding:5px 12px">'+flagImg(r.country,13)+' <b style="font-family:Barlow Condensed,sans-serif">'+r.country+'</b></td>'+
+      '<td style="padding:5px 12px">'+champFrame(flagImg(r.country,11))+' '+(rd?flagImg(rd.country,11)+' ':'')+r.stageWinner+'</td>'+
+      '<td style="padding:5px 12px"><span class="rteam">'+(team?team.name+getLeaderIcons(team.name,true):'—')+'</span></td>'+
+      '<td style="padding:5px 8px;font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+(rd?rd.avg.toFixed(1):'')+'</td>'+
+      '</tr>';
+  }).join('');
+  wrap.innerHTML =
+    '<div style="max-width:900px;margin:0 auto;padding:14px 0">'+
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+      '<div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:2rem;font-weight:800;color:var(--accent);text-transform:uppercase">🏅 Championships Recap</div>'+
+        '<div style="font-size:.82rem;color:var(--muted)">'+fmtDate(day)+' '+yr+' · '+results.length+' title'+(results.length!==1?'s':'')+' awarded</div>'+
+      '</div>'+
+      '<button class="btn btn-accent" style="margin-left:auto" onclick="renderSeasonPanel();renderCalendar();startSeasonDay()">▶ Continue</button>'+
+    '</div>'+
+    '<table style="width:100%;border-collapse:collapse;font-size:.85rem;border:1px solid var(--border);border-radius:8px;overflow:hidden">'+
+    '<thead><tr style="background:var(--surface2)">'+
+      '<th style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Country</th>'+
+      '<th style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Champion</th>'+
+      '<th style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Team</th>'+
+      '<th style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">OVR</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table>'+
+    '</div>';
 }
 
 function startNationalChampRace(country){
@@ -4729,6 +4796,19 @@ function renderHistoryTab(){
         '<td style="padding:6px 12px"><span class="rteam">'+(t?t.name:'—')+'</span></td>'+
         '<td style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
     }).join('');
+    // Build championships section
+    const champs = data.championships||{};
+    const natChamps = Object.entries(champs.national||{}).sort((a,b)=>a[0].localeCompare(b[0]));
+    let champsHtml='';
+    if(champs.roadWorld||champs.ttWorld||natChamps.length){
+      const worldRows = [
+        champs.roadWorld?('<tr><td style="padding:5px 12px">'+champFrame('🌐')+'&nbsp;Road World</td><td style="padding:5px 12px">'+flagImg(allRiders.find(r=>r.name===champs.roadWorld)?.country||'',12)+' '+champs.roadWorld+'</td></tr>'):'',
+        champs.ttWorld?('<tr><td style="padding:5px 12px">'+champFrame('<span style="font-size:.75em">⏱️🌐</span>')+'&nbsp;TT World</td><td style="padding:5px 12px">'+flagImg(allRiders.find(r=>r.name===champs.ttWorld)?.country||'',12)+' '+champs.ttWorld+'</td></tr>'):'',
+        ...natChamps.slice(0,20).map(([c,w])=>'<tr><td style="padding:4px 12px">'+champFrame(flagImg(c,11))+'&nbsp;'+c+'</td><td style="padding:4px 12px">'+flagImg(allRiders.find(r=>r.name===w)?.country||'',11)+' '+w+'</td></tr>')
+      ].filter(Boolean).join('');
+      champsHtml='<div style="border-top:2px solid var(--border)"><div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">🏅 Champions</div>'+
+        '<table style="width:100%;border-collapse:collapse;font-size:.82rem"><tbody>'+worldRows+'</tbody></table></div>';
+    }
     const tRows=topTeams.map(([name,pts],i)=>{
       const t=teams.find(x=>x.name===name);
       return '<tr><td class="cell-rank">'+(i+1)+'</td>'+
@@ -4750,8 +4830,8 @@ function renderHistoryTab(){
           '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">World Team Rankings</div>'+
           '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2)"><th style="'+th+'">Team</th><th style="'+th+';text-align:right">Pts</th></tr></thead><tbody>'+tRows+'</tbody></table>'+
         '</div>'+
-      '</div></div>';
-  });
+      champsHtml+
+      '</div></div>';});
   html+='</div>';
   wrap.innerHTML=html;
 }
@@ -5372,6 +5452,7 @@ function computeClassifications(stageResults, riderList, officialTeamIds){
     } // end if(!isTT)
 
     // ── Teams classification: best 3 riders by time first, then position as tiebreaker
+    // Minimum 3 finishers required for a team to score
     const teamsInStage={};
     result.forEach(({rider,gap,position})=>{
       const tid=riderTeam[rider.name];
@@ -5382,6 +5463,7 @@ function computeClassifications(stageResults, riderList, officialTeamIds){
     Object.entries(teamsInStage).forEach(([tid,finishes])=>{
       // Sort by time (gap), then position as tiebreaker
       finishes.sort((a,b)=> a.gap!==b.gap ? a.gap-b.gap : a.position-b.position);
+      if(finishes.length < 3) return; // need 3 finishers to score
       const best3=finishes.slice(0,3);
       const timeSum=best3.reduce((s,f)=>s+f.gap,0);
       const posSum=best3.reduce((s,f)=>s+f.position,0);
@@ -5405,8 +5487,13 @@ function computeClassifications(stageResults, riderList, officialTeamIds){
     time: d.timeSums.reduce((s,v)=>s+v,0),   // primary: total time of best-3 per stage
     posScore: d.posSums.reduce((s,v)=>s+v,0), // tiebreaker: sum of positions
     stagesScored: d.timeSums.length
-  })).filter(x=>x.team && x.stagesScored>0)
-    .sort((a,b)=> a.time!==b.time ? a.time-b.time : a.posScore-b.posScore);
+  })).filter(x=>x.team)
+    .sort((a,b)=>{
+      if(a.stagesScored>0 && b.stagesScored===0) return -1;
+      if(a.stagesScored===0 && b.stagesScored>0) return 1;
+      if(a.stagesScored===0 && b.stagesScored===0) return 0;
+      return a.time!==b.time ? a.time-b.time : a.posScore-b.posScore;
+    });
 
   return{
     points:   toStandings(pts,riderMap,true),
@@ -5419,8 +5506,12 @@ function computeClassifications(stageResults, riderList, officialTeamIds){
 function renderClassification(classif, type){
   if(type==='teams'){
     if(!classif.teams.length) return renderResultTable([],'Teams Classification — Not enough data',[]);
-    const leader=classif.teams[0].time;
-    const rows=classif.teams.map((x,i)=>{
+    // Separate teams with 3+ finishers (eligible) from those without
+    const eligible = classif.teams.filter(x=>x.stagesScored>0);
+    const ineligible = classif.teams.filter(x=>x.stagesScored===0);
+    if(!eligible.length){ renderResultTable([],'Teams Classification — No team with 3+ finishers',[],['#','Team','OVR','Gap']); return; }
+    const leader=eligible[0].time;
+    const rows=eligible.map((x,i)=>{
       const gap=Math.round(x.time-leader);
       const gapCell=i===0?'<span class="rgap-winner">— BEST —</span>':gap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':'<span style="font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">+'+fmtGap(gap)+'</span>';
       const tIcons=getLeaderIcons(x.team.name,true);
@@ -5430,6 +5521,16 @@ function renderClassification(classif, type){
         <td class="ravg">${teamAvg(x.team).toFixed(1)}</td>
         <td>${gapCell}</td>
       </tr>`;
+    });
+    // Ineligible teams (<3 finishers) at bottom without time
+    ineligible.forEach(x=>{
+      const tIcons=getLeaderIcons(x.team.name,true);
+      rows.push(`<tr style="opacity:.5">
+        <td><span style="font-size:.65rem;color:var(--muted)">—</span></td>
+        <td class="rteam-cell">${flagImg(x.team.country,12)} <span class="rteam">${x.team.name}</span>${tIcons}</td>
+        <td class="ravg">${teamAvg(x.team).toFixed(1)}</td>
+        <td><span style="font-size:.68rem;color:var(--muted)">< 3 finishers</span></td>
+      </tr>`);
     });
     renderResultTable(rows,'Teams Classification — Best 3 finishing positions',[],['#','Team','OVR','Gap']);
     return;
