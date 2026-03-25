@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.5</title>
+<title>CycleSim v12.6</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.5</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.6</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -353,7 +353,7 @@ tbody td{padding:6px 10px}
   <div class="toolbar">
     <span style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--red)">⚠ Assign Native Free Agents</span>
     <span class="pill" id="nfa-tab-count" style="color:var(--red);border-color:rgba(232,64,64,.3);background:rgba(232,64,64,.08)">—</span>
-    <span style="font-size:.82rem;color:var(--muted)">Drag a rider onto a team, or click rider → click team</span>
+    <input type="text" class="search-input" id="nfa-search" placeholder="Search riders…" oninput="renderNativeFA()" style="max-width:200px"><span style="font-size:.82rem;color:var(--muted)">Click a rider to select, then click a team to assign</span>
     <button class="btn btn-green btn-sm" onclick="autoAssignTriples()">⚡ Auto-assign groups of 3</button>
     <button class="btn btn-ghost btn-sm" onclick="showTab('teams')">← Back to Teams</button>
   </div>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.5';
+const CACHE_VERSION = '12.6';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1368,33 +1368,38 @@ function renderNativeFA(){
   nfaRiderIndex = [...remaining];
 
   const riderEl = document.getElementById('nfa-tab-riders');
-  if(!riderEl) return;
+  const teamEl  = document.getElementById('nfa-tab-teams');
+  if(!riderEl || !teamEl) return;
 
   if(!remaining.length){
-    riderEl.innerHTML = '<div style="padding:24px;color:var(--green);text-align:center">All native free agents assigned!</div>';
-    const teamEl2 = document.getElementById('nfa-tab-teams');
-    if(teamEl2) teamEl2.innerHTML = '';
+    riderEl.innerHTML = '<div style="padding:24px;color:var(--green);text-align:center;font-size:.88rem">✓ All native free agents assigned!</div>';
+    teamEl.innerHTML = '';
     return;
   }
 
-  // Build rider HTML sorted: continent → region → country (alpha) → name (alpha)
+  const q = (document.getElementById('nfa-search')?.value||'').toLowerCase();
   const contOrder = Object.keys(CONTINENTS).concat(['Other']);
+
+  // Enrich + sort riders
   const enriched = remaining.map((name, idx) => {
-    let r = allRiders.find(x => x.name === name) || allRiders.find(x => x.name.trim() === name.trim());
+    const r = allRiders.find(x => x.name === name) || allRiders.find(x => x.name.trim() === name.trim());
     const country = r ? r.country : '?';
-    const avg = r ? r.avg : 0;
-    return { name, idx, r, country, avg,
+    return { name, idx, r, country, avg: r ? r.avg : 0,
       cont: r ? getContinent(r.country) : 'Other',
       reg:  r ? getRegionLabel(r.country) : 'Other' };
-  });
-  enriched.sort((a,b) => {
-    const ci = contOrder.indexOf(a.cont) - contOrder.indexOf(b.cont); if(ci) return ci;
-    const ri = a.reg.localeCompare(b.reg); if(ri) return ri;
-    const coi = a.country.localeCompare(b.country); if(coi) return coi;
-    return a.name.localeCompare(b.name);
-  });
-  let rHtml = '', lastCont = null, lastReg = null, lastCountry = null;
-  enriched.forEach(({ name, idx, country, avg, cont, reg }) => {
+  }).filter(x => !q || x.name.toLowerCase().includes(q) || x.country.toLowerCase().includes(q))
+    .sort((a,b) => {
+      const ci = contOrder.indexOf(a.cont) - contOrder.indexOf(b.cont); if(ci) return ci;
+      const ri = a.reg.localeCompare(b.reg); if(ri) return ri;
+      const coi = a.country.localeCompare(b.country); if(coi) return coi;
+      return a.name.localeCompare(b.name);
+    });
+
+  // ── LEFT: riders list
+  let rHtml = '<div style="padding:5px 12px;font-family:Barlow Condensed,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border)">Click to select' + (q ? ' · filtered: '+enriched.length : ' · '+remaining.length+' unassigned') + '</div>';
+  let lastCont = null, lastReg = null, lastCountry = null;
+
+  enriched.forEach(({name, idx, country, avg, cont, reg}) => {
     if(cont !== lastCont){
       rHtml += '<div class="nfa-continent-header">' + cont + '</div>';
       lastCont = cont; lastReg = null; lastCountry = null;
@@ -1408,72 +1413,74 @@ function renderNativeFA(){
       lastCountry = country;
     }
     const sel = selectedNFA === name;
-    rHtml += '<div class="nfa-rider-row' + (sel ? ' nfa-selected' : '') + '" data-nfa-idx="' + idx + '" draggable="true"><span class="nfa-name" style="padding-left:12px">' + name + '</span><span class="nfa-avg">' + avg.toFixed(1) + '</span></div>';
+    rHtml += '<div class="nfa-rider-row' + (sel ? ' nfa-selected' : '') + '" data-nfa-name="' + name.replace(/"/g,'&quot;') + '" style="cursor:pointer;background:' + (sel ? 'rgba(245,196,0,.15)' : '') + '">' +
+      '<span class="nfa-name" style="padding-left:12px;font-weight:' + (sel?'700':'400') + ';color:' + (sel?'var(--accent)':'var(--text)') + '">' + name + '</span>' +
+      '<span class="nfa-avg">' + avg.toFixed(1) + '</span>' +
+      (sel ? '<span style="font-size:.7rem;color:var(--accent);margin-left:6px;flex-shrink:0">← select team</span>' : '') +
+      '</div>';
   });
+
+  if(!enriched.length) rHtml += '<div style="padding:20px;text-align:center;color:var(--muted);font-size:.82rem">No riders match search.</div>';
   riderEl.innerHTML = rHtml;
 
   riderEl.onclick = function(e){
     const row = e.target.closest('.nfa-rider-row');
     if(!row) return;
-    const name = nfaRiderIndex[+row.dataset.nfaIdx];
+    const name = row.dataset.nfaName;
     if(name){ selectedNFA = selectedNFA === name ? null : name; renderNativeFA(); }
   };
-  riderEl.ondragstart = function(e){
-    const row = e.target.closest('.nfa-rider-row');
-    if(!row) return;
-    selectedNFA = nfaRiderIndex[+row.dataset.nfaIdx];
-    e.dataTransfer.setData('text/plain', row.dataset.nfaIdx);
-  };
 
-  // Build team HTML sorted: continent → region → country (alpha) → name (alpha)
+  // ── RIGHT: teams with open slots
   const contOrderT = Object.keys(CONTINENTS).concat(['Other']);
-  const openTeams = teams.filter(t => t.riders.length < 4).map(t => ({
-    t,
-    cont: t.country ? getContinent(t.country) : 'Other',
-    reg:  t.country ? getRegionLabel(t.country) : 'Other',
-    country: t.country || 'Unassigned'
-  })).sort((a, b) => {
-    const ci = contOrderT.indexOf(a.cont) - contOrderT.indexOf(b.cont); if(ci) return ci;
-    const ri = a.reg.localeCompare(b.reg); if(ri) return ri;
-    const coi = a.country.localeCompare(b.country); if(coi) return coi;
-    return (a.t.name||'').localeCompare(b.t.name||'');
-  });
+  const openTeams = teams
+    .filter(t => t.riders.length < 4)
+    .map(t => ({t,
+      cont: t.country ? getContinent(t.country) : 'Other',
+      reg:  t.country ? getRegionLabel(t.country) : 'Other',
+      country: t.country || 'Unassigned'}))
+    .sort((a,b) => {
+      const ci = contOrderT.indexOf(a.cont) - contOrderT.indexOf(b.cont); if(ci) return ci;
+      const ri = a.reg.localeCompare(b.reg); if(ri) return ri;
+      const coi = a.country.localeCompare(b.country); if(coi) return coi;
+      return (a.t.name||'').localeCompare(b.t.name||'');
+    });
 
-  const teamEl = document.getElementById('nfa-tab-teams');
-  if(!teamEl) return;
+  const canAssign = !!selectedNFA;
+  let tHtml = '<div style="padding:5px 12px;font-family:Barlow Condensed,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border)">' +
+    (canAssign ? '<span style="color:var(--accent)">Assigning: ' + selectedNFA + '</span> · click a team' : openTeams.length + ' teams with open slots') + '</div>';
 
   if(!openTeams.length){
-    teamEl.innerHTML = '<div style="padding:24px;color:var(--green);text-align:center">All teams have 4 native riders!</div>';
-    return;
-  }
-
-  let tHtml = '', lastContT = null, lastRegT = null, lastCountryT = null;
-  openTeams.forEach(function({t, cont, reg, country}){
-    if(cont !== lastContT){
-      tHtml += '<div class="nfa-continent-header">' + cont + '</div>';
-      lastContT = cont; lastRegT = null; lastCountryT = null;
-    }
-    if(reg !== lastRegT){
-      tHtml += '<div class="nfa-region-header">' + reg.replace(/\./g,' ') + '</div>';
-      lastRegT = reg; lastCountryT = null;
-    }
-    if(country !== lastCountryT){
-      tHtml += '<div style="padding:2px 12px 2px 18px;font-size:.72rem;font-weight:700;color:var(--muted);background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:5px">' + flagImg(country,10) + ' ' + country + '</div>';
-      lastCountryT = country;
-    }
-    const open = 4 - t.riders.length;
-    let flags = '';
-    t.riders.forEach(function(n){
-      let r = allRiders.find(x => x.name === n) || allRiders.find(x => x.name.trim() === n.trim());
-      if(r) flags += flagImg(r.country, 11);
+    tHtml += '<div style="padding:24px;color:var(--green);text-align:center;font-size:.82rem">All teams have 4 native riders!</div>';
+  } else {
+    let lastContT = null, lastRegT = null, lastCountryT = null;
+    openTeams.forEach(({t, cont, reg, country}) => {
+      if(cont !== lastContT){
+        tHtml += '<div class="nfa-continent-header">' + cont + '</div>';
+        lastContT = cont; lastRegT = null; lastCountryT = null;
+      }
+      if(reg !== lastRegT){
+        tHtml += '<div class="nfa-region-header">' + reg.replace(/\./g,' ') + '</div>';
+        lastRegT = reg; lastCountryT = null;
+      }
+      if(country !== lastCountryT){
+        tHtml += '<div style="padding:2px 12px 2px 18px;font-size:.72rem;font-weight:700;color:var(--muted);background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:5px">' + flagImg(country,10) + ' ' + country + '</div>';
+        lastCountryT = country;
+      }
+      const open = 4 - t.riders.length;
+      let flags = t.riders.map(n => {
+        const r = allRiders.find(x => x.name === n);
+        return r ? flagImg(r.country, 11) : '';
+      }).join('');
+      const label = (t.name && t.name !== 'Empty') ? t.name : '#' + (t.id + 1);
+      const highlight = canAssign ? 'rgba(245,196,0,.06)' : '';
+      tHtml += '<div class="nfa-team-row' + (canAssign ? ' nfa-team-clickable' : '') + '" data-team-id="' + t.id + '" style="cursor:' + (canAssign?'pointer':'default') + ';background:' + highlight + '">' +
+        '<span style="display:flex;gap:2px;width:52px;flex-shrink:0;padding-left:8px">' + (flags || '<span style="color:var(--muted);font-size:.7rem">—</span>') + '</span>' +
+        '<span style="flex:1;font-family:Barlow Condensed,sans-serif;font-size:.92rem;font-weight:700;text-transform:uppercase;color:var(--text)">' + label + '</span>' +
+        '<span style="font-family:JetBrains Mono,monospace;font-size:.75rem;color:var(--red);font-weight:700;width:24px;text-align:right">+' + open + '</span>' +
+        (canAssign ? '<span style="font-size:.7rem;color:var(--accent);margin-left:8px;padding-right:8px">← assign</span>' : '') +
+        '</div>';
     });
-    const label = (t.name && t.name !== 'Empty') ? t.name : '#' + (t.id + 1);
-    tHtml += '<div class="nfa-team-row" data-team-id="' + t.id + '">' +
-      '<span style="display:flex;gap:2px;width:52px;flex-shrink:0;padding-left:8px">' + (flags || '<span style="color:var(--muted);font-size:.7rem">—</span>') + '</span>' +
-      '<span style="flex:1;font-family:\'Barlow Condensed\',sans-serif;font-size:.92rem;font-weight:700;text-transform:uppercase;color:var(--text)">' + label + '</span>' +
-      '<span style="font-family:JetBrains Mono,monospace;font-size:.75rem;color:var(--red);font-weight:700;width:24px;text-align:right">+' + open + '</span>' +
-      '</div>';
-  });
+  }
   teamEl.innerHTML = tHtml;
 
   teamEl.onclick = function(e){
@@ -1481,23 +1488,14 @@ function renderNativeFA(){
     if(!row || !selectedNFA) return;
     assignNFAToTeam(+row.dataset.teamId);
   };
-  teamEl.ondragover = function(e){
-    const row = e.target.closest('.nfa-team-row');
-    if(row){ e.preventDefault(); row.style.background = 'rgba(245,196,0,.12)'; }
-  };
-  teamEl.ondragleave = function(e){
-    const row = e.target.closest('.nfa-team-row');
-    if(row) row.style.background = '';
-  };
-  teamEl.ondrop = function(e){
-    e.preventDefault();
-    const row = e.target.closest('.nfa-team-row');
-    if(!row) return;
-    row.style.background = '';
-    const idx = +e.dataTransfer.getData('text/plain');
-    const name = nfaRiderIndex[idx];
-    if(name){ selectedNFA = name; assignNFAToTeam(+row.dataset.teamId); }
-  };
+
+  // Hover highlight when a rider is selected
+  if(canAssign){
+    teamEl.querySelectorAll('.nfa-team-row').forEach(el => {
+      el.onmouseenter = () => { el.style.background = 'rgba(245,196,0,.14)'; };
+      el.onmouseleave = () => { el.style.background = 'rgba(245,196,0,.06)'; };
+    });
+  }
 }
 
 
