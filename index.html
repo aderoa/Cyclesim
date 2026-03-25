@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.64</title>
+<title>CycleSim v12.65</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.64</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.65</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -487,7 +487,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.64';
+const CACHE_VERSION = '12.65';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3232,6 +3232,8 @@ function runNextStage(){
           gcResult:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999)),
           teamIds:[...(rs.officialTeamIds instanceof Set ? rs.officialTeamIds : [])]});
         seasonSim.completedToday = seasonSim.completedToday||[];
+        const _stageKey = rs._seasonRaceId+':'+rs.currentStageIndex;
+        if(!seasonSim.completedToday.includes(_stageKey)) seasonSim.completedToday.push(_stageKey);
         if(!seasonSim.completedToday.includes(rs._seasonRaceId)) seasonSim.completedToday.push(rs._seasonRaceId);
         delete seasonSim.activeRaces[rs._seasonRaceId];
         // Immediately flush completed event to dayLog so palmares/history update in real time
@@ -3253,6 +3255,10 @@ function runNextStage(){
           complete:false,
           teamIds:[...(rs.officialTeamIds instanceof Set ? rs.officialTeamIds : [])]};
         seasonSim.currentDayEvents.push(incompleteEv);
+        // Track this stage as completed today
+        seasonSim.completedToday = seasonSim.completedToday||[];
+        const _incKey = rs._seasonRaceId+':'+rs.currentStageIndex;
+        if(!seasonSim.completedToday.includes(_incKey)) seasonSim.completedToday.push(_incKey);
         // Flush incomplete stage to dayLog immediately for live palmares
         {
           const day=seasonSim.currentDay;
@@ -4491,12 +4497,13 @@ function startSeasonDay(){
     if(!seasonSim.activeRaces[race.id] && !doneToday.has(race.id)) queue.push(race.id);
   });
 
-  // Queue continuing stage races — only if they haven't already run their stage today
-  // expectedStageIndex = today - startDay (zero-based). If stageIndex > expected, already ran today (reload case).
+  // Queue continuing stage races — only if their NEXT stage hasn't run today yet
   Object.entries(seasonSim.activeRaces).forEach(([id, {race,rs}])=>{
     if(rs.currentStageIndex >= race.stages.length) return; // fully complete
-    const expectedStageIndex = day - (race.startDay||0);
-    if(rs.currentStageIndex > expectedStageIndex) return; // already ran today's stage (mid-day reload)
+    // Check completedToday: if this specific stageIndex already ran, skip
+    const stageKey = parseInt(id)+':'+(rs.currentStageIndex+1); // next stage to run
+    const currentKey = parseInt(id)+':'+rs.currentStageIndex;
+    if(doneToday.has(currentKey) || doneToday.has(stageKey)) return; // already ran today
     queue.push(parseInt(id));
   });
 
