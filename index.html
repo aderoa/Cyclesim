@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.18</title>
+<title>CycleSim v12.19</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.18</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.19</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.18';
+const CACHE_VERSION = '12.19';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2595,7 +2595,10 @@ function renderTeams(){
   document.getElementById('teams-grid').innerHTML=sorted.map(team=>{
     const avg=teamAvg(team);
     const color=strengthColor(avg);
-    const riderRows=team.riders.map((n,i)=>{
+    const riderRows=[...team.riders].sort((a,b)=>{
+      const ra=allRiders.find(x=>x.name===a), rb=allRiders.find(x=>x.name===b);
+      return (rb?.avg||0)-(ra?.avg||0);
+    }).map((n,i)=>{
       const r=allRiders.find(x=>x.name===n);
       return `<div class="team-rider-row"><span class="team-rider-num">${i+1}</span>${r?flagImg(r.country,11):''}<span class="team-rider-name">${n}</span><span class="team-rider-ovr">${r?r.avg.toFixed(1):'-'}</span></div>`;
     }).join('');
@@ -3037,15 +3040,15 @@ function simulateRace(){
 // Continue race: simulate next stage
 function simulateNextStage(){
   if(raceState?._seasonRaceId!=null && seasonSim){
-    if(lastResults?.complete){
-      showFinishScreen(lastResults);
-      return;
-    }
-    // Multi-stage race: show GC after each stage before advancing
+    // Multi-stage race: show GC after each stage (including final) before advancing
     if(lastResults?.totalStages>1 && lastResults?._pendingGCShow){
       lastResults._pendingGCShow=false;
       switchResultTab('gc');
       renderResults(); // update button text
+      return;
+    }
+    if(lastResults?.complete){
+      showFinishScreen(lastResults);
       return;
     }
     advanceSeasonQueue();
@@ -3110,8 +3113,8 @@ function runNextStage(){
     awardRacePoints(calSelectedRace, lastResults);
   }
   activeResultTab='stage-'+(rs.stageResults.length-1);
-  // Flag that we want to show GC after this stage result (multi-stage races only)
-  if(rs._seasonRaceId!=null && stages.length>1 && !lastResults.complete){
+  // Flag that we want to show GC after this stage result (multi-stage races only, including final)
+  if(rs._seasonRaceId!=null && stages.length>1){
     lastResults._pendingGCShow=true;
   }
 
@@ -3522,12 +3525,6 @@ function confirmTransfers(){
   const day = seasonSim?.currentDay||0;
   const movesLog = [];
 
-  // Remove departing riders from their old teams
-  riders.forEach(({name, fromTeamId})=>{
-    const t=teams.find(x=>x.id===fromTeamId);
-    if(t){ t.riders=t.riders.filter(n=>n!==name); }
-  });
-
   // Record moves for history log
   Object.entries(pendingSlots).forEach(([teamId, slots])=>{
     slots.filter(Boolean).forEach(name=>{
@@ -3556,7 +3553,7 @@ function confirmTransfers(){
     });
   });
 
-  // Capture team avg changes for recap (before rebuilding map)
+  // Capture BEFORE avg including departing rider (before any roster changes)
   const recapTeams = {};
   [...new Set([
     ...riders.map(r=>r.fromTeamId),
@@ -3564,6 +3561,12 @@ function confirmTransfers(){
   ])].filter(id=>id!=null).forEach(id=>{
     const t=teams.find(x=>x.id===id);
     if(t) recapTeams[id]={name:t.name, country:t.country, before:teamAvg(t)};
+  });
+
+  // Remove departing riders from their old teams
+  riders.forEach(({name, fromTeamId})=>{
+    const t=teams.find(x=>x.id===fromTeamId);
+    if(t){ t.riders=t.riders.filter(n=>n!==name); }
   });
 
   // Rebuild map + save
@@ -3578,8 +3581,10 @@ function confirmTransfers(){
     const diffStr=diff===0?'<span style="color:var(--muted)">—</span>':
       diff>0?'<span style="color:var(--green);font-weight:700">▲'+diff.toFixed(2)+'</span>':
              '<span style="color:var(--red);font-weight:700">▼'+Math.abs(diff).toFixed(2)+'</span>';
+    const tIcons=getLeaderIcons(info.name,true);
+    const tObj=teams.find(x=>x.id===+id);
     return '<tr>'+
-      '<td style="padding:5px 12px">'+flagImg(info.country,12)+' <span style="font-family:Barlow Condensed,sans-serif;font-weight:700;text-transform:uppercase">'+info.name+'</span></td>'+
+      '<td style="padding:5px 12px;cursor:pointer" '+(tObj?'data-team-palmares="'+tObj.id+'"':'')+'>'+flagImg(info.country,12)+' <span style="font-family:Barlow Condensed,sans-serif;font-weight:700;text-transform:uppercase">'+info.name+'</span>'+tIcons+'</td>'+
       '<td style="padding:5px 12px;font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">'+info.before.toFixed(2)+'</td>'+
       '<td style="padding:5px 12px;font-family:JetBrains Mono,monospace;font-size:.78rem">'+after.toFixed(2)+'</td>'+
       '<td style="padding:5px 12px;text-align:center">'+diffStr+'</td>'+
@@ -3607,15 +3612,17 @@ function confirmTransfers(){
       (movesLog.length?
         '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px">'+
         '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Transfers</div>'+
-        movesLog.map(m=>
-          '<div style="display:flex;align-items:center;gap:8px;padding:5px 14px;border-bottom:1px solid var(--border);font-size:.82rem">'+
-          flagImg(m.country,11)+' <span style="flex:1;font-weight:600">'+m.riderName+'</span>'+
-          '<span style="color:var(--red);font-size:.72rem">'+m.fromTeam+'</span>'+
+        movesLog.map(m=>{
+          const fromTeamObj=teams.find(t=>t.name===m.fromTeam);
+          const toTeamObj=teams.find(t=>t.name===m.toTeam);
+          return '<div style="display:flex;align-items:center;gap:8px;padding:5px 14px;border-bottom:1px solid var(--border);font-size:.82rem">'+
+          flagImg(m.country,11)+' <span style="flex:1;font-weight:600;cursor:pointer" data-rider-palmares="'+m.riderName.replace(/"/g,'&quot;')+'">'+m.riderName+'</span>'+
+          '<span style="color:var(--red);font-size:.72rem;cursor:pointer" '+(fromTeamObj?'data-team-palmares="'+fromTeamObj.id+'"':'')+'>'+m.fromTeam+'</span>'+
           '<span style="color:var(--muted);font-size:.8rem;padding:0 4px">→</span>'+
-          '<span style="color:var(--green);font-size:.72rem">'+m.toTeam+'</span>'+
+          '<span style="color:var(--green);font-size:.72rem;cursor:pointer" '+(toTeamObj?'data-team-palmares="'+toTeamObj.id+'"':'')+'>'+m.toTeam+'</span>'+
           '<span style="font-family:JetBrains Mono,monospace;font-size:.7rem;color:var(--muted);margin-left:6px">'+m.avg.toFixed(1)+'</span>'+
-          '</div>'
-        ).join('')+
+          '</div>';
+        }).join('')+
         '</div>' : '')+
       // Team recap
       (recapRows?
@@ -3630,6 +3637,13 @@ function confirmTransfers(){
         '</tr></thead><tbody>'+recapRows+'</tbody></table>'+
         '</div>' : '')+
       '</div>';
+  // Event delegation for palmares links in recap
+  wrap.onclick = e => {
+    const rr = e.target.closest('[data-rider-palmares]');
+    if(rr){ showRiderPalmares(rr.dataset.riderPalmares); return; }
+    const tr = e.target.closest('[data-team-palmares]');
+    if(tr){ showTeamPalmares(+tr.dataset.teamPalmares); }
+  };
   } else {
     showTab('calendar');
     renderSeasonPanel();
@@ -4130,7 +4144,8 @@ function renderSeasonTeamPicker(){
     });
   }
 
-  const filtered = teams.filter(t=>t.riders.length>0&&(!q||t.name.toLowerCase().includes(q)||t.country.toLowerCase().includes(q)));
+  const filtered = teams.filter(t=>t.riders.length>0&&(!q||t.name.toLowerCase().includes(q)||t.country.toLowerCase().includes(q)))
+    .sort((a,b)=>teamAvg(b)-teamAvg(a));
   grid.innerHTML = filtered.map(t=>{
     const sel = selectedTeams.has(t.id);
     const busy = busySet.has(t.id);
@@ -4596,6 +4611,18 @@ function getRiderPalmares(riderName){
       }
     });
   });
+  // Also include current in-progress race (live stage results)
+  if(raceState && raceState.stageResults && raceState.raceName){
+    const myTeamId=riderTeamMap[riderName];
+    const isInRace=raceState.riderList?.some(r=>r.name===riderName);
+    if(isInRace){
+      racesSeen.add('current');
+      raceState.stageResults.forEach((sr,si)=>{
+        const w=sr.result?.[0];
+        if(w&&w.rider.name===riderName) pal.stageWins.push({race:raceState.raceName,stage:sr.stage.name,terrain:sr.stage.terrain,cat:calSelectedRace?.category||'',date:'(live)'});
+      });
+    }
+  }
   pal.totalRaces=racesSeen.size;
   return pal;
 }
@@ -4622,6 +4649,17 @@ function getTeamPalmares(teamId){
       }
     });
   });
+  // Also live race data
+  if(raceState && raceState.stageResults && raceState.raceName){
+    const isTeamInRace=raceState.officialTeamIds&&[...(raceState.officialTeamIds||[])].includes(teamId);
+    if(isTeamInRace){
+      racesSeen.add('current');
+      raceState.stageResults.forEach(sr=>{
+        const w=sr.result?.[0];
+        if(w&&riderTeamMap[w.rider.name]===teamId) pal.stageWins.push({rider:w.rider.name,race:raceState.raceName,stage:sr.stage.name,terrain:sr.stage.terrain,cat:calSelectedRace?.category||'',date:'(live)'});
+      });
+    }
+  }
   pal.raceCounts=racesSeen.size;
   return pal;
 }
