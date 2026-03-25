@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.40</title>
+<title>CycleSim v12.41</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.40</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.41</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.40';
+const CACHE_VERSION = '12.41';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3174,7 +3174,7 @@ function runNextStage(){
           stageWinner:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999))[0]?.rider?.name||'—',complete:true,
           gcLeader:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999))[0]?.rider?.name||null,
           gcResult:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999)),
-          teamIds:[...(rs.officialTeamIds||[])]});
+          teamIds:[...(rs.officialTeamIds instanceof Set ? rs.officialTeamIds : [])]});
         delete seasonSim.activeRaces[rs._seasonRaceId];
       } else {
         seasonSim.currentDayEvents = seasonSim.currentDayEvents||[];
@@ -3182,7 +3182,7 @@ function runNextStage(){
           country:race.country,stageNum:rs.currentStageIndex,totalStages:race.stages.length,
           stageWinner:lastResults.stageResults?.[lastResults.stageResults.length-1]?.result?.[0]?.rider?.name||'—',
           complete:false,
-          teamIds:[...(rs.officialTeamIds||[])]});
+          teamIds:[...(rs.officialTeamIds instanceof Set ? rs.officialTeamIds : [])]});
       }
       saveSeasonState();
     }
@@ -4512,6 +4512,12 @@ function runSeasonQueueItem(){
 }
 
 function buildRaceStateFromSeasonRS(race, rs, raceId){
+  // officialTeamIds serializes as plain object after JSON roundtrip — restore as Set
+  const restoredTeamIds = rs.officialTeamIds instanceof Set
+    ? rs.officialTeamIds
+    : new Set(Array.isArray(rs.officialTeamIds)
+        ? rs.officialTeamIds
+        : Object.keys(rs.officialTeamIds||{}).map(Number).filter(n=>!isNaN(n)));
   return {
     raceName: race.name,
     riderList: rs.riderList,
@@ -4523,7 +4529,7 @@ function buildRaceStateFromSeasonRS(race, rs, raceId){
     currentStageIndex: rs.currentStageIndex,
     raceVariance: rs.raceVariance,
     totalStages: race.stages.length,
-    officialTeamIds: rs.officialTeamIds,
+    officialTeamIds: restoredTeamIds,
     _seasonRaceId: raceId,
   };
 }
@@ -5289,7 +5295,8 @@ function getTeamPalmares(teamId){
   });
   // Also live race data
   if(raceState && raceState.stageResults && raceState.raceName){
-    const isTeamInRace=raceState.officialTeamIds&&[...(raceState.officialTeamIds||[])].includes(teamId);
+    const otiArr=raceState.officialTeamIds instanceof Set?[...raceState.officialTeamIds]:(Array.isArray(raceState.officialTeamIds)?raceState.officialTeamIds:[]);
+  const isTeamInRace=otiArr.includes(teamId);
     if(isTeamInRace){
       racesSeen.add('current');
       raceState.stageResults.forEach(sr=>{
@@ -5496,7 +5503,7 @@ function computeClassifications(stageResults, riderList, officialTeamIds){
 
   // Only track official teams
   const teamSet = officialTeamIds
-    ? new Set([...officialTeamIds])
+    ? new Set(officialTeamIds instanceof Set ? [...officialTeamIds] : Array.isArray(officialTeamIds) ? officialTeamIds : Object.keys(officialTeamIds).map(Number).filter(n=>!isNaN(n)))
     : new Set(riderList.filter(r=>!r._unofficial).map(r=>riderTeam[r.name]).filter(Boolean));
   teamSet.forEach(id=>{teamData[id]={timeSums:[], posSums:[]};});
 
