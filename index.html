@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.51</title>
+<title>CycleSim v12.53</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.51</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.53</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -486,7 +486,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.51';
+const CACHE_VERSION = '12.53';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3196,9 +3196,12 @@ function runNextStage(){
         }
       } else {
         seasonSim.currentDayEvents = seasonSim.currentDayEvents||[];
+        const _lastSR=lastResults.stageResults?.[lastResults.stageResults.length-1];
         const incompleteEv={raceId:rs._seasonRaceId,raceName:race.name,category:race.category||'',
           country:race.country,stageNum:rs.currentStageIndex,totalStages:race.stages.length,
-          stageWinner:lastResults.stageResults?.[lastResults.stageResults.length-1]?.result?.[0]?.rider?.name||'—',
+          stageName:_lastSR?.stage?.name||'',
+          terrain:_lastSR?.stage?.terrain||'',
+          stageWinner:_lastSR?.result?.[0]?.rider?.name||'—',
           complete:false,
           teamIds:[...(rs.officialTeamIds instanceof Set ? rs.officialTeamIds : [])]};
         seasonSim.currentDayEvents.push(incompleteEv);
@@ -5349,9 +5352,10 @@ function getRiderPalmares(riderName){
       if(!inViaTeam&&!inViaGC&&!isNC) return;
       racesSeen.add(ev.raceId||(ev.raceName+d.day));
       const is1day = ev.totalStages===1 || (!ev.totalStages && ev.stageNum===1 && ev.complete);
-      if(ev.stageWinner===riderName && !is1day){
+      // Only count stageWinner as stage win for non-complete stage events (mid-race stages)
+      // Complete multi-stage events: stageWinner = GC winner, not the last stage winner
+      if(ev.stageWinner===riderName && !is1day && !ev.complete){
         // Multi-stage races: add stage win (but deduplicate)
-        const swKey=ev.raceName+'|'+(ev.stageName||ev.stageNum);
         if(!pal.stageWins.find(w=>w.race===ev.raceName&&w.stage===(ev.stageName||ev.stageNum)))
           pal.stageWins.push({race:ev.raceName,stage:ev.stageName||('Stage '+ev.stageNum),terrain:ev.terrain,cat:ev.category,date:d.date,yr:calYr,day:d.day});
       }
@@ -5373,12 +5377,13 @@ function getRiderPalmares(riderName){
     if(isInRace){
       racesSeen.add('current');
       const isLive1day = raceState.totalStages===1;
-      raceState.stageResults.forEach(sr=>{
+      raceState.stageResults.forEach((sr,si)=>{
         const w=sr.result?.[0];
         if(w&&w.rider.name===riderName&&!isLive1day){
-          const sk=raceState.raceName+'|'+sr.stage.name;
-          if(!pal.stageWins.find(x=>x.race===raceState.raceName&&x.stage===sr.stage.name))
-            pal.stageWins.push({race:raceState.raceName,stage:sr.stage.name,terrain:sr.stage.terrain,cat:calSelectedRace?.category||'',date:'(live)',yr:getSeasonYear(),day:99999});
+          if(!pal.stageWins.find(x=>x.race===raceState.raceName&&x.stage===sr.stage.name)){
+            const stageDay=(calSelectedRace?.startDay??seasonSim?.currentDay??0)+si;
+            pal.stageWins.push({race:raceState.raceName,stage:sr.stage.name,terrain:sr.stage.terrain,cat:calSelectedRace?.category||'',date:fmtDate(stageDay),yr:getSeasonYear(),day:stageDay});
+          }
         }
       });
     }
@@ -5411,7 +5416,7 @@ function getTeamPalmares(teamId){
       } else return;
       racesSeen.add(ev.raceId||(ev.raceName+d.day));
       const is1day2=ev.totalStages===1||(!ev.totalStages&&ev.stageNum===1&&ev.complete);
-      if(ev.stageWinner&&!is1day2){
+      if(ev.stageWinner&&!is1day2&&!ev.complete){
         const tid2=riderTeamMap[ev.stageWinner];
         if(tid2===teamId&&!pal.stageWins.find(w=>w.race===ev.raceName&&w.stage===(ev.stageName||ev.stageNum)))
           pal.stageWins.push({rider:ev.stageWinner,race:ev.raceName,stage:ev.stageName||('Stage '+ev.stageNum),terrain:ev.terrain,cat:ev.category,date:d.date,yr:calYr,day:d.day});
@@ -5434,10 +5439,11 @@ function getTeamPalmares(teamId){
       // Only add stage wins not already in dayLog (avoid duplicates for earlier stages)
       const isLiveTeam1day=raceState.totalStages===1;
       const inLog=new Set(pal.stageWins.map(w=>w.race+'|'+w.stage));
-      if(!isLiveTeam1day) raceState.stageResults.forEach(sr=>{
+      if(!isLiveTeam1day) raceState.stageResults.forEach((sr,si)=>{
         const w=sr.result?.[0];
         if(w&&riderTeamMap[w.rider.name]===teamId&&!inLog.has(raceState.raceName+'|'+sr.stage.name)){
-          pal.stageWins.push({rider:w.rider.name,race:raceState.raceName,stage:sr.stage.name,terrain:sr.stage.terrain,cat:calSelectedRace?.category||'',date:'(live)',yr:getSeasonYear(),day:99999});
+          const stageDay2=(calSelectedRace?.startDay??seasonSim?.currentDay??0)+si;
+          pal.stageWins.push({rider:w.rider.name,race:raceState.raceName,stage:sr.stage.name,terrain:sr.stage.terrain,cat:calSelectedRace?.category||'',date:fmtDate(stageDay2),yr:getSeasonYear(),day:stageDay2});
         }
       });
     }
