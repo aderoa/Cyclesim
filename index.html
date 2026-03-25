@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.73</title>
+<title>CycleSim v12.74</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.73</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.74</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -487,7 +487,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.73';
+const CACHE_VERSION = '12.74';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2639,6 +2639,34 @@ function populateCountryFilters(){
   document.getElementById('race-country-filter').innerHTML=opts;
 }
 
+
+function editTeamName(teamId){
+  const team = teams.find(t=>t.id===teamId);
+  if(!team) return;
+  const span = document.querySelector(`#tcard-${teamId} .team-name-text`);
+  if(!span) return;
+  const current = team.name||'';
+  const input = document.createElement('input');
+  input.type='text';
+  input.value=current;
+  input.className='rating-input';
+  input.style.cssText='font-family:Barlow Condensed,sans-serif;font-size:1rem;font-weight:800;text-transform:uppercase;width:100%;background:var(--surface);border:1px solid var(--accent);border-radius:4px;padding:2px 6px;color:var(--text)';
+  span.replaceWith(input);
+  input.focus(); input.select();
+  const commit = ()=>{
+    const val = input.value.trim();
+    if(val && val !== current){
+      team.name = val;
+      saveTeams();
+    }
+    renderTeams();
+  };
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Enter') { e.preventDefault(); commit(); }
+    if(e.key==='Escape') renderTeams();
+  });
+}
 function renderTeams(){
   if(!teams.length){
     document.getElementById('teams-count-pill').textContent='—';
@@ -2672,7 +2700,7 @@ function renderTeams(){
     return `<div class="team-card" id="tcard-${team.id}" style="border-left-color:${color}">
         <div class="team-card-head">
           <span class="team-flag">${team.country?flagImg(team.country,13):'🏳️'}</span>
-          <span class="team-name-text">${team.name||'Team #'+(team.id+1)}</span>
+          <span class="team-name-text" style="cursor:pointer" title="Click to rename" onclick="editTeamName(${team.id})">${team.name||'Team #'+(team.id+1)}</span>
           <span class="team-avg-pill">${team.riders.length ? avg.toFixed(1) : '—'}</span>
         </div>
         <div class="team-country-text">${team.country||'Unassigned'}</div>
