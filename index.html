@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.20</title>
+<title>CycleSim v12.23</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.20</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.23</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -431,7 +431,7 @@ tbody td{padding:6px 10px}
 <div id="tab-calendar" class="tab-content">
   <div class="toolbar">
     <button class="btn btn-accent" onclick="generateCalendar()" id="btn-gen-calendar">⚡ Generate Calendar</button>
-    <button class="btn btn-accent" id="btn-start-season" onclick="initSeason()" style="display:none">🏁 Start Season</button>
+    <button class="btn btn-accent" id="btn-start-season" onclick="initSeason()" style="display:none">🏁 Start Season</button><button class="btn btn-ghost btn-sm" id="btn-start-champs" onclick="initSeason(349)" style="display:none" title="Skip to Championship Week (Day 349)">🏅 Test Champs</button>
     <input type="text" class="search-input" id="cal-search" placeholder="Search races…" oninput="renderCalendar()" style="max-width:200px">
     <select class="form-select" id="cal-filter" onchange="calFilter=this.value;renderCalendar()">
       <option value="all">All races</option>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.21';
+const CACHE_VERSION = '12.24';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1989,6 +1989,7 @@ function randDist(terrain){
 // ── DATE SYSTEM ─────────────────────────────────────────────────
 const SEASON_START = new Date(2026,0,1);
 const SEASON_END   = new Date(2026,11,15);
+function getSeasonYear(){ return 2025 + (seasonSim?.year || 1); }
 const FIXED_DATES = {
   "Milano-San Remo":        82,
   "Tour of Flanders":       95,
@@ -2001,7 +2002,8 @@ const FIXED_DATES = {
 };
 function raceStartDay(race){ return race.startDay; }
 function dayToDate(day){
-  const d=new Date(2026,0,1); d.setDate(d.getDate()+day); return d;
+  const yr=getSeasonYear();
+  const d=new Date(yr,0,1); d.setDate(d.getDate()+day); return d;
 }
 function fmtDate(day){
   return dayToDate(day).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
@@ -2009,8 +2011,9 @@ function fmtDate(day){
 function raceDateStr(race){
   if(race.startDay==null) return '';
   const s=fmtDate(race.startDay);
-  if(race.stages.length===1) return s+' 2026';
-  return s+' – '+fmtDate(race.startDay+race.stages.length-1)+' 2026';
+  const yr=getSeasonYear();
+  if(race.stages.length===1) return s+' '+yr;
+  return s+' – '+fmtDate(race.startDay+race.stages.length-1)+' '+yr;
 }
 function assignRaceDates(cal){
   // Fixed races get their real-life day
@@ -3048,6 +3051,13 @@ function simulateNextStage(){
       return;
     }
     if(lastResults?.complete){
+      // World championship: advance day and continue after viewing result
+      if(raceState?._worldChampType){
+        renderSeasonPanel();
+        renderCalendar();
+        startSeasonDay();
+        return;
+      }
       showFinishScreen(lastResults);
       return;
     }
@@ -3111,6 +3121,12 @@ function runNextStage(){
   // Award UCI points on race completion
   if(rs.currentStageIndex>=stages.length && calSelectedRace){
     awardRacePoints(calSelectedRace, lastResults);
+  }
+  // World championship completion hook
+  if(rs._worldChampType && rs.currentStageIndex>=stages.length){
+    const wcType = rs._worldChampType;
+    const wcWinner = lastResults.gcResult?.[0]?.rider?.name||null;
+    finishWorldChamp(wcType, wcWinner, lastResults.gcResult);
   }
   activeResultTab='stage-'+(rs.stageResults.length-1);
   // Flag that we want to show GC after this stage result (multi-stage races only, including final)
@@ -3604,7 +3620,7 @@ function confirmTransfers(){
       '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">'+
         '<div>'+
           '<div style="font-family:Barlow Condensed,sans-serif;font-size:1.8rem;font-weight:800;color:var(--accent)">💼 Transfer Window</div>'+
-          '<div style="font-size:.82rem;color:var(--muted)">'+fmtDate(day)+' 2026 · '+(movesLog.length)+' transfer'+(movesLog.length!==1?'s':'')+'</div>'+
+          '<div style="font-size:.82rem;color:var(--muted)">'+fmtDate(day)+' '+getSeasonYear()+' · '+(movesLog.length)+' transfer'+(movesLog.length!==1?'s':'')+'</div>'+
         '</div>'+
         '<button class="btn btn-accent" style="margin-left:auto" onclick="showTab(\'calendar\');renderSeasonPanel();renderCalendar()">▶ Continue</button>'+
       '</div>'+
@@ -3790,43 +3806,27 @@ function buildSeasonGC(rs){
 }
 
 function awardCountryPoints(race, gcResult){
-  // countryPoints[raceCountry][riderName] += pts earned
-  const cat = race.category;
-  if(!cat || !UCI_POINTS[cat] || !gcResult) return;
-  const table = UCI_POINTS[cat];
-  const isStageRace = !!table.gc;
-  const country = race.country;
-  if(!countryPoints[country]) countryPoints[country]={};
-  const ptsList = isStageRace ? table.gc : table.finish;
-  if(!ptsList) return;
-  gcResult.slice(0, ptsList.length).forEach((r,i)=>{
-    const name = r.rider?.name||r.name;
-    if(!name||!ptsList[i]) return;
-    countryPoints[country][name] = (countryPoints[country][name]||0) + ptsList[i];
-    // Also track team points per country
-    const tn = getRiderTeamName(name);
-    if(tn){
-      const teamKey = '__team__'+tn;
-      countryPoints[country][teamKey] = (countryPoints[country][teamKey]||0) + ptsList[i];
-    }
-  });
+  // No-op: country points are now handled inside awardRacePoints (contribution replacement system)
 }
 
 // ── SEASON INIT ─────────────────────────────────────────────────
-function initSeason(){
+function initSeason(startDay){
   if(!calendar.length){ alert('Generate a calendar first.'); return; }
   if(seasonSim && !confirm('Reset season and start over?')) return;
-  seasonSim = { currentDay:0, activeRaces:{}, dayLog:[] };
+  const day = startDay||0;
+  seasonSim = { currentDay:day, activeRaces:{}, dayLog:[], year:1 };
   countryPoints = {};
   uciPoints = {};
   teamUciPoints = {};
+  raceContributions = {};
+  allYearsLog = {};
+  championships = {national:{}, ttWorld:null, roadWorld:null};
   transferMarket = null;
   transferLog = [];
   saveUciPoints();
   saveSeasonState();
   saveTransferMarket();
   saveTransferLog();
-  // Jump straight to first race
   startSeasonDay();
 }
 
@@ -3834,12 +3834,263 @@ function initSeason(){
 // Season queue: races/stages to run today, processed one at a time through Race Builder
 // seasonSim.queue = [{raceId}] — populated when day starts
 
+
+// ── CHAMPION ICONS ───────────────────────────────────────────────
+// Red-framed icons for title holders (distinct from ranking leader icons)
+function champFrame(inner){
+  return '<span style="display:inline-block;border:1.5px solid var(--red);border-radius:3px;line-height:1;padding:0 1px;vertical-align:middle;margin-left:2px">'+inner+'</span>';
+}
+
+function getChampionIcons(riderName){
+  let icons='';
+  // Road world champion
+  if(championships.roadWorld===riderName) icons+=champFrame('🌐');
+  // TT world champion (different shade)
+  if(championships.ttWorld===riderName) icons+=champFrame('<span style="font-size:.75em">⏱️🌐</span>');
+  // National champion(s)
+  Object.entries(championships.national||{}).forEach(([country,winner])=>{
+    if(winner===riderName) icons+=champFrame(flagImg(country,11));
+  });
+  return icons;
+}
+
+// ── NATIONAL CHAMPIONSHIP SCHEDULE ──────────────────────────────
+function buildChampSchedule(){
+  // Assign each country with ≥10 riders a random day 349-358
+  const schedule = {}; // day → [country]
+  const allCountries = [...new Set(allRiders.map(r=>r.country))];
+  const eligible = allCountries.filter(c=>allRiders.filter(r=>r.country===c).length>=10);
+  eligible.forEach(country=>{
+    const day = 349 + Math.floor(Math.random()*10);
+    if(!schedule[day]) schedule[day]=[];
+    schedule[day].push(country);
+  });
+  return schedule;
+}
+
+function getOrBuildChampSchedule(){
+  if(!seasonSim) return {};
+  if(!seasonSim.champSchedule){
+    seasonSim.champSchedule = buildChampSchedule();
+    saveSeasonState();
+  }
+  return seasonSim.champSchedule;
+}
+
+// Simulate a national championship for one country — returns winner name
+function simNationalChamp(country){
+  const riders = allRiders.filter(r=>r.country===country)
+    .sort((a,b)=>b.avg-a.avg).slice(0,175);
+  if(!riders.length) return null;
+  const terrains = ['PRL','FLA','HIL','MM','MTN'];
+  const terrain = terrains[Math.floor(Math.random()*terrains.length)];
+  const dist = randDist(terrain);
+  const stage = {name:'National Championship '+country, terrain, distance:dist};
+  const fatigue = Object.fromEntries(riders.map(r=>[r.name,0]));
+  const gcTimes = Object.fromEntries(riders.map(r=>[r.name,0]));
+  const varRiders = riders.map(r=>applyVariance(r, makeVariance(riders,0.08), makeVariance(riders,0.05)));
+  const res = simulateStage(varRiders, stage, fatigue, gcTimes);
+  return { winner: res.result?.[0]?.rider?.name||null, terrain, dist, result: res.result?.slice(0,10)||[] };
+}
+
+// ── WORLD CHAMPIONSHIP RIDER SELECTION ──────────────────────────
+function buildWorldChampRiderList(sortAttr, maxPerCountry){
+  const counts = {};
+  const out = [];
+  // Sort all riders by attribute desc
+  const sorted = [...allRiders].sort((a,b)=>(b[sortAttr]||b.avg||0)-(a[sortAttr]||a.avg||0));
+  for(const r of sorted){
+    if((counts[r.country]||0)>=maxPerCountry) continue;
+    counts[r.country]=(counts[r.country]||0)+1;
+    out.push({...r});
+    if(out.length>=175) break;
+  }
+  return out;
+}
+
+// ── RUN NATIONAL CHAMPIONSHIPS DAY (batch simulate all countries) ──
+function runNationalChampionshipsDay(day, countries){
+  const results = [];
+  countries.forEach(country=>{
+    const res = simNationalChamp(country);
+    if(res && res.winner){
+      championships.national[country] = res.winner;
+      results.push({country, winner:res.winner, terrain:res.terrain, dist:res.dist, top10:res.result});
+    }
+  });
+  seasonSim.dayLog.push({day, date:fmtDate(day), events: results.map(r=>({
+    raceName:'National Championship '+r.country, category:'NC', country:r.country,
+    stageNum:1, totalStages:1, stageWinner:r.winner, complete:true
+  }))});
+  seasonSim.currentDay++;
+  saveSeasonState();
+  saveUciPoints();
+  showNationalChampsResults(day, results);
+}
+
+function showNationalChampsResults(day, results){
+  showTab('race');
+  const wrap = document.getElementById('race-setup-wrap');
+  if(!wrap){ renderSeasonPanel(); renderCalendar(); startSeasonDay(); return; }
+  const yr = getSeasonYear();
+  const rows = results.map(r=>{
+    const rd = allRiders.find(x=>x.name===r.winner);
+    const tid = riderTeamMap[r.winner];
+    const team = tid!=null?teams.find(t=>t.id===tid):null;
+    return '<tr style="border-bottom:1px solid var(--border)">'+
+      '<td style="padding:5px 12px">'+flagImg(r.country,13)+' <b style="font-family:Barlow Condensed,sans-serif">'+r.country+'</b></td>'+
+      '<td style="padding:5px 12px">'+champFrame(flagImg(r.country,11))+'&nbsp;'+(rd?flagImg(rd.country,11)+' ':'')+r.winner+'</td>'+
+      '<td style="padding:5px 12px"><span class="rteam">'+(team?team.name+getLeaderIcons(team.name,true):'—')+'</span></td>'+
+      '<td style="padding:5px 8px;font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+(rd?rd.avg.toFixed(1):'')+'</td>'+
+      '<td style="padding:5px 10px"><span class="tbadge tbadge-'+r.terrain+'" style="font-size:.65rem">'+r.terrain+'</span></td>'+
+      '</tr>';
+  }).join('');
+  wrap.innerHTML =
+    '<div style="max-width:900px;margin:0 auto;padding:14px 0">'+
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+      '<div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:2rem;font-weight:800;color:var(--accent);text-transform:uppercase">🏅 National Championships</div>'+
+        '<div style="font-size:.82rem;color:var(--muted)">'+fmtDate(day)+' '+yr+' · '+results.length+' title'+(results.length!==1?'s':'')+' awarded</div>'+
+      '</div>'+
+      '<button class="btn btn-accent" style="margin-left:auto" onclick="renderSeasonPanel();renderCalendar();startSeasonDay()">▶ Continue</button>'+
+    '</div>'+
+    '<table style="width:100%;border-collapse:collapse;font-size:.85rem;border:1px solid var(--border);border-radius:8px;overflow:hidden">'+
+    '<thead><tr style="background:var(--surface2)">'+
+      '<th style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Country</th>'+
+      '<th style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Champion</th>'+
+      '<th style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Team</th>'+
+      '<th style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">OVR</th>'+
+      '<th style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-size:.72rem;color:var(--muted);text-transform:uppercase">Stage</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table>'+
+    '</div>';
+}
+
+// ── RUN WORLD CHAMPIONSHIP (interactive) ──
+function runWorldChampionship(type){
+  showTab('race');
+  const wrap = document.getElementById('race-setup-wrap');
+  if(!wrap){ finishWorldChamp(type, null, []); return; }
+
+  const isTT = type==='tt';
+  const sortAttr = isTT ? 'TTR' : 'avg';
+  const terrain = isTT ? 'TTR' : (['FLA','HIL','MM','MTN'][Math.floor(Math.random()*4)]);
+  const dist = randDist(terrain);
+  const title = isTT ? '⏱️ TT World Championship' : '🌐 Road World Championship';
+  const yr = getSeasonYear();
+  const day = seasonSim.currentDay;
+
+  const riderList = buildWorldChampRiderList(sortAttr, 3);
+  const stage = {name: (isTT?'TT':'Road')+' World Championship', terrain, distance:dist};
+
+  // Build minimal raceState
+  raceState = {
+    raceName: title,
+    riderList,
+    fatigue: Object.fromEntries(riderList.map(r=>[r.name,0])),
+    gcTimes: Object.fromEntries(riderList.map(r=>[r.name,0])),
+    stageResults: [],
+    allAbandoned: [],
+    activeRiders: [...riderList],
+    currentStageIndex: 0,
+    raceVariance: makeVariance(riderList, 0.10),
+    totalStages: 1,
+    officialTeamIds: new Set([...new Set(riderList.map(r=>riderTeamMap[r.name]).filter(Boolean))]),
+    _worldChampType: type,
+  };
+  stages = [{id:0, name:stage.name, terrain, distance:dist}];
+  calSelectedRace = null;
+  lastResults = null;
+
+  // Show preview
+  const top5 = riderList.slice(0,5).map((r,i)=>{
+    const t=riderTeamMap[r.name]!=null?teams.find(x=>x.id===riderTeamMap[r.name]):null;
+    return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:.82rem">'+
+      (i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1)+'.') +' '+
+      flagImg(r.country,11)+' <span style="flex:1">'+r.name+'</span>'+
+      '<span style="font-size:.7rem;color:var(--muted)">'+(t?t.name:'')+'</span>'+
+      '<span style="font-family:JetBrains Mono,monospace;font-size:.7rem;color:var(--muted);margin-left:6px">'+(isTT?r.TTR:r.avg).toFixed(1)+'</span>'+
+      '</div>';
+  }).join('');
+
+  // Count countries represented
+  const countryCounts = {};
+  riderList.forEach(r=>{ countryCounts[r.country]=(countryCounts[r.country]||0)+1; });
+  const countryCount = Object.keys(countryCounts).length;
+
+  wrap.innerHTML =
+    '<div style="max-width:800px;margin:0 auto;padding:14px 0">'+
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+      '<div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:2rem;font-weight:800;color:var(--accent);text-transform:uppercase">'+title+'</div>'+
+        '<div style="font-size:.82rem;color:var(--muted)">'+fmtDate(day)+' '+yr+' · '+riderList.length+' riders · '+countryCount+' nations · <span class="tbadge tbadge-'+terrain+'">'+terrain+'</span> '+dist+'km</div>'+
+      '</div>'+
+      '<button class="btn btn-accent" style="margin-left:auto" onclick="runWorldChampRace()">▶ Race!</button>'+
+    '</div>'+
+    '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">'+
+    '<div style="padding:7px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">⭐ Top Favourites (by '+(isTT?'TTR':'OVR')+')</div>'+
+    top5+'</div></div>';
+}
+
+function runWorldChampRace(){
+  if(!raceState||!raceState._worldChampType) return;
+  runNextStage(); // normal stage simulation
+}
+
+// Called after the world champ stage result
+function finishWorldChamp(type, winner, gcResult){
+  if(!type) return;
+  if(winner){
+    if(type==='tt') championships.ttWorld=winner;
+    else championships.roadWorld=winner;
+  }
+  seasonSim.dayLog.push({day:seasonSim.currentDay, date:fmtDate(seasonSim.currentDay), events:[{
+    raceName:(type==='tt'?'TT':'Road')+' World Championship', category:'WC',
+    stageNum:1, totalStages:1, stageWinner:winner, complete:true, gcResult
+  }]});
+  seasonSim.currentDay++;
+  saveSeasonState();
+  saveUciPoints();
+}
+
 function startSeasonDay(){
   if(!seasonSim){ alert('Start season first.'); return; }
   if(transferMarket){ showTransferMarket(); return; }
-  if(seasonSim.currentDay > 348){ alert('Season complete!'); return; }
+  if(seasonSim.currentDay > 365){ alert('Season complete!'); return; }
 
   const day = seasonSim.currentDay;
+
+  // ── National Championships: days 349-358
+  if(day >= 349 && day <= 358){
+    const sched = getOrBuildChampSchedule();
+    const countries = sched[day]||[];
+    if(countries.length){
+      runNationalChampionshipsDay(day, countries);
+      return;
+    }
+    // Rest day — advance
+    seasonSim.dayLog.push({day, date:fmtDate(day), events:[]});
+    seasonSim.currentDay++; saveSeasonState(); renderSeasonPanel(); renderCalendar();
+    startSeasonDay(); return;
+  }
+
+  // ── TT World Championship: day 361
+  if(day === 361){
+    runWorldChampionship('tt');
+    return;
+  }
+
+  // ── Road World Championship: day 363
+  if(day === 363){
+    runWorldChampionship('road');
+    return;
+  }
+
+  // Days 359, 360, 362, 364, 365: rest days / buffer
+  if(day >= 349 && day <= 365){
+    seasonSim.dayLog.push({day, date:fmtDate(day), events:[]});
+    seasonSim.currentDay++; saveSeasonState(); renderSeasonPanel(); renderCalendar();
+    startSeasonDay(); return;
+  }
 
   // Build today's queue of race events
   const queue = [];
@@ -4014,7 +4265,7 @@ function showDayPreview(day, queue){
     '<div style="max-width:900px;margin:0 auto;padding:12px 0">' +
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">' +
       '<div>' +
-        '<div style="font-family:Barlow Condensed,sans-serif;font-size:2rem;font-weight:800;color:var(--accent)">' + fmtDate(day).toUpperCase() + ' 2026</div>' +
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:2rem;font-weight:800;color:var(--accent)">' + fmtDate(day).toUpperCase() + ' ' + getSeasonYear() + (day>=349&&day<=365?' <span style="font-size:.9rem;color:var(--muted)">Championship Season</span>':'') + '</div>' +
         '<div style="font-size:.82rem;color:var(--muted)">' + queue.length + ' race' + (queue.length!==1?'s':'') + ' today</div>' +
       '</div>' +
       '<div style="margin-left:auto;display:flex;gap:8px">' +
@@ -4246,7 +4497,7 @@ function finishSeasonDay(){
   saveUciPoints();
   checkTransferMarket();
   if(transferMarket){ renderSeasonPanel(); renderCalendar(); return; }
-  if(seasonSim.currentDay > 348){ renderSeasonPanel(); renderCalendar(); return; }
+  if(seasonSim.currentDay > 365){ renderSeasonPanel(); renderCalendar(); showSeasonEndScreen(); return; }
   // Auto-skip rest days and start next day with races
   startSeasonDay();
 }
@@ -4317,18 +4568,157 @@ function simulateSeasonWeek(){
 
 // ── COUNTRY RANKINGS ────────────────────────────────────────────
 
+
+function showSeasonEndScreen(){
+  const yr = seasonSim?.year || 1;
+  const calYear = 2025 + yr;
+  const wrap = document.getElementById('race-setup-wrap');
+  if(!wrap) return;
+  showTab('race');
+
+  const topRiders = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const topTeams  = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const riderRows = topRiders.map(([name,pts],i)=>{
+    const rd=allRiders.find(r=>r.name===name);
+    const t=riderTeamMap[name]!=null?teams.find(x=>x.id===riderTeamMap[name]):null;
+    return '<tr><td style="padding:5px 10px;color:var(--muted);font-size:.8rem">'+(i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1)+'</td>'+
+      '<td style="padding:5px 12px">'+(rd?flagImg(rd.country,12)+' ':'')+name+'</td>'+
+      '<td style="padding:5px 12px"><span class="rteam">'+(t?t.name:'—')+'</span></td>'+
+      '<td style="padding:5px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
+  }).join('');
+  const teamRows = topTeams.map(([name,pts],i)=>{
+    const t=teams.find(x=>x.name===name);
+    return '<tr><td style="padding:5px 10px;color:var(--muted);font-size:.8rem">'+(i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1)+'</td>'+
+      '<td style="padding:5px 12px">'+(t?flagImg(t.country,12)+' ':'')+name+'</td>'+
+      '<td style="padding:5px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
+  }).join('');
+
+  wrap.innerHTML =
+    '<div style="max-width:800px;margin:0 auto;padding:20px 0">'+
+    '<div style="text-align:center;margin-bottom:24px">'+
+      '<div style="font-size:3rem;margin-bottom:8px">🏆</div>'+
+      '<div style="font-family:Barlow Condensed,sans-serif;font-size:2.5rem;font-weight:800;color:var(--accent);text-transform:uppercase">Season '+yr+' Complete</div>'+
+      '<div style="color:var(--muted);font-size:.9rem;margin-top:4px">'+calYear+' — '+calendar.length+' races</div>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">'+
+      '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">'+
+        '<div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;color:var(--accent)">🌐 World Top Riders</div>'+
+        '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><tbody>'+riderRows+'</tbody></table></div>'+
+      '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">'+
+        '<div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.82rem;font-weight:700;text-transform:uppercase;color:var(--accent)">🏢 World Top Teams</div>'+
+        '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><tbody>'+teamRows+'</tbody></table></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:12px;justify-content:center">'+
+      '<button class="btn btn-accent" style="font-size:1rem;padding:10px 24px" onclick="startNewYear()">▶ Start Season '+(yr+1)+' ('+(calYear+1)+')</button>'+
+      '<button class="btn btn-ghost" onclick="showTab(\'calendar\');renderCalendar()">View Results</button>'+
+    '</div>'+
+    '</div>';
+}
+
+function startNewYear(){
+  if(!seasonSim) return;
+  if(!confirm('Start Season '+(seasonSim.year+1)+'? Same calendar + schedule. UCI points replace previous results for re-run races. Championships reset.')) return;
+
+  // Archive this year
+  // Archive champions and reset for new year
+  if(!allYearsLog[seasonSim.year]) allYearsLog[seasonSim.year] = {};
+  allYearsLog[seasonSim.year].championships = JSON.parse(JSON.stringify(championships));
+  // championships persist for icon display until next year's replacement
+  championships = {national:{}, ttWorld:null, roadWorld:null};
+  allYearsLog[seasonSim.year] = {
+    year: seasonSim.year,
+    calYear: 2025 + seasonSim.year,
+    dayLog: seasonSim.dayLog,
+    uciSnapshot: {...uciPoints},
+    teamSnapshot: {...teamUciPoints},
+    countrySnapshot: JSON.parse(JSON.stringify(countryPoints)),
+  };
+
+  // Start new year: reset day/log/activeRaces, increment year, keep everything else
+  const newYear = seasonSim.year + 1;
+  seasonSim = {
+    currentDay: 0,
+    activeRaces: {},
+    dayLog: [],
+    year: newYear,
+    champSchedule: null,
+    dayQueue: null,
+    dayQueueIndex: 0,
+    currentDayEvents: null,
+  };
+
+  // Keep uciPoints, teamUciPoints, countryPoints, raceContributions, teams, calendar
+  // Reset the calendar's "done" state by removing all dayLog references
+  saveSeasonState();
+  saveUciPoints();
+  renderSeasonPanel();
+  renderCalendar();
+  startSeasonDay();
+}
+
+
+function renderHistoryTab(){
+  const wrap = document.getElementById('history-wrap');
+  if(!wrap) return;
+  const years = Object.values(allYearsLog).sort((a,b)=>b.year-a.year);
+  if(!years.length){
+    wrap.innerHTML='<div class="empty-state"><div class="empty-icon">📅</div><div>No completed seasons yet. Finish a full season to see history here.</div></div>';
+    return;
+  }
+  const th='padding:7px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase';
+  let html='<div style="padding:8px 0">';
+  years.forEach(data=>{
+    const topRiders=Object.entries(data.uciSnapshot||{}).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const topTeams=Object.entries(data.teamSnapshot||{}).sort((a,b)=>b[1]-a[1]).slice(0,10);
+    const rRows=topRiders.map(([name,pts],i)=>{
+      const rd=allRiders.find(r=>r.name===name);
+      const t=teams.find(x=>x.name===getRiderTeamName(name));
+      return '<tr><td class="cell-rank">'+(i+1)+'</td>'+
+        '<td style="padding:6px 12px">'+(rd?flagImg(rd.country,12)+' ':'')+name+'</td>'+
+        '<td style="padding:6px 12px"><span class="rteam">'+(t?t.name:'—')+'</span></td>'+
+        '<td style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
+    }).join('');
+    const tRows=topTeams.map(([name,pts],i)=>{
+      const t=teams.find(x=>x.name===name);
+      return '<tr><td class="cell-rank">'+(i+1)+'</td>'+
+        '<td style="padding:6px 12px">'+(t?flagImg(t.country,12)+' ':'')+name+'</td>'+
+        '<td style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
+    }).join('');
+    html+=
+      '<div style="margin-bottom:24px;border:1px solid var(--border);border-radius:10px;overflow:hidden">'+
+      '<div style="padding:10px 16px;background:linear-gradient(90deg,rgba(245,196,0,.12),transparent);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">'+
+        '<span style="font-family:Barlow Condensed,sans-serif;font-size:1.4rem;font-weight:800;color:var(--accent)">Season '+data.year+'</span>'+
+        '<span style="font-size:.85rem;color:var(--muted)">'+data.calYear+'</span>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0">'+
+        '<div style="border-right:1px solid var(--border)">'+
+          '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">World Rider Rankings</div>'+
+          '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2)"><th style="'+th+'">Rider</th><th style="'+th+'">Team</th><th style="'+th+';text-align:right">Pts</th></tr></thead><tbody>'+rRows+'</tbody></table>'+
+        '</div>'+
+        '<div>'+
+          '<div style="padding:6px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--muted)">World Team Rankings</div>'+
+          '<table style="width:100%;border-collapse:collapse;font-size:.85rem"><thead><tr style="background:var(--surface2)"><th style="'+th+'">Team</th><th style="'+th+';text-align:right">Pts</th></tr></thead><tbody>'+tRows+'</tbody></table>'+
+        '</div>'+
+      '</div></div>';
+  });
+  html+='</div>';
+  wrap.innerHTML=html;
+}
 function renderSeasonPanel(){
   const panel = document.getElementById('season-panel');
   // Toggle start button in toolbar
   const startBtn = document.getElementById('btn-start-season');
   if(startBtn) startBtn.style.display = (!seasonSim && calendar.length) ? '' : 'none';
+  const testBtn = document.getElementById('btn-start-champs');
+  if(testBtn) testBtn.style.display = (!seasonSim && calendar.length) ? '' : 'none';
   if(!panel) return;
   if(!seasonSim){
     panel.innerHTML = '';
     return;
   }
-  const isComplete = seasonSim.currentDay > 348;
-  const dayDate = isComplete ? 'Season Complete' : fmtDate(seasonSim.currentDay)+' 2026';
+  const isComplete = seasonSim.currentDay > 365;
+  const yr=getSeasonYear();
+  const dayDate = isComplete ? 'Year '+seasonSim.year+' Complete — '+yr : fmtDate(seasonSim.currentDay)+' '+yr;
   const activeCount = Object.keys(seasonSim.activeRaces||{}).length;
   const inQueue = !!(seasonSim.dayQueue && seasonSim.dayQueueIndex < (seasonSim.dayQueue.length||0));
   let html = '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap">';
@@ -4488,14 +4878,23 @@ const UCI_POINTS = {
 // Persistent UCI points store: riderName → total points
 let uciPoints = {};
 let teamUciPoints = {}; // {teamName: totalPts}
+let raceContributions = {}; // {raceId: {riders:{name:pts}, teams:{name:pts}, country:{ctry:{key:pts}}}}
+let allYearsLog = {}; // {year: {dayLog, uciSnapshot, teamSnapshot}}
+let championships = { national:{}, ttWorld:null, roadWorld:null }; // {country:winnerName}, winner, winner
 
 function loadUciPoints(){
   try{ uciPoints = JSON.parse(localStorage.getItem('cyclesim_uci')||'{}'); } catch(e){ uciPoints={}; }
   try{ teamUciPoints = JSON.parse(localStorage.getItem('cyclesim_teamuci')||'{}'); } catch(e){ teamUciPoints={}; }
+  try{ raceContributions = JSON.parse(localStorage.getItem('cyclesim_racecontrib')||'{}'); } catch(e){ raceContributions={}; }
+  try{ allYearsLog = JSON.parse(localStorage.getItem('cyclesim_yearslog')||'{}'); } catch(e){ allYearsLog={}; }
+  try{ championships = JSON.parse(localStorage.getItem('cyclesim_champs')||'{"national":{},"ttWorld":null,"roadWorld":null}'); } catch(e){ championships={national:{},ttWorld:null,roadWorld:null}; }
 }
 function saveUciPoints(){
   localStorage.setItem('cyclesim_uci', JSON.stringify(uciPoints));
   localStorage.setItem('cyclesim_teamuci', JSON.stringify(teamUciPoints));
+  try{ localStorage.setItem('cyclesim_racecontrib', JSON.stringify(raceContributions)); }catch(e){}
+  try{ localStorage.setItem('cyclesim_yearslog', JSON.stringify(allYearsLog)); }catch(e){}
+  try{ localStorage.setItem('cyclesim_champs', JSON.stringify(championships)); }catch(e){}
 }
 function awardUciPoints(riderName, pts, teamName){
   if(!pts||pts<=0) return;
@@ -4507,69 +4906,69 @@ function getRiderTeamName(riderName){
   return tid!=null ? (teams.find(t=>t.id===tid)?.name||null) : null;
 }
 
-// Award points after a race completes
+// Award points — replaces previous year's contribution for same race
 function awardRacePoints(race, lastResults){
   const cat = race?.category;
   if(!cat || !UCI_POINTS[cat]) return;
   const table = UCI_POINTS[cat];
   const isStageRace = !!table.gc;
+  const raceId = race.id;
 
-  if(isStageRace){
-    // GC final standings
-    if(lastResults.gcResult && table.gc){
-      lastResults.gcResult.forEach((r,i)=>{
-        const pts = table.gc[i];
-        if(pts) awardUciPoints(r.rider.name, pts, getRiderTeamName(r.rider.name));
-      });
+  // Reverse previous contribution for this race if it exists (year-over-year replacement)
+  const prev = raceContributions[raceId];
+  if(prev){
+    Object.entries(prev.riders||{}).forEach(([n,p])=>{ uciPoints[n]=(uciPoints[n]||0)-p; if(uciPoints[n]<=0) delete uciPoints[n]; });
+    Object.entries(prev.teams||{}).forEach(([tn,p])=>{ teamUciPoints[tn]=(teamUciPoints[tn]||0)-p; if(teamUciPoints[tn]<=0) delete teamUciPoints[tn]; });
+    Object.entries(prev.country||{}).forEach(([ctry,entries])=>{
+      if(!countryPoints[ctry]) return;
+      Object.entries(entries).forEach(([k,p])=>{ countryPoints[ctry][k]=(countryPoints[ctry][k]||0)-p; if(countryPoints[ctry][k]<=0) delete countryPoints[ctry][k]; });
+    });
+  }
+
+  // Build new contribution
+  const contrib = {riders:{}, teams:{}, country:{}};
+  function give(name, pts, ctry){
+    if(!pts||pts<=0) return;
+    const tn = getRiderTeamName(name);
+    contrib.riders[name]=(contrib.riders[name]||0)+pts;
+    if(tn) contrib.teams[tn]=(contrib.teams[tn]||0)+pts;
+    awardUciPoints(name, pts, tn);
+    if(ctry){
+      if(!contrib.country[ctry]) contrib.country[ctry]={};
+      contrib.country[ctry][name]=(contrib.country[ctry][name]||0)+pts;
+      if(!countryPoints[ctry]) countryPoints[ctry]={};
+      countryPoints[ctry][name]=(countryPoints[ctry][name]||0)+pts;
+      if(tn){
+        const tk='__team__'+tn;
+        contrib.country[ctry][tk]=(contrib.country[ctry][tk]||0)+pts;
+        countryPoints[ctry][tk]=(countryPoints[ctry][tk]||0)+pts;
+      }
     }
-    // Stage wins (each stage top finishers)
+  }
+
+  const ctry = race.country;
+  if(isStageRace){
+    if(lastResults.gcResult && table.gc)
+      lastResults.gcResult.forEach((r,i)=>{ if(table.gc[i]) give(r.rider.name, table.gc[i], ctry); });
     lastResults.stageResults.forEach(({stage,result})=>{
       if(!result||!result.length) return;
       const isTT = stage.terrain==='TTR'||stage.terrain==='PRL';
-      const stagePts = isTT ? table.tt : table.stage;
-      if(!stagePts) return;
-      result.slice(0, stagePts.length).forEach((r,i)=>{
-        if(stagePts[i]) awardUciPoints(r.rider.name, stagePts[i], getRiderTeamName(r.rider.name));
-      });
+      const stagePts = isTT ? table.tt : table.stage; if(!stagePts) return;
+      result.slice(0, stagePts.length).forEach((r,i)=>{ if(stagePts[i]) give(r.rider.name, stagePts[i], null); });
     });
-    // Secondary classifications (points, mountains, sprints, teams)
     if(lastResults.stageResults.length > 0){
       const classif = computeClassifications(lastResults.stageResults, lastResults.riderList||[], raceState?.officialTeamIds);
-      const secPts = {
-        'GT.A':  {points:20, mountains:25, sprints:10},
-        'GT.B':  {points:15, mountains:20, sprints:8},
-        '2.UWT': {points:10, mountains:15, sprints:6},
-        '2.HC':  {points:6,  mountains:10, sprints:4},
-        '2.1':   {points:4,  mountains:6,  sprints:2},
-        '2.2':   {points:2,  mountains:3,  sprints:1},
-      }[cat]||{};
-      if(secPts.points && classif.pointsClassif){
-        classif.pointsClassif.slice(0,10).forEach((r,i)=>{
-          const p = Math.max(1,Math.round(secPts.points*(1-i*0.08)));
-          awardUciPoints(r.rider?.name||r.name, p, getRiderTeamName(r.rider?.name||r.name));
-        });
-      }
-      if(secPts.mountains && classif.mountainClassif){
-        classif.mountainClassif.slice(0,10).forEach((r,i)=>{
-          const p = Math.max(1,Math.round(secPts.mountains*(1-i*0.1)));
-          awardUciPoints(r.rider?.name||r.name, p, getRiderTeamName(r.rider?.name||r.name));
-        });
-      }
-      if(secPts.sprints && classif.sprintClassif){
-        classif.sprintClassif.slice(0,5).forEach((r,i)=>{
-          const p = Math.max(1,Math.round(secPts.sprints*(1-i*0.15)));
-          awardUciPoints(r.rider?.name||r.name, p, getRiderTeamName(r.rider?.name||r.name));
-        });
-      }
+      const secPts = {'GT.A':{points:20,mountains:25,sprints:10},'GT.B':{points:15,mountains:20,sprints:8},'2.UWT':{points:10,mountains:15,sprints:6},'2.HC':{points:6,mountains:10,sprints:4},'2.1':{points:4,mountains:6,sprints:2},'2.2':{points:2,mountains:3,sprints:1}}[cat]||{};
+      if(secPts.points&&classif.points) classif.points.slice(0,10).forEach((r,i)=>{ const p=Math.max(1,Math.round(secPts.points*(1-i*0.08))); give(r.rider?.name||r.name,p,null); });
+      if(secPts.mountains&&classif.mountains) classif.mountains.slice(0,10).forEach((r,i)=>{ const p=Math.max(1,Math.round(secPts.mountains*(1-i*0.1))); give(r.rider?.name||r.name,p,null); });
+      if(secPts.sprints&&classif.intermed) classif.intermed.slice(0,5).forEach((r,i)=>{ const p=Math.max(1,Math.round(secPts.sprints*(1-i*0.15))); give(r.rider?.name||r.name,p,null); });
     }
   } else {
-    // One-day race
-    const finPts = table.finish;
-    if(!finPts||!lastResults.gcResult) return;
-    lastResults.gcResult.slice(0, finPts.length).forEach((r,i)=>{
-      if(finPts[i]) awardUciPoints(r.rider.name, finPts[i], getRiderTeamName(r.rider.name));
-    });
+    const finPts = table.finish; if(!finPts||!lastResults.gcResult) return;
+    lastResults.gcResult.slice(0, finPts.length).forEach((r,i)=>{ if(finPts[i]) give(r.rider.name, finPts[i], ctry); });
   }
+
+  raceContributions[raceId] = contrib;
   saveUciPoints();
 }
 
@@ -5095,7 +5494,9 @@ function renderResults(){
   const inSeason = raceState?._seasonRaceId!=null && seasonSim;
   const hasMoreQueue = inSeason && seasonSim.dayQueue && seasonSim.dayQueueIndex+1 < (seasonSim.dayQueue?.length||0);
   if(nextBtn){
-    if(inSeason && complete){
+    if(inSeason && complete && raceState?._worldChampType){
+      nextBtn.style.display=''; nextBtn.textContent='▶ Continue Season';
+    } else if(inSeason && complete){
       nextBtn.style.display=''; nextBtn.textContent='🏁 Race Summary';
     } else if(inSeason && !complete && lastResults?._pendingGCShow){
       nextBtn.style.display=''; nextBtn.textContent='▶ See GC';
@@ -5213,7 +5614,7 @@ function renderResults(){
 
     rows=sr.result.map((r,i)=>{
       const jerseys=(r.rider.name===sjGCLdr?'🟡':'')+(r.rider.name===sjPtsLdr?'🟢':'')+(r.rider.name===sjMtnLdr?'🔴':'')+(r.rider.name===sjSprLdr?'🔵':'');
-      const ldrIcons=getLeaderIcons(r.rider.name,false);
+      const ldrIcons=getLeaderIcons(r.rider.name,false)+getChampionIcons(r.rider.name);
       const teamId3=riderTeamMap[r.rider.name];
       const team3=teamId3!=null?teams.find(t=>t.id===teamId3):null;
       const teamCell3=team3?flagImg(team3.country,11)+' <span class="rteam">'+team3.name+getLeaderIcons(team3.name,true)+'</span>':'<span style="color:var(--muted)">—</span>';
@@ -5475,7 +5876,7 @@ function showTab(tab){
   if(tab==='market'){renderMarket();}
   if(tab==='uci'){renderUciRankings();}
   if(tab==='country'){renderCountryRankings();}
-  if(tab==='history'){renderHistory();}
+  if(tab==='history'){ renderHistoryTab(); renderHistory();}
 }
 
 function renderFreeAgents(){
