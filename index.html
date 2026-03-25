@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.42</title>
+<title>CycleSim v12.43</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.42</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.43</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.42';
+const CACHE_VERSION = '12.43';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -5245,31 +5245,37 @@ function getRiderPalmares(riderName){
   if(!seasonSim) return pal;
   const racesSeen=new Set();
   seasonSim.dayLog.forEach(d=>{
+    const yr=d.year||1, calYr=2025+yr;
     (d.events||[]).forEach(ev=>{
-      if(!ev.teamIds) return;
+      // Determine if rider participated: check teamIds OR gcResult directly (for NC/WC)
       const myTeamId=riderTeamMap[riderName];
-      if(myTeamId==null||![...ev.teamIds].includes(myTeamId)) return;
-      racesSeen.add(ev.raceId);
-      if(ev.stageWinner===riderName) pal.stageWins.push({race:ev.raceName,stage:ev.stageName,terrain:ev.terrain,cat:ev.category,date:d.date});
+      const inViaTeam=ev.teamIds&&myTeamId!=null&&[...ev.teamIds].includes(myTeamId);
+      const inViaGC=ev.gcResult&&ev.gcResult.some(r=>(r.rider?.name||r.name)===riderName);
+      const isNC=ev.category==='NC'||ev.category==='WC';
+      if(!inViaTeam&&!inViaGC&&!isNC) return;
+      racesSeen.add(ev.raceId||(ev.raceName+d.day));
+      if(ev.stageWinner===riderName) pal.stageWins.push({race:ev.raceName,stage:ev.stageName,terrain:ev.terrain,cat:ev.category,date:d.date,yr:calYr,day:d.day});
       if(ev.complete&&ev.gcResult){
         const pos=ev.gcResult.findIndex(r=>(r.rider?.name||r.name)===riderName);
-        if(pos===0) pal.gcWins.push({race:ev.raceName,cat:ev.category,date:d.date});
-        else if(pos===1||pos===2) pal.podiums.push({race:ev.raceName,pos:pos+1,cat:ev.category,date:d.date});
+        if(pos===0) pal.gcWins.push({race:ev.raceName,cat:ev.category,date:d.date,yr:calYr,day:d.day});
+        else if(pos===1||pos===2) pal.podiums.push({race:ev.raceName,pos:pos+1,cat:ev.category,date:d.date,yr:calYr,day:d.day});
       }
     });
   });
   // Also include current in-progress race (live stage results)
   if(raceState && raceState.stageResults && raceState.raceName){
-    const myTeamId=riderTeamMap[riderName];
     const isInRace=raceState.riderList?.some(r=>r.name===riderName);
     if(isInRace){
       racesSeen.add('current');
-      raceState.stageResults.forEach((sr,si)=>{
+      raceState.stageResults.forEach(sr=>{
         const w=sr.result?.[0];
-        if(w&&w.rider.name===riderName) pal.stageWins.push({race:raceState.raceName,stage:sr.stage.name,terrain:sr.stage.terrain,cat:calSelectedRace?.category||'',date:'(live)'});
+        if(w&&w.rider.name===riderName) pal.stageWins.push({race:raceState.raceName,stage:sr.stage.name,terrain:sr.stage.terrain,cat:calSelectedRace?.category||'',date:'(live)',yr:getSeasonYear(),day:99999});
       });
     }
   }
+  // Sort all lists: most recent first (by year desc, then day desc)
+  const byRecent=(a,b)=>(b.yr||0)-(a.yr||0)||(b.day||0)-(a.day||0);
+  pal.gcWins.sort(byRecent); pal.stageWins.sort(byRecent); pal.podiums.sort(byRecent);
   pal.totalRaces=racesSeen.size;
   return pal;
 }
@@ -5281,33 +5287,36 @@ function getTeamPalmares(teamId){
   if(!seasonSim) return pal;
   const racesSeen=new Set();
   seasonSim.dayLog.forEach(d=>{
+    const yr=d.year||1, calYr=2025+yr;
     (d.events||[]).forEach(ev=>{
       if(!ev.teamIds) return;
       if(![...ev.teamIds].includes(teamId)) return;
       racesSeen.add(ev.raceId);
       if(ev.stageWinner){
         const tid2=riderTeamMap[ev.stageWinner];
-        if(tid2===teamId) pal.stageWins.push({rider:ev.stageWinner,race:ev.raceName,stage:ev.stageName,terrain:ev.terrain,cat:ev.category,date:d.date});
+        if(tid2===teamId) pal.stageWins.push({rider:ev.stageWinner,race:ev.raceName,stage:ev.stageName,terrain:ev.terrain,cat:ev.category,date:d.date,yr:calYr,day:d.day});
       }
       if(ev.complete&&ev.gcResult){
         const winner=ev.gcResult[0];
         const wname=winner?.rider?.name||winner?.name;
-        if(wname&&riderTeamMap[wname]===teamId) pal.gcWins.push({rider:wname,race:ev.raceName,cat:ev.category,date:d.date});
+        if(wname&&riderTeamMap[wname]===teamId) pal.gcWins.push({rider:wname,race:ev.raceName,cat:ev.category,date:d.date,yr:calYr,day:d.day});
       }
     });
   });
   // Also live race data
   if(raceState && raceState.stageResults && raceState.raceName){
     const otiArr=raceState.officialTeamIds instanceof Set?[...raceState.officialTeamIds]:(Array.isArray(raceState.officialTeamIds)?raceState.officialTeamIds:[]);
-  const isTeamInRace=otiArr.includes(teamId);
+    const isTeamInRace=otiArr.includes(teamId);
     if(isTeamInRace){
       racesSeen.add('current');
       raceState.stageResults.forEach(sr=>{
         const w=sr.result?.[0];
-        if(w&&riderTeamMap[w.rider.name]===teamId) pal.stageWins.push({rider:w.rider.name,race:raceState.raceName,stage:sr.stage.name,terrain:sr.stage.terrain,cat:calSelectedRace?.category||'',date:'(live)'});
+        if(w&&riderTeamMap[w.rider.name]===teamId) pal.stageWins.push({rider:w.rider.name,race:raceState.raceName,stage:sr.stage.name,terrain:sr.stage.terrain,cat:calSelectedRace?.category||'',date:'(live)',yr:getSeasonYear(),day:99999});
       });
     }
   }
+  const byRecent=(a,b)=>(b.yr||0)-(a.yr||0)||(b.day||0)-(a.day||0);
+  pal.gcWins.sort(byRecent); pal.stageWins.sort(byRecent);
   pal.raceCounts=racesSeen.size;
   return pal;
 }
@@ -5335,9 +5344,9 @@ function showRiderPalmares(name){
   const rd=allRiders.find(r=>r.name===name);
   const pal=getRiderPalmares(name);
   const team=riderTeamMap[name]!=null?teams.find(t=>t.id===riderTeamMap[name]):null;
-  const gcW=pal.gcWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--accent);font-size:.8rem">'+w.cat+'</span><span style="flex:1;font-weight:600">'+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
-  const stW=pal.stageWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span class="tbadge tbadge-'+(w.terrain||'FLA')+'" style="font-size:.6rem">'+(w.terrain||'')+'</span><span style="flex:1">'+w.race+(w.stage&&w.stage!==w.race?' · '+w.stage:'')+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
-  const pod=pal.podiums.map(p=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--muted)">'+(p.pos===2?'🥈':'🥉')+'</span><span style="flex:1">'+p.race+'</span><span style="color:var(--muted);font-size:.72rem">'+p.date+'</span></div>').join('');
+  const gcW=pal.gcWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:.7rem;min-width:32px">'+(w.yr||'')+'</span><span style="color:var(--accent);font-size:.8rem">'+w.cat+'</span><span style="flex:1;font-weight:600">'+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
+  const stW=pal.stageWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:.7rem;min-width:32px">'+(w.yr||'')+'</span><span class="tbadge tbadge-'+(w.terrain||'FLA')+'" style="font-size:.6rem">'+(w.terrain||'')+'</span><span style="flex:1">'+w.race+(w.stage&&w.stage!==w.race?' · '+w.stage:'')+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
+  const pod=pal.podiums.map(p=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:.7rem;min-width:32px">'+(p.yr||'')+'</span><span style="color:var(--muted)">'+(p.pos===2?'🥈':'🥉')+'</span><span style="flex:1">'+p.race+'</span><span style="color:var(--muted);font-size:.72rem">'+p.date+'</span></div>').join('');
   showPalmaresModal(
     '<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">'+
       '<div style="flex:1">'+
@@ -5363,8 +5372,8 @@ function showTeamPalmares(teamId){
   if(!pal) return;
   const team=teams.find(t=>t.id===teamId);
   if(!team) return;
-  const gcW=pal.gcWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--accent);font-size:.8rem">'+w.cat+'</span>'+flagImg(allRiders.find(r=>r.name===w.rider)?.country||'',11)+' <span style="flex:1">'+w.rider+' — '+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
-  const stW=pal.stageWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span class="tbadge tbadge-'+(w.terrain||'FLA')+'" style="font-size:.6rem">'+(w.terrain||'')+'</span>'+flagImg(allRiders.find(r=>r.name===w.rider)?.country||'',11)+' <span style="flex:1">'+w.rider+' — '+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
+  const gcW=pal.gcWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:.7rem;min-width:32px">'+(w.yr||'')+'</span><span style="color:var(--accent);font-size:.8rem">'+w.cat+'</span>'+flagImg(allRiders.find(r=>r.name===w.rider)?.country||'',11)+' <span style="flex:1">'+w.rider+' — '+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
+  const stW=pal.stageWins.map(w=>'<div style="padding:4px 16px;border-bottom:1px solid var(--border);font-size:.82rem;display:flex;align-items:center;gap:8px"><span style="color:var(--muted);font-size:.7rem;min-width:32px">'+(w.yr||'')+'</span><span class="tbadge tbadge-'+(w.terrain||'FLA')+'" style="font-size:.6rem">'+(w.terrain||'')+'</span>'+flagImg(allRiders.find(r=>r.name===w.rider)?.country||'',11)+' <span style="flex:1">'+w.rider+' — '+w.race+'</span><span style="color:var(--muted);font-size:.72rem">'+w.date+'</span></div>').join('');
   const roster=[...team.riders].sort((a,b)=>{
     const ra=allRiders.find(x=>x.name===a),rb=allRiders.find(x=>x.name===b);
     return (rb?.avg||0)-(ra?.avg||0);
