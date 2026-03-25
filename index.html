@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.14</title>
+<title>CycleSim v12.16</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.14</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.16</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.14';
+const CACHE_VERSION = '12.16';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -2944,8 +2944,16 @@ function buildTourStages(country, days){
     if(i===ttPos){
       terrain = ttType;
     } else if(i===1){
-      // Only use PRL if it's the TT (i.e. ttPos===1), otherwise flat opener
-      terrain = (ttPos===1) ? ttType : 'FLA';
+      if(ttPos===1){
+        terrain = ttType;
+      } else {
+        // Stage 1 variety: 40% flat, 35% hilly, 15% med-mountain, 10% from country profile
+        const r1=Math.random();
+        if(r1<0.40) terrain='FLA';
+        else if(r1<0.75) terrain='HIL';
+        else if(r1<0.90) terrain='MM';
+        else terrain=pickTerrain(profile,null,null);
+      }
     } else if(i===days){
       // Last stage: flat or GC finish (no TT)
       const prev = stagesArr[stagesArr.length-1].terrain;
@@ -3020,10 +3028,17 @@ function simulateRace(){
 function simulateNextStage(){
   if(raceState?._seasonRaceId!=null && seasonSim){
     if(lastResults?.complete){
-      showFinishScreen(lastResults); // race fully done — show summary
-    } else {
-      advanceSeasonQueue(); // mid-race: next race in queue or finish day
+      showFinishScreen(lastResults);
+      return;
     }
+    // Multi-stage race: show GC after each stage before advancing
+    if(lastResults?.totalStages>1 && lastResults?._pendingGCShow){
+      lastResults._pendingGCShow=false;
+      switchResultTab('gc');
+      renderResults(); // update button text
+      return;
+    }
+    advanceSeasonQueue();
     return;
   }
   if(!raceState){return;}
@@ -3085,6 +3100,10 @@ function runNextStage(){
     awardRacePoints(calSelectedRace, lastResults);
   }
   activeResultTab='stage-'+(rs.stageResults.length-1);
+  // Flag that we want to show GC after this stage result (multi-stage races only)
+  if(rs._seasonRaceId!=null && stages.length>1 && !lastResults.complete){
+    lastResults._pendingGCShow=true;
+  }
 
   // Sync back to season state if this is a season race
   if(rs._seasonRaceId!=null && seasonSim){
@@ -3700,6 +3719,7 @@ function initSeason(){
   seasonSim = { currentDay:0, activeRaces:{}, dayLog:[] };
   countryPoints = {};
   uciPoints = {};
+  teamUciPoints = {};
   transferMarket = null;
   transferLog = [];
   saveUciPoints();
@@ -3764,33 +3784,14 @@ function startSeasonDay(){
 function simulateSeasonDay(){ startSeasonDay(); }
 
 // ── DAY PREVIEW ─────────────────────────────────────────────────
-function getRaceFavorites(race, raceId, n){
-  // Return top-n riders by pure terrain score (no variance) for today's stage
+function getRaceFavorites(race, raceId, riderPool, n){
+  // riderPool is pre-computed for this race (passed from showDayPreview)
+  if(!riderPool||!riderPool.length) return [];
   const entry = seasonSim?.activeRaces?.[raceId];
-  let riderPool;
-  if(entry && entry.rs.riderList.length > 0){
-    // Continuing race — use actual race participants still active
-    riderPool = entry.rs.activeRiders || entry.rs.riderList;
-  } else {
-    // New race — simulate team selection to get the likely pool
-    const prevSel = new Set(selectedTeams);
-    autoSelectTeamsForRace(race);
-    riderPool = [];
-    for(const id of selectedTeams){
-      const t = teams.find(x=>x.id===id);
-      if(t) t.riders.forEach(n=>{const r=allRiders.find(x=>x.name===n);if(r)riderPool.push(r);});
-    }
-    selectedTeams = prevSel;
-  }
-  if(!riderPool.length) return [];
-
-  // For continuing races: use next stage terrain; for new races: use first stage
-  const stageIdx = entry?.rs?.currentStageIndex || 0;
+  const stageIdx = (entry?.rs?.currentStageIndex) || 0;
   const stage = race.stages[stageIdx];
   if(!stage) return [];
   const terrain = stage.terrain;
-
-  // Score using pure attributes (no variance/fatigue noise)
   const scored = riderPool.map(r => {
     const w = TERRAIN_WEIGHTS[terrain] || TERRAIN_WEIGHTS.FLA;
     const score = terrain === 'FLA'
@@ -3805,6 +3806,46 @@ function showDayPreview(day, queue){
   showTab('race');
   const wrap = document.getElementById('race-setup-wrap');
   if(!wrap){ runSeasonQueueItem(); return; }
+
+  // Pre-compute race pools sequentially so busy teams accumulate correctly
+  const previewBusyIds = new Set();
+  Object.values(seasonSim.activeRaces||{}).forEach(({rs})=>{
+    (rs.riderList||[]).forEach(r=>{ const tid=riderTeamMap[r.name]; if(tid!=null) previewBusyIds.add(tid); });
+  });
+  const queuePools = {}; // raceId → rider[]
+  queue.forEach(raceId => {
+    const entry = seasonSim.activeRaces[raceId];
+    const race = entry?.race || calendar.find(r=>r.id===raceId);
+    if(!race) return;
+    if(entry && entry.rs.riderList.length > 0){
+      queuePools[raceId] = entry.rs.activeRiders || entry.rs.riderList;
+    } else {
+      // Simulate team selection with currently accumulated busy teams
+      const tmpPrev = new Set(selectedTeams);
+      // Temporarily override busyTeams via currentDayEvents hack: not clean but workable
+      // Instead, directly filter teams by previewBusyIds
+      const cat2 = race.category||'';
+      const country2 = race.country;
+      const region2 = getRegionLabel(country2);
+      const notBusy2 = t => t.riders.length>0 && !previewBusyIds.has(t.id);
+      const byAvg2 = [...teams].filter(notBusy2).sort((a,b)=>teamAvg(b)-teamAvg(a));
+      const natAll2 = byAvg2.filter(t=>t.country===country2);
+      const TARGET2=25;
+      let sel2=[];
+      const pr=CAT_PRIORITY[cat2]||0;
+      if(pr>=8){ sel2=[...byAvg2.slice(0,Math.min(20,byAvg2.length)),...natAll2.filter(t=>!byAvg2.slice(0,20).some(x=>x.id===t.id)).slice(0,5)]; }
+      else if(pr>=6){ sel2=[...byAvg2.slice(0,15),...natAll2.filter(t=>!byAvg2.slice(0,15).some(x=>x.id===t.id)).slice(0,10)]; }
+      else { sel2=[...natAll2.slice(0,15),...byAvg2.filter(t=>!natAll2.slice(0,15).some(x=>x.id===t.id)).slice(0,10)]; }
+      if(sel2.length>TARGET2) sel2=sel2.slice(0,TARGET2);
+      if(sel2.length<TARGET2){ const extras=byAvg2.filter(t=>!sel2.some(x=>x.id===t.id));sel2=[...sel2,...extras.slice(0,TARGET2-sel2.length)]; }
+      const pool2=[];
+      sel2.forEach(t=>{ t.riders.forEach(n=>{const r=allRiders.find(x=>x.name===n);if(r)pool2.push(r);}); });
+      queuePools[raceId]=pool2;
+      // Add these teams to busy for next races in queue
+      sel2.forEach(t=>previewBusyIds.add(t.id));
+      selectedTeams=tmpPrev;
+    }
+  });
 
   const racesHtml = queue.map(raceId => {
     const entry = seasonSim.activeRaces[raceId];
@@ -3840,7 +3881,7 @@ function showDayPreview(day, queue){
     }
 
     // Top-3 favorites
-    const favs = getRaceFavorites(race, raceId, 3);
+    const favs = getRaceFavorites(race, raceId, queuePools[raceId]||[], 3);
     const favsHtml = favs.length ? '<div style="margin-top:8px">' +
       '<div style="font-family:Barlow Condensed,sans-serif;font-size:.68rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">⭐ Favorites for ' + (stage?T_ICONS[stage.terrain]+' ':'') + (stage?stage.name:stageLabel) + '</div>' +
       favs.map((f,i)=>{
@@ -4642,8 +4683,8 @@ function renderClassification(classif, type){
     if(!classif.teams.length) return renderResultTable([],'Teams Classification — Not enough data',[]);
     const leader=classif.teams[0].time;
     const rows=classif.teams.map((x,i)=>{
-      const gap=x.time-leader;
-      const gapCell=i===0?'<span class="rgap-winner">— BEST —</span>':(gap===0?'s.t.':'+'+gap+' pos');
+      const gap=Math.round(x.time-leader);
+      const gapCell=i===0?'<span class="rgap-winner">— BEST —</span>':gap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':'<span style="font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">+'+fmtGap(gap)+'</span>';
       return `<tr>
         <td>${posLabel(i+1)}</td>
         <td class="rteam-cell">${flagImg(x.team.country,12)} <span class="rteam">${x.team.name}</span></td>
@@ -4651,7 +4692,7 @@ function renderClassification(classif, type){
         <td>${gapCell}</td>
       </tr>`;
     });
-    renderResultTable(rows,'Teams Classification — Best 3 finishing positions',[],['#','Team','OVR','Score']);
+    renderResultTable(rows,'Teams Classification — Best 3 finishing positions',[],['#','Team','OVR','Gap']);
     return;
   }
   const data=classif[type];
@@ -4701,6 +4742,49 @@ function getTeamName(riderName){
   return t?t.name:'—';
 }
 
+function getLeaderIcons(riderName){
+  // 🌐 if world ranking leader
+  // flag(s) if country ranking leader(s)
+  let icons = '';
+  if(!Object.keys(uciPoints).length) return icons;
+  const worldLeader = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1])[0]?.[0];
+  if(worldLeader && riderName === worldLeader) icons += '🌐';
+  Object.entries(countryPoints).forEach(([country, pts]) => {
+    const top = Object.entries(pts).filter(([k])=>!k.startsWith('__team__')).sort((a,b)=>b[1]-a[1])[0]?.[0];
+    if(top && top === riderName) icons += flagImg(country, 11);
+  });
+  return icons ? '<span style="margin-left:4px;vertical-align:middle">'+icons+'</span>' : '';
+}
+
+function buildDNFRows(abandonedInStage, alreadyAbandoned){
+  let rows = '';
+  // riders who abandoned IN this stage
+  (abandonedInStage||[]).forEach(r=>{
+    const rd = lastResults.riderList?.find(x=>x.name===r.name)||r;
+    const team=riderTeamMap[rd.name]!=null?teams.find(t=>t.id===riderTeamMap[rd.name]):null;
+    rows += '<tr style="opacity:.5;background:rgba(232,64,64,.04)">' +
+      '<td><span style="font-size:.72rem;color:var(--red);font-weight:700">DNF</span></td>' +
+      '<td class="rname">'+flagImg(rd.country,12)+' '+rd.name+'</td>' +
+      '<td class="rteam-cell">'+(team?flagImg(team.country,11)+' <span class="rteam">'+team.name+'</span>':'—')+'</td>' +
+      '<td class="ravg">'+rd.avg.toFixed(1)+'</td>' +
+      '<td><span style="font-size:.7rem;color:var(--red)">DNF</span></td>' +
+      '<td></td></tr>';
+  });
+  // riders who abandoned in PRIOR stages
+  (alreadyAbandoned||[]).forEach(({rider:r,stage:sn})=>{
+    const rd = lastResults.riderList?.find(x=>x.name===r.name)||r;
+    const team=riderTeamMap[rd.name]!=null?teams.find(t=>t.id===riderTeamMap[rd.name]):null;
+    rows += '<tr style="opacity:.35;background:rgba(232,64,64,.02)">' +
+      '<td><span style="font-size:.7rem;color:var(--muted)">DNF</span></td>' +
+      '<td class="rname">'+flagImg(rd.country,12)+' '+rd.name+'</td>' +
+      '<td class="rteam-cell">'+(team?flagImg(team.country,11)+' <span class="rteam">'+team.name+'</span>':'—')+'</td>' +
+      '<td class="ravg">'+rd.avg.toFixed(1)+'</td>' +
+      '<td><span style="font-size:.68rem;color:var(--muted)">'+sn+'</span></td>' +
+      '<td></td></tr>';
+  });
+  return rows;
+}
+
 function renderResults(){
   if(!lastResults) return;
   const{raceName,stageResults,riderCount,teamCount,abandoned=[],currentStage,totalStages,complete}=lastResults;
@@ -4713,6 +4797,8 @@ function renderResults(){
   if(nextBtn){
     if(inSeason && complete){
       nextBtn.style.display=''; nextBtn.textContent='🏁 Race Summary';
+    } else if(inSeason && !complete && lastResults?._pendingGCShow){
+      nextBtn.style.display=''; nextBtn.textContent='▶ See GC';
     } else if(inSeason && !complete && hasMoreQueue){
       nextBtn.style.display=''; nextBtn.textContent='▶ Next Race';
     } else if(inSeason && !complete && !hasMoreQueue){
@@ -4776,6 +4862,7 @@ function renderResults(){
       let arrow='';
       if(prev&&stageResults.length>1){const d=prev-(i+1);arrow=d>0?'<span style="color:var(--green);font-size:.7rem;font-weight:700">▲'+d+'</span>':d<0?'<span style="color:var(--red);font-size:.7rem;font-weight:700">▼'+(-d)+'</span>':'<span style="color:var(--muted);font-size:.65rem">—</span>';}
       const jerseys=(r.rider.name===gcLdrBefore?'🟡':'')+(r.rider.name===ptsLdr?'🟢':'')+(r.rider.name===mtnLdr?'🔴':'')+(r.rider.name===sprLdr?'🔵':'');
+      const ldrIcons=getLeaderIcons(r.rider.name);
       const teamId2=riderTeamMap[r.rider.name];
       const team2=teamId2!=null?teams.find(t=>t.id===teamId2):null;
       const teamCell2=team2?flagImg(team2.country,11)+' <span class="rteam">'+team2.name+'</span>':'<span style="color:var(--muted)">—</span>';
@@ -4784,14 +4871,21 @@ function renderResults(){
       const gapCell2=i===0?'<span class="rgap-winner">— WINNER —</span>':relGap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':fmtGap(relGap);
       return '<tr>' +
         '<td>'+posLabel(r.position)+'</td>' +
-        '<td class="rname">'+flagImg(r.rider.country,12)+' '+r.rider.name+(jerseys?'<span style="font-size:.78rem;margin-left:3px">'+jerseys+'</span>':'')+'</td>' +
+        '<td class="rname">'+flagImg(r.rider.country,12)+' '+r.rider.name+(jerseys?'<span style="font-size:.78rem;margin-left:3px">'+jerseys+'</span>':'')+ldrIcons+'</td>' +
         '<td class="rteam-cell">'+teamCell2+'</td>' +
         '<td class="ravg">'+r.rider.avg.toFixed(1)+'</td>' +
         '<td>'+gapCell2+'</td>' +
         '<td style="width:44px;text-align:center">'+arrow+'</td>' +
         '</tr>';
     });
-    renderResultTable(rows,'General Classification — Overall',lastResults.abandoned||[]);
+    // Append DNF riders at bottom (sorted by stage they abandoned, desc = finished most stages first)
+    const dnfAll = (lastResults.abandoned||[]).slice().sort((a,b)=>{
+      const ia=stageResults.findIndex(s=>(s.abandoned||[]).some(r=>r.name===a.rider.name));
+      const ib=stageResults.findIndex(s=>(s.abandoned||[]).some(r=>r.name===b.rider.name));
+      return ib-ia; // higher stage index = survived longer = higher position in DNF list
+    });
+    rows = rows.concat([buildDNFRows([], dnfAll)]);
+    renderResultTable(rows,'General Classification — Overall',[]);
   } else {
     const stageIdx=parseInt(activeResultTab.replace('stage-',''));
     const sr=stageResults[stageIdx];
@@ -4818,7 +4912,7 @@ function renderResults(){
 
     rows=sr.result.map((r,i)=>{
       const jerseys=(r.rider.name===sjGCLdr?'🟡':'')+(r.rider.name===sjPtsLdr?'🟢':'')+(r.rider.name===sjMtnLdr?'🔴':'')+(r.rider.name===sjSprLdr?'🔵':'');
-      // Stage-to-stage position arrow
+      const ldrIcons=getLeaderIcons(r.rider.name);
       const prev=prevStagePos[r.rider.name];
       let arrow='';
       if(prev!==undefined&&stageIdx>0){const d=prev-r.position;arrow=d>0?'<span style="color:var(--green);font-size:.7rem;font-weight:700">▲'+d+'</span>':d<0?'<span style="color:var(--red);font-size:.7rem;font-weight:700">▼'+(-d)+'</span>':'<span style="color:var(--muted);font-size:.65rem">—</span>';}
@@ -4828,13 +4922,17 @@ function renderResults(){
       const gapCell3=i===0?'<span class="rgap-winner">— WINNER —</span>':r.gap<=0?'<span style="color:var(--muted);font-size:.78rem">s.t.</span>':fmtGap(r.gap);
       return '<tr>' +
         '<td>'+posLabel(r.position)+'</td>' +
-        '<td class="rname">'+flagImg(r.rider.country,12)+' '+r.rider.name+(jerseys?'<span style="font-size:.78rem;margin-left:3px">'+jerseys+'</span>':'')+'</td>' +
+        '<td class="rname">'+flagImg(r.rider.country,12)+' '+r.rider.name+(jerseys?'<span style="font-size:.78rem;margin-left:3px">'+jerseys+'</span>':'')+ldrIcons+'</td>' +
         '<td class="rteam-cell">'+teamCell3+'</td>' +
         '<td class="ravg">'+r.rider.avg.toFixed(1)+'</td>' +
         '<td>'+gapCell3+'</td>' +
         '<td style="width:44px;text-align:center">'+arrow+'</td>' +
         '</tr>';
     });
+    // Append DNF riders: those who abandoned in this stage, then prior stage DNFs
+    const dnfThis = sr.abandoned||[];
+    const dnfPrior = (lastResults.abandoned||[]).filter(a=>stageResults.slice(0,stageIdx).some(s=>(s.abandoned||[]).some(r=>r.name===a.rider.name)));
+    rows = rows.concat([buildDNFRows(dnfThis, dnfPrior)]);
     renderResultTable(rows,`${sr.stage.name} · ${ATTR_LABELS[sr.stage.terrain]||sr.stage.terrain} · ${sr.stage.distance} km`);
   }
 }
