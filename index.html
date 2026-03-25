@@ -431,7 +431,7 @@ tbody td{padding:6px 10px}
 <div id="tab-calendar" class="tab-content">
   <div class="toolbar">
     <button class="btn btn-accent" onclick="generateCalendar()" id="btn-gen-calendar">⚡ Generate Calendar</button>
-    <button class="btn btn-accent" id="btn-start-season" onclick="initSeason()" style="display:none">🏁 Start Season</button><button class="btn btn-ghost btn-sm" id="btn-start-champs" onclick="initSeason(349)" style="display:none" title="Skip to Championship Week (Day 349)">🏅 Test Champs</button>
+    <button class="btn btn-accent" id="btn-start-season" onclick="initSeason()" style="display:none">🏁 Start Season</button>
     <input type="text" class="search-input" id="cal-search" placeholder="Search races…" oninput="renderCalendar()" style="max-width:200px">
     <select class="form-select" id="cal-filter" onchange="calFilter=this.value;renderCalendar()">
       <option value="all">All races</option>
@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.24';
+const CACHE_VERSION = '12.25';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3813,7 +3813,7 @@ function awardCountryPoints(race, gcResult){
 function initSeason(startDay){
   if(!calendar.length){ alert('Generate a calendar first.'); return; }
   if(seasonSim && !confirm('Reset season and start over?')) return;
-  const day = startDay||0;
+  const day = startDay!=null ? startDay : 349;
   seasonSim = { currentDay:day, activeRaces:{}, dayLog:[], year:1 };
   countryPoints = {};
   uciPoints = {};
@@ -4709,8 +4709,6 @@ function renderSeasonPanel(){
   // Toggle start button in toolbar
   const startBtn = document.getElementById('btn-start-season');
   if(startBtn) startBtn.style.display = (!seasonSim && calendar.length) ? '' : 'none';
-  const testBtn = document.getElementById('btn-start-champs');
-  if(testBtn) testBtn.style.display = (!seasonSim && calendar.length) ? '' : 'none';
   if(!panel) return;
   if(!seasonSim){
     panel.innerHTML = '';
