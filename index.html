@@ -484,7 +484,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.20';
+const CACHE_VERSION = '12.21';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -4763,8 +4763,9 @@ function renderUciRankings(){
     const team = teams.find(t=>t.name===name);
     const rc = raceCounts[name]||0;
     const tIcons = getLeaderIcons(name,true);
-    return '<tr style="cursor:pointer" onclick="showTeamPalmares('+(team?team.id:'null')+')"><td class="cell-rank">'+(i+1)+'</td>'
-      +'<td style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:.9rem;text-transform:uppercase">'+(team?flagImg(team.country,12)+' ':'')+name+tIcons+'</td>'
+    const teamFlag = team ? flagImg(team.country,12)+' ' : '';
+    return '<tr style="cursor:pointer" data-team-palmares="'+(team?team.id:'')+'" ><td class="cell-rank">'+(i+1)+'</td>'
+      +'<td style="padding:7px 12px;font-family:Barlow Condensed,sans-serif;font-weight:700;font-size:.9rem;text-transform:uppercase">'+teamFlag+name+tIcons+'</td>'
       +'<td style="padding:7px 12px;text-align:center;font-family:JetBrains Mono,monospace;font-size:.78rem;color:var(--muted)">'+rc+'</td>'
       +'<td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">'+pts.toLocaleString()+'</td></tr>';
   }).join('');
