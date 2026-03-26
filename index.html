@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.09</title>
+<title>CycleSim v13.10</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.09</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.10</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -242,6 +242,7 @@ tbody td{padding:6px 10px}
     <button class="nav-btn nav-season-tab" id="nav-btn-market" onclick="showTab('market');renderMarket()" style="display:none">💼 Market</button>
     <div style="display:flex;gap:4px;margin-left:8px;border-left:1px solid var(--border);padding-left:8px">
       <button class="nav-btn btn-sm" onclick="exportSave()" title="Save to disk" style="font-size:.72rem;padding:4px 8px">💾 Save</button>
+      <button class="nav-btn btn-sm" onclick="openCheckpointsModal()" title="Time Travel — restore a previous day" style="font-size:.72rem;padding:4px 8px" id="nav-btn-checkpoints">⏪ Time Travel</button>
       <button class="nav-btn btn-sm" onclick="importSave()" title="Load from disk" style="font-size:.72rem;padding:4px 8px">📂 Load</button>
       <button class="nav-btn btn-sm" onclick="resetEverything()" title="Clear all data and start fresh" style="font-size:.72rem;padding:4px 8px;color:var(--red);opacity:.7">⊘ Reset</button>
     </div>
@@ -488,7 +489,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.09';
+const CACHE_VERSION = '13.10';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -857,6 +858,115 @@ async function idbClear(){
       tx.onerror = e=>rej(e);
     });
   }catch(e){}
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// CHECKPOINT / TIME TRAVEL SYSTEM
+// ═══════════════════════════════════════════════════════════════
+const MAX_CHECKPOINTS = 30;
+
+async function saveCheckpoint(){
+  try{
+    const checkpoints = (await idbGet('cyclesim_checkpoints'))||[];
+    const day = seasonSim?.currentDay??0;
+    const year = seasonSim?.year??1;
+    const snap = {
+      day, year,
+      calYear: 2024+(year||1),
+      date: fmtDate(day),
+      ts: Date.now(),
+      season: JSON.parse(localStorage.getItem('cyclesim_season')||'null'),
+      country: JSON.parse(localStorage.getItem('cyclesim_country')||'{}'),
+      uci: await idbGet('cyclesim_uci'),
+      teamuci: await idbGet('cyclesim_teamuci'),
+      racecontrib: await idbGet('cyclesim_racecontrib'),
+      champs: JSON.parse(localStorage.getItem('cyclesim_champs')||'{}'),
+    };
+    // Remove existing checkpoint for same day/year if present
+    const filtered = checkpoints.filter(c=>!(c.day===day && c.year===year));
+    filtered.push(snap);
+    // Keep last MAX_CHECKPOINTS sorted by time
+    filtered.sort((a,b)=>a.ts-b.ts);
+    if(filtered.length > MAX_CHECKPOINTS) filtered.splice(0, filtered.length - MAX_CHECKPOINTS);
+    await idbSet('cyclesim_checkpoints', filtered);
+    console.log('Checkpoint saved: Day '+day+' Year '+year);
+  }catch(e){ console.error('saveCheckpoint error:', e); }
+}
+
+async function loadCheckpoints(){
+  return (await idbGet('cyclesim_checkpoints'))||[];
+}
+
+async function restoreCheckpoint(ts){
+  const checkpoints = await loadCheckpoints();
+  const snap = checkpoints.find(c=>c.ts===ts);
+  if(!snap){ alert('Checkpoint not found.'); return; }
+  if(!confirm('Roll back to '+snap.date+' '+snap.calYear+'?\nAll progress after that point will be lost.')) return;
+  
+  // Restore all state
+  if(snap.season){ localStorage.setItem('cyclesim_season', JSON.stringify(snap.season)); }
+  if(snap.country){ localStorage.setItem('cyclesim_country', JSON.stringify(snap.country)); }
+  if(snap.champs){ localStorage.setItem('cyclesim_champs', JSON.stringify(snap.champs)); }
+  if(snap.uci){ await idbSet('cyclesim_uci', snap.uci); }
+  if(snap.teamuci){ await idbSet('cyclesim_teamuci', snap.teamuci); }
+  if(snap.racecontrib){ await idbSet('cyclesim_racecontrib', snap.racecontrib); }
+  // Clear appstate so we land on Calendar
+  clearAppState();
+  location.reload();
+}
+
+async function deleteCheckpoint(ts){
+  const checkpoints = await loadCheckpoints();
+  const filtered = checkpoints.filter(c=>c.ts!==ts);
+  await idbSet('cyclesim_checkpoints', filtered);
+  renderCheckpoints();
+}
+
+async function renderCheckpoints(){
+  const wrap = document.getElementById('checkpoints-modal-body');
+  if(!wrap) return;
+  const checkpoints = await loadCheckpoints();
+  checkpoints.sort((a,b)=>b.ts-a.ts); // newest first
+  if(!checkpoints.length){
+    wrap.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:.85rem">No checkpoints saved yet.<br><small>Checkpoints are saved automatically at the start of each day.</small></div>';
+    return;
+  }
+  wrap.innerHTML = checkpoints.map(c=>{
+    const isCurrentDay = seasonSim && c.day===seasonSim.currentDay && c.year===(seasonSim.year||1);
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);'+(isCurrentDay?'background:rgba(245,196,0,.06)':'')+'">'+
+      '<div style="flex:1">'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:1rem;font-weight:700;color:var(--accent)">'+c.date+' '+c.calYear+(isCurrentDay?' <span style="font-size:.7rem;color:var(--muted)">(current)</span>':'')+'</div>'+
+        '<div style="font-size:.72rem;color:var(--muted)">Day '+c.day+' · Saved '+new Date(c.ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+'</div>'+
+      '</div>'+
+      (isCurrentDay?'':('<button class="btn btn-accent btn-sm" onclick="restoreCheckpoint('+c.ts+')">⏪ Restore</button>'))+
+      '<button class="btn btn-ghost btn-sm" onclick="deleteCheckpoint('+c.ts+')" style="color:var(--red);margin-left:4px" title="Delete checkpoint">✕</button>'+
+    '</div>';
+  }).join('');
+}
+
+function openCheckpointsModal(){
+  let modal = document.getElementById('checkpoints-modal');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'checkpoints-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.onclick = e => { if(e.target===modal) modal.remove(); };
+    document.body.appendChild(modal);
+  }
+  modal.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:500px;width:100%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column">'+
+    '<div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">'+
+      '<span style="font-family:Barlow Condensed,sans-serif;font-size:1.3rem;font-weight:800;color:var(--accent)">⏪ Time Travel</span>'+
+      '<span style="font-size:.8rem;color:var(--muted);flex:1">Restore a saved simulation point</span>'+
+      '<button onclick="document.getElementById(\'checkpoints-modal\').remove()" style="background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer">✕</button>'+
+    '</div>'+
+    '<div id="checkpoints-modal-body" style="overflow-y:auto;flex:1"><div style="padding:20px;text-align:center;color:var(--muted)">Loading...</div></div>'+
+    '<div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px">'+
+      '<button class="btn btn-ghost btn-sm" onclick="saveCheckpoint().then(()=>renderCheckpoints())">📍 Save now</button>'+
+      '<span style="font-size:.75rem;color:var(--muted);align-self:center">Auto-saved at start of each day</span>'+
+    '</div>'+
+  '</div>';
+  renderCheckpoints();
 }
 
 function saveAppState(screen, payload){
@@ -4997,6 +5107,7 @@ function startSeasonDay(){
   seasonSim.dayQueue = queue;
   seasonSim.dayQueueIndex = 0;
   saveSeasonState();
+  saveCheckpoint(); // auto-checkpoint at start of each day
   saveAppState('day_preview', {day, queue});
   showDayPreview(day, queue);
 }
@@ -7414,6 +7525,9 @@ function updateNavPhase(){
   // Draft: show only if teams exist and draft not complete
   const draftBtn = document.getElementById('nav-btn-draft');
   if(draftBtn) draftBtn.style.display = (teams.length > 0 && !draftDone) ? '' : 'none';
+  // Time Travel: show only when season is active
+  const ttBtn = document.getElementById('nav-btn-checkpoints');
+  if(ttBtn) ttBtn.style.display = seasonSim ? '' : 'none';
 }
 
 function generateTeams(){
