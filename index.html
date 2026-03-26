@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.00</title>
+<title>CycleSim v13.01</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.00</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.01</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -488,7 +488,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.00';
+const CACHE_VERSION = '13.01';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -744,30 +744,41 @@ function emergencyRecover(){
   if(!seasonSim) { alert('No season data found.'); return; }
   // Find the most advanced active race
   let bestEntry = null, bestStages = -1;
+  // Try with riderList first, fall back to any active race
   Object.entries(seasonSim.activeRaces||{}).forEach(([id, entry])=>{
     const n = entry.rs?.stageResults?.length||0;
-    if(n > bestStages && entry.rs?.riderList?.length > 0){
+    if(n > bestStages){
       bestStages = n;
       bestEntry = {id:parseInt(id), ...entry};
     }
   });
   if(bestEntry){
     clearAppState();
-    calSelectedRace = bestEntry.race;
+    const race = bestEntry.race;
+    calSelectedRace = race;
     stageIdSeq=0;
-    stages = bestEntry.race.stages.map((s,i)=>({id:stageIdSeq++,name:s.name,terrain:s.terrain,distance:s.distance}));
-    raceState = buildRaceStateFromSeasonRS(bestEntry.race, bestEntry.rs, bestEntry.id);
+    stages = race.stages.map((s,i)=>({id:stageIdSeq++,name:s.name,terrain:s.terrain,distance:s.distance}));
+    const rs = bestEntry.rs;
+    // If riderList is empty, derive from stageResults + allRiders
+    let riderList = rs.riderList||[];
+    if(!riderList.length && rs.stageResults?.length){
+      const names = new Set();
+      rs.stageResults.forEach(sr=>(sr.result||[]).forEach(r=>{ if(r.rider?.name) names.add(r.rider.name); }));
+      riderList = [...names].map(n=>allRiders.find(r=>r.name===n)||{name:n,country:'',avg:65,...Object.fromEntries(['FLA','MTN','MM','HIL','TTR','PRL','COB','SPR','ACC','DHI','ATT','STA','RES','REC'].map(a=>[a,65]))});
+    }
+    rs.riderList = riderList;
+    raceState = buildRaceStateFromSeasonRS(race, rs, bestEntry.id);
     lastResults = null;
     updateNavPhase();
-    showTab('results');
-    renderResults();
+    // Now run the next stage directly
+    runNextStage();
   } else {
     clearAppState();
     updateNavPhase();
     showTab('calendar');
     renderSeasonPanel();
     renderCalendar();
-    alert('No active race found — returned to Calendar. Use Simulate Day to continue.');
+    alert('No active race found. Use Simulate Day from Calendar to continue.');
   }
 }
 function saveAppState(screen, payload){
