@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.04</title>
+<title>CycleSim v13.06</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.04</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.06</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -488,7 +488,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.04';
+const CACHE_VERSION = '13.06';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -781,6 +781,84 @@ function emergencyRecover(){
     alert('No active race found. Use Simulate Day from Calendar to continue.');
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// INDEXED DB — unlimited storage for large season/UCI data
+// ═══════════════════════════════════════════════════════════════
+const IDB_NAME = 'cyclesim_db';
+const IDB_VERSION = 1;
+const IDB_STORE = 'data';
+let _idb = null;
+
+function openIDB(){
+  if(_idb) return Promise.resolve(_idb);
+  return new Promise((res, rej)=>{
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(IDB_STORE))
+        db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = e => { _idb = e.target.result; res(_idb); };
+    req.onerror = e => { console.error('IDB open error:', e); rej(e); };
+  });
+}
+
+async function idbSet(key, value){
+  try{
+    const db = await openIDB();
+    return new Promise((res, rej)=>{
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(JSON.stringify(value), key);
+      tx.oncomplete = ()=>res(true);
+      tx.onerror = e=>{ console.error('IDB set error:', e); rej(e); };
+    });
+  }catch(e){ console.error('idbSet failed, falling back to localStorage:', e);
+    try{ localStorage.setItem(key, JSON.stringify(value)); }catch(le){}
+  }
+}
+
+async function idbGet(key){
+  try{
+    const db = await openIDB();
+    return new Promise((res, rej)=>{
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = e=>{
+        const v = e.target.result;
+        res(v !== undefined ? JSON.parse(v) : null);
+      };
+      req.onerror = e=>{ console.error('IDB get error:', e); rej(e); };
+    });
+  }catch(e){ console.error('idbGet failed, falling back to localStorage:', e);
+    try{ const v=localStorage.getItem(key); return v?JSON.parse(v):null; }catch(le){ return null; }
+  }
+}
+
+async function idbRemove(key){
+  try{
+    const db = await openIDB();
+    return new Promise((res,rej)=>{
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).delete(key);
+      tx.oncomplete = ()=>res(true);
+      tx.onerror = e=>rej(e);
+    });
+  }catch(e){}
+}
+
+async function idbClear(){
+  try{
+    const db = await openIDB();
+    return new Promise((res,rej)=>{
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).clear();
+      tx.oncomplete = ()=>res(true);
+      tx.onerror = e=>rej(e);
+    });
+  }catch(e){}
+}
+
 function saveAppState(screen, payload){
   try{
     // Always remove old state first to free space before writing new
@@ -918,6 +996,8 @@ function restoreAppState(){
 // ── FULL RESET (clears all localStorage simulation data) ─────────────────
 function resetEverything(){
   if(!confirm('Reset ALL simulation data? This clears teams, season, history, UCI points — everything. The rider database will reload from Google Sheets.')) return;
+  // Clear IDB data
+  idbClear().catch(()=>{});
   const KEYS = ['cyclesim_appstate','cyclesim_calendar','cyclesim_draft','cyclesim_knownRiders','cyclesim_market','cyclesim_season','cyclesim_teams','cyclesim_teamuci','cyclesim_uci','cyclesim_version','cyclesim_country','cyclesim_champs','cyclesim_yearslog','cyclesim_racecontrib','cyclesim_tlog','cyclesim_lastresult','cyclesim_racesetup','cyclesim_pendingPool'];
   KEYS.forEach(k=>localStorage.removeItem(k));
   // Also clear any other cyclesim_* keys
@@ -935,6 +1015,30 @@ async function loadData() {
     renderDatabase();
     clearStaleCache();
     loadSavedTeams();
+    // Rebuild compacted riderLists and activeRiders in seasonSim activeRaces
+    if(seasonSim?._needsRiderListRebuild){
+      Object.values(seasonSim.activeRaces||{}).forEach(entry=>{
+        const rs = entry.rs;
+        // riderList may be array of names (strings) — rebuild to full rider objects
+        if(rs.riderList?.length > 0 && typeof rs.riderList[0] === 'string'){
+          rs.riderList = rs.riderList.map(n=>({...(allRiders.find(r=>r.name===n)||{name:n,country:'',avg:65,FLA:65,MTN:65,MM:65,HIL:65,TTR:65,PRL:65,COB:65,SPR:65,ACC:65,DHI:65,ATT:65,STA:65,RES:65,REC:65})}));
+        }
+        if(rs.activeRiders?.length > 0 && typeof rs.activeRiders[0] === 'string'){
+          const activeNames = new Set(rs.activeRiders);
+          rs.activeRiders = rs.riderList.filter(r=>activeNames.has(r.name));
+        }
+        // Rebuild officialTeamIds as a Set
+        if(Array.isArray(rs.officialTeamIds)){
+          rs.officialTeamIds = new Set(rs.officialTeamIds.map(Number).filter(n=>!isNaN(n)));
+        }
+        // raceVariance: empty = regenerate fresh (handled in buildRaceStateFromSeasonRS)
+        if(!rs.raceVariance || Object.keys(rs.raceVariance).length === 0){
+          // Will be set fresh when race continues
+          rs.raceVariance = {};
+        }
+      });
+      delete seasonSim._needsRiderListRebuild;
+    }
     updateNavPhase();
     loadPendingPool();
     detectNewRiders();
@@ -3536,7 +3640,13 @@ function runNextStage(){
   if(rs._seasonRaceId!=null && seasonSim){
     const entry = seasonSim.activeRaces[rs._seasonRaceId];
     if(entry){
-      entry.rs.stageResults = [...rs.stageResults]; // keep copy in sync
+      // Store compact stageResults in seasonSim to save localStorage space
+      entry.rs.stageResults = rs.stageResults.map(sr=>({
+        stage: sr.stage,
+        breakaway: sr.breakaway,
+        result: (sr.result||[]).map(r=>({rider:{name:r.rider?.name||'',country:r.rider?.country||'',avg:+(r.rider?.avg||0)},gap:r.gap,position:r.position})),
+        abandoned: (sr.abandoned||[]).map(r=>({name:r.name||r?.name||'',country:r.country||''}))
+      }));
       entry.rs.fatigue = rs.fatigue;
       entry.rs.gcTimes = rs.gcTimes;
       entry.rs.activeRiders = rs.activeRiders;
@@ -3555,7 +3665,7 @@ function runNextStage(){
           stageName:race.stages[rs.currentStageIndex-1]?.name||'',
           stageWinner:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999))[0]?.rider?.name||'—',complete:true,
           gcLeader:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999))[0]?.rider?.name||null,
-          gcResult:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999)),
+          gcResult:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999)).slice(0,10).map(r=>({rider:{name:r.rider?.name||'',country:r.rider?.country||'',avg:+(r.rider?.avg||0)},totalGap:r.totalGap,position:r.position})),
           teamIds:[...(rs.officialTeamIds instanceof Set ? rs.officialTeamIds : [])]});
         seasonSim.completedToday = seasonSim.completedToday||[];
         const _stageKey = rs._seasonRaceId+':'+rs.currentStageIndex;
@@ -4190,37 +4300,64 @@ let seasonSim = null;
 let countryPoints = {};   // { 'France': 1250, 'Belgium': 800, ... }
 
 function loadSeasonState(){
+  // Country points in localStorage (synchronous, small)
+  try{ const c=localStorage.getItem('cyclesim_country'); if(c) countryPoints=JSON.parse(c); }catch(e){ countryPoints={}; }
+  // Season data loaded asynchronously from IDB in loadData()
+  // (loadData awaits loadSeasonFromIDB before restoreAppState)
+}
+
+async function loadSeasonFromIDB(){
   try{
-    const s = localStorage.getItem('cyclesim_season');
-    if(s) seasonSim = JSON.parse(s);
-    // Clear in-flight queue on reload — completedToday preserved so done races aren't re-queued
-    // BUT preserve dayQueue if we were showing a day preview (dayQueueIndex===0 = preview stage)
-    if(seasonSim){
-      // Always clear in-flight queue on reload; restoreAppState() rebuilds it
+    // Try IDB first, fall back to localStorage for old saves
+    let data = await idbGet('cyclesim_season');
+    if(!data){
+      const s = localStorage.getItem('cyclesim_season');
+      if(s){ data = JSON.parse(s); localStorage.removeItem('cyclesim_season'); await idbSet('cyclesim_season', data); }
+    }
+    if(data){
+      seasonSim = data;
       seasonSim.dayQueue = null;
       seasonSim.dayQueueIndex = 0;
       seasonSim.currentDayEvents = null;
+      seasonSim._needsRiderListRebuild = true;
     }
-    const c = localStorage.getItem('cyclesim_country');
-    if(c) countryPoints = JSON.parse(c);
-    // App state restored in restoreAppState() — called from loadData after all data loads
-  } catch(e){ seasonSim=null; countryPoints={}; }
+  }catch(e){ console.error('loadSeasonFromIDB error:', e); seasonSim=null; }
 }
 
-function saveSeasonState(){
-  // Always save country points separately (small, shouldn't fail)
+async function saveSeasonState(){
+  // Always save country points in localStorage (small, needed synchronously)
   try{ localStorage.setItem('cyclesim_country', JSON.stringify(countryPoints)); }catch(e){}
-  // App state (results, race setup, etc.) saved separately via saveAppState() — not here
   if(!seasonSim) return;
-  // Save season sim — prune log if too large
-  try{
-    localStorage.setItem('cyclesim_season', JSON.stringify(seasonSim));
-  }catch(e){
-    console.warn('Season state too large, pruning logs');
-    // Keep full dayLog for history tab
-    // Also prune stageResults from completed races to save space
-    try{ localStorage.setItem('cyclesim_season', JSON.stringify(seasonSim)); }catch(e2){}
-  }
+  // Build compact version for storage
+  const compact = {
+    ...seasonSim,
+    dayLog: (seasonSim.dayLog||[]).map(d=>({
+      ...d,
+      events: (d.events||[]).map(ev=>({
+        ...ev,
+        gcResult: ev.gcResult ? ev.gcResult.slice(0,10).map(r=>({
+          rider:{name:r.rider?.name||r?.name||'',country:r.rider?.country||r?.country||'',avg:+(r.rider?.avg||r?.avg||0)},
+          totalGap:r.totalGap, position:r.position
+        })) : undefined
+      }))
+    })),
+    activeRaces: Object.fromEntries(Object.entries(seasonSim.activeRaces||{}).map(([id,entry])=>([id,{
+      race: entry.race,
+      rs: {
+        riderList: (entry.rs.riderList||[]).map(r=>typeof r==='string'?r:(r.name||'')),
+        fatigue: entry.rs.fatigue,
+        gcTimes: entry.rs.gcTimes,
+        stageResults: entry.rs.stageResults,
+        allAbandoned: (entry.rs.allAbandoned||[]).map(a=>({rider:{name:a.rider?.name||a?.name||''},stage:a.stage})),
+        activeRiders: (entry.rs.activeRiders||[]).map(r=>typeof r==='string'?r:(r.name||'')),
+        currentStageIndex: entry.rs.currentStageIndex,
+        raceVariance: {},
+        totalStages: entry.rs.totalStages,
+        officialTeamIds: [...(entry.rs.officialTeamIds instanceof Set ? entry.rs.officialTeamIds : (Array.isArray(entry.rs.officialTeamIds)?entry.rs.officialTeamIds:[]))],
+      }
+    }])))
+  };
+  await idbSet('cyclesim_season', compact);
 }
 
 // Build a fresh raceState for a race (self-contained, no globals)
@@ -5057,7 +5194,7 @@ function buildRaceStateFromSeasonRS(race, rs, raceId){
     allAbandoned: rs.allAbandoned,
     activeRiders: rs.activeRiders,
     currentStageIndex: rs.currentStageIndex,
-    raceVariance: rs.raceVariance,
+    raceVariance: (rs.raceVariance && Object.keys(rs.raceVariance).length > 0) ? rs.raceVariance : makeVariance(rs.riderList||[], 0.10),
     totalStages: race.stages.length,
     officialTeamIds: restoredTeamIds,
     _seasonRaceId: raceId,
@@ -5692,19 +5829,28 @@ let raceContributions = {}; // {raceId: {riders:{name:pts}, teams:{name:pts}, co
 let allYearsLog = {}; // {year: {dayLog, uciSnapshot, teamSnapshot}}
 let championships = { national:{}, ttWorld:null, roadWorld:null }; // {country:winnerName}, winner, winner
 
-function loadUciPoints(){
-  try{ uciPoints = JSON.parse(localStorage.getItem('cyclesim_uci')||'{}'); } catch(e){ uciPoints={}; }
-  try{ teamUciPoints = JSON.parse(localStorage.getItem('cyclesim_teamuci')||'{}'); } catch(e){ teamUciPoints={}; }
-  try{ raceContributions = JSON.parse(localStorage.getItem('cyclesim_racecontrib')||'{}'); } catch(e){ raceContributions={}; }
-  try{ allYearsLog = JSON.parse(localStorage.getItem('cyclesim_yearslog')||'{}'); } catch(e){ allYearsLog={}; }
+async function loadUciPoints(){
+  // champs in localStorage (small, synchronous)
   try{ championships = JSON.parse(localStorage.getItem('cyclesim_champs')||'{"national":{},"ttWorld":null,"roadWorld":null}'); } catch(e){ championships={national:{},ttWorld:null,roadWorld:null}; }
+  // Large data from IDB with localStorage fallback
+  uciPoints       = (await idbGet('cyclesim_uci'))       || JSON.parse(localStorage.getItem('cyclesim_uci')||'{}');
+  teamUciPoints   = (await idbGet('cyclesim_teamuci'))   || JSON.parse(localStorage.getItem('cyclesim_teamuci')||'{}');
+  raceContributions=(await idbGet('cyclesim_racecontrib'))|| JSON.parse(localStorage.getItem('cyclesim_racecontrib')||'{}');
+  allYearsLog     = (await idbGet('cyclesim_yearslog'))  || JSON.parse(localStorage.getItem('cyclesim_yearslog')||'{}');
+  // Migrate old localStorage data to IDB
+  if(localStorage.getItem('cyclesim_uci')){ idbSet('cyclesim_uci',uciPoints); localStorage.removeItem('cyclesim_uci'); }
+  if(localStorage.getItem('cyclesim_teamuci')){ idbSet('cyclesim_teamuci',teamUciPoints); localStorage.removeItem('cyclesim_teamuci'); }
+  if(localStorage.getItem('cyclesim_racecontrib')){ idbSet('cyclesim_racecontrib',raceContributions); localStorage.removeItem('cyclesim_racecontrib'); }
+  if(localStorage.getItem('cyclesim_yearslog')){ idbSet('cyclesim_yearslog',allYearsLog); localStorage.removeItem('cyclesim_yearslog'); }
 }
 function saveUciPoints(){
-  localStorage.setItem('cyclesim_uci', JSON.stringify(uciPoints));
-  localStorage.setItem('cyclesim_teamuci', JSON.stringify(teamUciPoints));
-  try{ localStorage.setItem('cyclesim_racecontrib', JSON.stringify(raceContributions)); }catch(e){}
-  try{ localStorage.setItem('cyclesim_yearslog', JSON.stringify(allYearsLog)); }catch(e){}
+  // Small keys in localStorage
   try{ localStorage.setItem('cyclesim_champs', JSON.stringify(championships)); }catch(e){}
+  // Large keys in IDB (fire-and-forget)
+  idbSet('cyclesim_uci', uciPoints);
+  idbSet('cyclesim_teamuci', teamUciPoints);
+  idbSet('cyclesim_racecontrib', raceContributions);
+  idbSet('cyclesim_yearslog', allYearsLog);
 }
 function awardUciPoints(riderName, pts, teamName){
   if(!pts||pts<=0) return;
@@ -7051,11 +7197,19 @@ function esc(s){return s.replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 
 // ═══════════════════════════════════════════════════════════════
 // ── SAVE / LOAD TO DISK ────────────────────────────────────────
-function exportSave(){
-  const keys = ['cyclesim_teams','cyclesim_calendar','cyclesim_season','cyclesim_country',
-    'cyclesim_uci','cyclesim_teamuci','cyclesim_market','cyclesim_knownRiders','cyclesim_version'];
+async function exportSave(){
+  // Gather localStorage keys
+  const lsKeys = ['cyclesim_teams','cyclesim_calendar','cyclesim_country',
+    'cyclesim_market','cyclesim_knownRiders','cyclesim_version','cyclesim_champs',
+    'cyclesim_tlog','cyclesim_draft','cyclesim_appstate'];
   const save = {};
-  keys.forEach(k=>{ const v=localStorage.getItem(k); if(v) save[k]=v; });
+  lsKeys.forEach(k=>{ const v=localStorage.getItem(k); if(v) save[k]=v; });
+  // Gather IDB keys
+  const idbKeys = ['cyclesim_season','cyclesim_uci','cyclesim_teamuci','cyclesim_racecontrib','cyclesim_yearslog'];
+  for(const k of idbKeys){
+    const v = await idbGet(k);
+    if(v !== null) save[k] = JSON.stringify(v);
+  }
   const blob = new Blob([JSON.stringify(save)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -7073,9 +7227,13 @@ function importSave(){
     reader.onload = ev => {
       try{
         const save = JSON.parse(ev.target.result);
-        Object.entries(save).forEach(([k,v])=>localStorage.setItem(k,v));
-        alert('Save loaded! Reloading...');
-        location.reload();
+        const idbKeys = new Set(['cyclesim_season','cyclesim_uci','cyclesim_teamuci','cyclesim_racecontrib','cyclesim_yearslog']);
+        const promises = [];
+        Object.entries(save).forEach(([k,v])=>{
+          if(idbKeys.has(k)){ try{ promises.push(idbSet(k, JSON.parse(v))); }catch(e){} }
+          else { try{ localStorage.setItem(k,v); }catch(e){} }
+        });
+        Promise.all(promises).then(()=>{ alert('Save loaded! Reloading...'); location.reload(); });
       } catch(e){ alert('Invalid save file.'); }
     };
     reader.readAsText(file);
@@ -7382,11 +7540,15 @@ function runDraftSilent(){
 // INIT
 // ═══════════════════════════════════════════════════════════════
 renderStages();
-loadUciPoints();
-  loadSeasonState();
-  loadTransferMarket();
-  renderSeasonPanel();
-  loadData();
+loadTransferMarket();
+renderSeasonPanel();
+// Async init: load IDB data then start
+(async ()=>{
+  loadSeasonState(); // sync: loads country points from localStorage
+  await loadSeasonFromIDB(); // async: loads season from IDB
+  await loadUciPoints();    // async: loads UCI points from IDB
+  loadData();               // async: fetches CSV then restores app state
+})();
 </script>
 <!-- ═══ TRANSFER MARKET ══════════════════════════════════════════ -->
 <div id="tab-history" class="tab-content">
