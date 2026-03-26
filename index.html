@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.90</title>
+<title>CycleSim v12.91</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.90</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.91</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -487,7 +487,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.90';
+const CACHE_VERSION = '12.91';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -6376,17 +6376,36 @@ function renderResults(){
   if(prevBtn) prevBtn.style.display=resultsHistory.length>0?'':'none';
   if(nxtBtn) nxtBtn.style.display='none';
   if(!lastResults){
-    // Reconstruct lastResults from raceState when it has stage data
+    // Reconstruct lastResults from raceState or activeRaces when stage data exists
     if(raceState && raceState.stageResults?.length > 0){
-      const rs = raceState;
+      let rs = raceState;
+      // If riderList is empty (stub), try to get full data from activeRaces
+      if(!(rs.riderList?.length > 0) && rs._seasonRaceId!=null && seasonSim?.activeRaces[rs._seasonRaceId]){
+        const activeEntry = seasonSim.activeRaces[rs._seasonRaceId];
+        if(activeEntry?.rs?.riderList?.length > 0){
+          rs = buildRaceStateFromSeasonRS(activeEntry.race, activeEntry.rs, rs._seasonRaceId);
+          raceState = rs;
+          calSelectedRace = activeEntry.race;
+          stages = (activeEntry.race.stages||[]).map((s,i)=>({id:i,name:s.name,terrain:s.terrain,distance:s.distance}));
+        }
+      }
+      // Build GC from stageResults (works even without full riderList)
       const gcAccum = {};
-      (rs.riderList||[]).forEach(r=>gcAccum[r.name]=0);
-      (rs.stageResults||[]).forEach(({result})=>{ (result||[]).forEach(({rider,gap})=>{ if(gcAccum[rider?.name]!=null) gcAccum[rider.name]+=gap; }); });
+      const allResultRiders = new Set();
+      (rs.stageResults||[]).forEach(({result})=>{ (result||[]).forEach(({rider})=>{ if(rider?.name) allResultRiders.add(rider.name); }); });
+      // Initialize from riderList if available, else from stageResults riders
+      const riderSource = rs.riderList?.length > 0 ? rs.riderList : [...allResultRiders].map(n=>allRiders.find(r=>r.name===n)||{name:n,country:'',avg:65});
+      riderSource.forEach(r=>{ if(r?.name) gcAccum[r.name]=0; });
+      (rs.stageResults||[]).forEach(({result})=>{ (result||[]).forEach(({rider,gap})=>{ if(rider?.name && gcAccum[rider.name]!=null) gcAccum[rider.name]+=gap||0; }); });
       const lastSR = rs.stageResults[rs.stageResults.length-1];
       const stagePos = {}; (lastSR?.result||[]).forEach(r=>{ stagePos[r.rider?.name]=r.position; });
-      const gcResult = (rs.riderList||[]).filter(r=>rs.fatigue?.[r.name]!==null).map(r=>({rider:r,totalGap:gcAccum[r.name]??0,stagePos:stagePos[r.name]??9999})).sort((a,b)=>a.totalGap!==b.totalGap?a.totalGap-b.totalGap:a.stagePos-b.stagePos).map((r,i)=>({...r,position:i+1}));
-      lastResults = {raceName:rs.raceName,stageResults:rs.stageResults,gcResult,riderList:rs.riderList,riderCount:rs.riderList?.length||0,teamCount:rs.officialTeamIds?.size||25,abandoned:rs.allAbandoned||raceState?.allAbandoned||[],currentStage:rs.currentStageIndex,totalStages:rs.totalStages,complete:rs.currentStageIndex>=(rs.totalStages||1),race:calSelectedRace,_seasonRaceId:rs._seasonRaceId,_worldChampType:rs._worldChampType,_nationalChampCountry:rs._nationalChampCountry};
-      activeResultTab = 'stage-'+(rs.stageResults.length-1);
+      const gcResult = riderSource
+        .filter(r=>r?.name && (rs.fatigue?.[r.name]!==null || !rs.fatigue?.[r.name]))
+        .map(r=>({rider:r,totalGap:gcAccum[r.name]??0,stagePos:stagePos[r.name]??9999}))
+        .sort((a,b)=>a.totalGap!==b.totalGap?a.totalGap-b.totalGap:a.stagePos-b.stagePos)
+        .map((r,i)=>({...r,position:i+1}));
+      lastResults = {raceName:rs.raceName,stageResults:rs.stageResults,gcResult,riderList:riderSource,riderCount:riderSource.length,teamCount:rs.officialTeamIds?.size||25,abandoned:rs.allAbandoned||[],currentStage:rs.currentStageIndex,totalStages:rs.totalStages,complete:rs.currentStageIndex>=(rs.totalStages||1),race:calSelectedRace,_seasonRaceId:rs._seasonRaceId,_worldChampType:rs._worldChampType,_nationalChampCountry:rs._nationalChampCountry};
+      activeResultTab = activeResultTab||('stage-'+(rs.stageResults.length-1));
       // Fall through to normal render below
     } else {
       const area = document.getElementById('results-area');
