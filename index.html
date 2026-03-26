@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.86</title>
+<title>CycleSim v12.88</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.86</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.88</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -487,7 +487,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.86';
+const CACHE_VERSION = '12.88';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -769,6 +769,10 @@ async function loadData() {
       renderResults();
       // Re-render after brief delay to ensure DOM is ready and button state is correct
       setTimeout(()=>{ renderResults(); }, 50);
+    } else if(seasonSim && seasonSim.dayQueue?.length > 0 && seasonSim.dayQueueIndex === 0){
+      // Reloaded on day preview — restore it
+      updateNavPhase();
+      showDayPreview(seasonSim.currentDay, seasonSim.dayQueue);
     } else if(seasonSim){
       showTab('calendar');
     }
@@ -3182,21 +3186,20 @@ function simulateNextStage(){
   // No live raceState or stub — resume properly
   if(!raceState || raceState._restoredStub){
     const stubId = raceState?._seasonRaceId;
-    // If the last result was a complete race, show finish screen without clearing
-    if(lastResults?.complete && !lastResults?._worldChampType && !lastResults?._nationalChampCountry){
-      // Clear stub marker so next click advances normally
-      if(raceState) raceState._restoredStub = false;
-      showFinishScreen(lastResults);
-      return;
-    }
-    // If last result was a pending GC show, show GC now
+    // pendingGCShow must be checked FIRST (even complete races need GC before finish screen)
     if(lastResults?._pendingGCShow){
       lastResults._pendingGCShow=false;
       if(raceState) raceState._restoredStub = false;
       activeResultTab='gc';
-      saveSeasonState(); // persist cleared flag
+      saveSeasonState();
       switchResultTab('gc');
       renderResults();
+      return;
+    }
+    // If the last result was a complete race, show finish screen without clearing
+    if(lastResults?.complete && !lastResults?._worldChampType && !lastResults?._nationalChampCountry){
+      if(raceState) raceState._restoredStub = false;
+      showFinishScreen(lastResults);
       return;
     }
     raceState = null;
@@ -3970,9 +3973,15 @@ function loadSeasonState(){
     const s = localStorage.getItem('cyclesim_season');
     if(s) seasonSim = JSON.parse(s);
     // Clear in-flight queue on reload — completedToday preserved so done races aren't re-queued
+    // BUT preserve dayQueue if we were showing a day preview (dayQueueIndex===0 = preview stage)
     if(seasonSim){
-      seasonSim.dayQueue = null;
-      seasonSim.dayQueueIndex = 0;
+      const wasPreview = seasonSim.dayQueue?.length > 0 && (seasonSim.dayQueueIndex === 0 || seasonSim.dayQueueIndex == null);
+      if(!wasPreview){
+        seasonSim.dayQueue = null;
+        seasonSim.dayQueueIndex = 0;
+      } else {
+        seasonSim.dayQueueIndex = 0; // reset to start of preview
+      }
       seasonSim.currentDayEvents = null;
     }
     const c = localStorage.getItem('cyclesim_country');
@@ -4672,6 +4681,9 @@ function startSeasonDay(){
   seasonSim.dayQueueIndex = 0;
   seasonSim.currentDayEvents = [];
   saveSeasonState();
+  seasonSim.dayQueue = queue;
+  seasonSim.dayQueueIndex = 0;
+  saveSeasonState(); // persist queue so reload can show preview again
   showDayPreview(day, queue);
 }
 // Keep old name as alias
@@ -5049,6 +5061,11 @@ function advanceSeasonQueue(){
   lastResults = null; raceState = null;
   localStorage.removeItem('cyclesim_lastresult');
   updateNavPhase();
+  // If dayQueue was cleared (after reload), rebuild it before advancing
+  if(!seasonSim.dayQueue){
+    startSeasonDay();
+    return;
+  }
   seasonSim.dayQueueIndex++;
   if(seasonSim.dayQueueIndex >= (seasonSim.dayQueue?.length||0)){
     finishSeasonDay();
