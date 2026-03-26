@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.84</title>
+<title>CycleSim v12.85</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.84</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.85</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -487,7 +487,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.84';
+const CACHE_VERSION = '12.85';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -759,9 +759,11 @@ async function loadData() {
     updateNavPhase();
     // After reload: restore previous position
     if(seasonSim && lastResults){
-      // Restore to the last viewed stage tab
-      const nStages = (lastResults.stageResults||[]).length;
-      if(nStages > 0) activeResultTab = 'stage-'+(nStages-1);
+      // activeResultTab already restored from snapshot; only set default if not restored
+      if(!lastResults._activeResultTab){
+        const nStages = (lastResults.stageResults||[]).length;
+        if(nStages > 0) activeResultTab = 'stage-'+(nStages-1);
+      }
       updateNavPhase();
       showTab('results');
       renderResults();
@@ -3185,10 +3187,12 @@ function simulateNextStage(){
       showFinishScreen(lastResults);
       return;
     }
-    // If last result was a pending GC show, do that first
-    if(lastResults?.totalStages>1 && lastResults?._pendingGCShow){
+    // If last result was a pending GC show, show GC now
+    if(lastResults?._pendingGCShow){
       lastResults._pendingGCShow=false;
       if(raceState) raceState._restoredStub = false;
+      activeResultTab='gc';
+      saveSeasonState(); // persist cleared flag
       switchResultTab('gc');
       renderResults();
       return;
@@ -3982,6 +3986,10 @@ function loadSeasonState(){
         stageIdSeq=0;
         stages=(lastResults.race?.stages||[]).map((s,i)=>({id:stageIdSeq++,name:s.name,terrain:s.terrain,distance:s.distance}));
       }
+      // Restore activeResultTab from snapshot
+      if(lastResults._activeResultTab) activeResultTab = lastResults._activeResultTab;
+      // Restore abandoned from snapshot
+      if(lastResults._abandoned && !lastResults.abandoned) lastResults.abandoned = lastResults._abandoned;
       // Restore raceState skeleton so inSeason/next button logic works
       if(lastResults && seasonSim){
         raceState = {
@@ -3989,7 +3997,7 @@ function loadSeasonState(){
           stageResults:lastResults.stageResults||[],
           currentStageIndex:lastResults.currentStage||0,
           totalStages:lastResults.totalStages||1,
-          gcTimes:{},fatigue:{},allAbandoned:[],activeRiders:[],riderList:[],raceVariance:{},
+          gcTimes:{},fatigue:{},allAbandoned:lastResults.abandoned||[],activeRiders:[],riderList:[],raceVariance:{},
           officialTeamIds:new Set(),
           _seasonRaceId:lastResults._seasonRaceId??null,
           _worldChampType:lastResults._worldChampType||null,
@@ -4027,10 +4035,12 @@ function saveSeasonState(){
           }))
         })),
         _pendingGCShow:lastResults._pendingGCShow||false,
+        _activeResultTab:activeResultTab,
         race:lastResults.race?{id:lastResults.race.id,name:lastResults.race.name,category:lastResults.race.category,country:lastResults.race.country,stages:lastResults.race.stages,startDay:lastResults.race.startDay}:null,
         _seasonRaceId:lastResults._seasonRaceId,
         _worldChampType:lastResults._worldChampType,
         _nationalChampCountry:lastResults._nationalChampCountry,
+        _abandoned:lastResults.abandoned||(lastResults.stageResults||[]).flatMap(sr=>sr.abandoned||[]),
       };
       localStorage.setItem('cyclesim_lastresult', JSON.stringify(snap));
     }catch(e){}
@@ -6307,7 +6317,7 @@ function renderResults(){
       const lastSR = rs.stageResults[rs.stageResults.length-1];
       const stagePos = {}; (lastSR?.result||[]).forEach(r=>{ stagePos[r.rider?.name]=r.position; });
       const gcResult = (rs.riderList||[]).filter(r=>rs.fatigue?.[r.name]!==null).map(r=>({rider:r,totalGap:gcAccum[r.name]??0,stagePos:stagePos[r.name]??9999})).sort((a,b)=>a.totalGap!==b.totalGap?a.totalGap-b.totalGap:a.stagePos-b.stagePos).map((r,i)=>({...r,position:i+1}));
-      lastResults = {raceName:rs.raceName,stageResults:rs.stageResults,gcResult,riderList:rs.riderList,riderCount:rs.riderList?.length||0,teamCount:rs.officialTeamIds?.size||25,abandoned:rs.allAbandoned||[],currentStage:rs.currentStageIndex,totalStages:rs.totalStages,complete:rs.currentStageIndex>=(rs.totalStages||1),race:calSelectedRace,_seasonRaceId:rs._seasonRaceId,_worldChampType:rs._worldChampType,_nationalChampCountry:rs._nationalChampCountry};
+      lastResults = {raceName:rs.raceName,stageResults:rs.stageResults,gcResult,riderList:rs.riderList,riderCount:rs.riderList?.length||0,teamCount:rs.officialTeamIds?.size||25,abandoned:rs.allAbandoned||raceState?.allAbandoned||[],currentStage:rs.currentStageIndex,totalStages:rs.totalStages,complete:rs.currentStageIndex>=(rs.totalStages||1),race:calSelectedRace,_seasonRaceId:rs._seasonRaceId,_worldChampType:rs._worldChampType,_nationalChampCountry:rs._nationalChampCountry};
       activeResultTab = 'stage-'+(rs.stageResults.length-1);
       // Fall through to normal render below
     } else {
