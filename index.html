@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.03</title>
+<title>CycleSim v13.04</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.03</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.04</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -488,7 +488,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.03';
+const CACHE_VERSION = '13.04';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3370,6 +3370,7 @@ function simulateNextStage(){
       if(raceState) raceState._restoredStub = false;
       activeResultTab='gc';
       saveSeasonState();
+      saveAppState('results', {lastResults, activeResultTab:'gc'}); // persist cleared flag
       switchResultTab('gc');
       renderResults();
       return;
@@ -3535,7 +3536,7 @@ function runNextStage(){
   if(rs._seasonRaceId!=null && seasonSim){
     const entry = seasonSim.activeRaces[rs._seasonRaceId];
     if(entry){
-      entry.rs.stageResults = rs.stageResults;
+      entry.rs.stageResults = [...rs.stageResults]; // keep copy in sync
       entry.rs.fatigue = rs.fatigue;
       entry.rs.gcTimes = rs.gcTimes;
       entry.rs.activeRiders = rs.activeRiders;
@@ -5052,7 +5053,7 @@ function buildRaceStateFromSeasonRS(race, rs, raceId){
     riderList: rs.riderList,
     fatigue: rs.fatigue,
     gcTimes: rs.gcTimes,
-    stageResults: rs.stageResults,
+    stageResults: [...(rs.stageResults||[])], // COPY — prevent cross-race contamination
     allAbandoned: rs.allAbandoned,
     activeRiders: rs.activeRiders,
     currentStageIndex: rs.currentStageIndex,
