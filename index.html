@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.93</title>
+<title>CycleSim v12.95</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.93</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.95</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -243,6 +243,7 @@ tbody td{padding:6px 10px}
     <div style="display:flex;gap:4px;margin-left:8px;border-left:1px solid var(--border);padding-left:8px">
       <button class="nav-btn btn-sm" onclick="exportSave()" title="Save to disk" style="font-size:.72rem;padding:4px 8px">💾 Save</button>
       <button class="nav-btn btn-sm" onclick="importSave()" title="Load from disk" style="font-size:.72rem;padding:4px 8px">📂 Load</button>
+      <button class="nav-btn btn-sm" onclick="resetEverything()" title="Clear all data and start fresh" style="font-size:.72rem;padding:4px 8px;color:var(--red);opacity:.7">⊘ Reset</button>
     </div>
   </nav>
 </header>
@@ -487,16 +488,16 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.93';
+const CACHE_VERSION = '12.95';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
     if(stored !== CACHE_VERSION){
-      // NEVER wipe teams — only clear draft/UI state on version change
-      localStorage.removeItem('cyclesim_draft');
-      localStorage.removeItem('cyclesim_pendingPool'); // stale — now computed live
+      // On version bump: clear stale transient state but preserve teams/calendar
+      ['cyclesim_draft','cyclesim_pendingPool','cyclesim_appstate',
+       'cyclesim_lastresult','cyclesim_racesetup'].forEach(k=>localStorage.removeItem(k));
       localStorage.setItem('cyclesim_version', CACHE_VERSION);
-      console.log('Cache updated to', CACHE_VERSION, '— teams preserved');
+      console.log('Cache updated to', CACHE_VERSION);
     }
   }catch(e){}
 }
@@ -819,6 +820,16 @@ function restoreAppState(){
 // ═══════════════════════════════════════════════════════════════
 // DATA LOADING
 // ═══════════════════════════════════════════════════════════════
+
+// ── FULL RESET (clears all localStorage simulation data) ─────────────────
+function resetEverything(){
+  if(!confirm('Reset ALL simulation data? This clears teams, season, history, UCI points — everything. The rider database will reload from Google Sheets.')) return;
+  const KEYS = ['cyclesim_appstate','cyclesim_calendar','cyclesim_draft','cyclesim_knownRiders','cyclesim_market','cyclesim_season','cyclesim_teams','cyclesim_teamuci','cyclesim_uci','cyclesim_version','cyclesim_country','cyclesim_champs','cyclesim_yearslog','cyclesim_racecontrib','cyclesim_tlog','cyclesim_lastresult','cyclesim_racesetup','cyclesim_pendingPool'];
+  KEYS.forEach(k=>localStorage.removeItem(k));
+  // Also clear any other cyclesim_* keys
+  Object.keys(localStorage).filter(k=>k.startsWith('cyclesim_')).forEach(k=>localStorage.removeItem(k));
+  location.reload();
+}
 async function loadData() {
   try {
     const res = await fetch(CSV_URL);
@@ -3287,7 +3298,7 @@ function simulateNextStage(){
     }
     raceState = null;
     lastResults = null;
-    localStorage.removeItem('cyclesim_lastresult');
+    clearAppState();
     updateNavPhase();
     if(seasonSim){
       // If the stub had a valid seasonRaceId pointing to an active race, resume it directly
@@ -5022,7 +5033,6 @@ function toggleSeasonTeam(id){
 }
 
 function confirmSeasonRaceStart(raceId){
-  localStorage.removeItem('cyclesim_racesetup'); // no longer pending
   if(!selectedTeams.size){ alert('Select at least one team.'); return; }
   const entry = seasonSim.activeRaces[raceId];
   if(!entry){ advanceSeasonQueue(); return; }
@@ -5080,7 +5090,6 @@ function confirmSeasonRaceStart(raceId){
 function advanceSeasonQueue(){
   if(!seasonSim) return;
   lastResults = null; raceState = null;
-  localStorage.removeItem('cyclesim_lastresult');
   clearAppState();
   updateNavPhase();
   // If dayQueue was cleared (after reload), rebuild it before advancing
@@ -5118,8 +5127,6 @@ function finishSeasonDay(){
   seasonSim.completedToday = [];
   seasonSim.currentDay++;
   lastResults = null; raceState = null;
-  localStorage.removeItem('cyclesim_lastresult');
-  localStorage.removeItem('cyclesim_racesetup');
   clearAppState();
   saveSeasonState();
   saveUciPoints();
