@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.88</title>
+<title>CycleSim v12.90</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.88</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.90</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -487,7 +487,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.88';
+const CACHE_VERSION = '12.90';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -774,7 +774,35 @@ async function loadData() {
       updateNavPhase();
       showDayPreview(seasonSim.currentDay, seasonSim.dayQueue);
     } else if(seasonSim){
-      showTab('calendar');
+      // National champs preview: champQueue exists and still has champs to run
+      if(seasonSim.champQueue?.length > 0 && (seasonSim.champQueueIndex||0) < seasonSim.champQueue.length){
+        updateNavPhase();
+        showNationalChampsPreview(seasonSim.champDay||seasonSim.currentDay, seasonSim.champQueue);
+      } else
+      // Check if we were in a race team selection screen
+      { const pendingSetup = (() => { try{ return JSON.parse(localStorage.getItem('cyclesim_racesetup')||'null'); }catch(e){ return null; } })();
+      if(pendingSetup && pendingSetup.raceId != null){
+        const race = calendar.find(r=>r.id===pendingSetup.raceId);
+        if(race){
+          selectedTeams = new Set(pendingSetup.selectedTeams||[]);
+          calSelectedRace = race;
+          stageIdSeq=0;
+          stages = race.stages.map((s,i)=>({id:stageIdSeq++,name:s.name,terrain:s.terrain,distance:s.distance}));
+          // Ensure the race is in activeRaces (may have been cleared)
+          if(!seasonSim.activeRaces[race.id]){
+            seasonSim.activeRaces[race.id]={race,rs:{riderList:[],fatigue:{},gcTimes:{},stageResults:[],allAbandoned:[],activeRiders:[],currentStageIndex:0,raceVariance:{},totalStages:race.stages.length,officialTeamIds:new Set()}};
+          }
+          // Rebuild dayQueue to point to this race
+          seasonSim.dayQueue=[race.id];
+          seasonSim.dayQueueIndex=0;
+          updateNavPhase();
+          showRaceSetup(race, race.id);
+        } else {
+          showTab('calendar');
+        }
+      } else {
+        showTab('calendar');
+      } }
     }
   } catch(e) {
     document.getElementById('db-wrap').innerHTML =
@@ -3196,9 +3224,22 @@ function simulateNextStage(){
       renderResults();
       return;
     }
-    // If the last result was a complete race, show finish screen without clearing
-    if(lastResults?.complete && !lastResults?._worldChampType && !lastResults?._nationalChampCountry){
+    // If the last result was a complete race, handle appropriately
+    if(lastResults?.complete){
       if(raceState) raceState._restoredStub = false;
+      if(lastResults._worldChampType){
+        // World champ complete → continue season (re-run startSeasonDay)
+        const wcType = lastResults._worldChampType;
+        const wcWinner = lastResults.gcResult?.[0]?.rider?.name||null;
+        finishWorldChamp(wcType, wcWinner, lastResults.gcResult);
+        return;
+      }
+      if(lastResults._nationalChampCountry){
+        // Nat champ complete → run next in queue
+        runNextNationalChamp();
+        return;
+      }
+      // Regular race complete → show finish screen
       showFinishScreen(lastResults);
       return;
     }
@@ -4910,6 +4951,12 @@ function buildRaceStateFromSeasonRS(race, rs, raceId){
 }
 
 function showRaceSetup(race, raceId){
+  // Persist the race setup state so reload can restore it
+  try{
+    localStorage.setItem('cyclesim_racesetup', JSON.stringify({
+      raceId, selectedTeams:[...selectedTeams]
+    }));
+  }catch(e){}
   showTab('race');
   const wrap = document.getElementById('race-setup-wrap');
   if(!wrap) return;
@@ -5002,6 +5049,7 @@ function toggleSeasonTeam(id){
 }
 
 function confirmSeasonRaceStart(raceId){
+  localStorage.removeItem('cyclesim_racesetup'); // no longer pending
   if(!selectedTeams.size){ alert('Select at least one team.'); return; }
   const entry = seasonSim.activeRaces[raceId];
   if(!entry){ advanceSeasonQueue(); return; }
@@ -5097,6 +5145,7 @@ function finishSeasonDay(){
   seasonSim.currentDay++;
   lastResults = null; raceState = null;
   localStorage.removeItem('cyclesim_lastresult');
+  localStorage.removeItem('cyclesim_racesetup');
   saveSeasonState();
   saveUciPoints();
   checkTransferMarket();
