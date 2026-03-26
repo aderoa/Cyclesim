@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v12.96</title>
+<title>CycleSim v12.97</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.96</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v12.97</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -488,7 +488,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '12.96';
+const CACHE_VERSION = '12.97';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -757,16 +757,26 @@ function restoreAppState(){
   const {screen, payload} = st;
   
   if(screen==='results' && payload.lastResults){
-    lastResults = payload.lastResults;
+    const lr = payload.lastResults;
+    const raceId = lr._seasonRaceId;
+    // If race is complete AND no longer in activeRaces, it's stale — skip to calendar
+    // UNLESS it's an incomplete multi-stage race still in activeRaces
+    const isStillActive = raceId!=null && seasonSim.activeRaces[raceId];
+    const isCompletedStale = lr.complete && raceId!=null && !isStillActive;
+    if(isCompletedStale){
+      // Don't restore stale complete-race results; let user continue from calendar
+      return false;
+    }
+    lastResults = lr;
     if(payload.activeResultTab) activeResultTab = payload.activeResultTab;
-    if(payload.lastResults.race) calSelectedRace = payload.lastResults.race;
-    if(payload.lastResults.stageResults?.length){
+    if(lr.race) calSelectedRace = lr.race;
+    if(lr.stageResults?.length){
       stageIdSeq=0;
-      stages=(payload.lastResults.race?.stages||[]).map((s,i)=>({id:stageIdSeq++,name:s.name,terrain:s.terrain,distance:s.distance}));
+      stages=(lr.race?.stages||[]).map((s,i)=>({id:stageIdSeq++,name:s.name,terrain:s.terrain,distance:s.distance}));
     }
     // Build stub raceState so next-stage button works
-    if(payload.lastResults._seasonRaceId!=null){
-      raceState={raceName:payload.lastResults.raceName,stageResults:payload.lastResults.stageResults||[],currentStageIndex:payload.lastResults.currentStage||0,totalStages:payload.lastResults.totalStages||1,gcTimes:{},fatigue:{},allAbandoned:payload.lastResults.abandoned||[],activeRiders:[],riderList:[],raceVariance:{},officialTeamIds:new Set(),_seasonRaceId:payload.lastResults._seasonRaceId,_worldChampType:payload.lastResults._worldChampType||null,_nationalChampCountry:payload.lastResults._nationalChampCountry||null,_restoredStub:true};
+    if(raceId!=null){
+      raceState={raceName:lr.raceName,stageResults:lr.stageResults||[],currentStageIndex:lr.currentStage||0,totalStages:lr.totalStages||1,gcTimes:{},fatigue:{},allAbandoned:lr.abandoned||[],activeRiders:[],riderList:[],raceVariance:{},officialTeamIds:new Set(),_seasonRaceId:raceId,_worldChampType:lr._worldChampType||null,_nationalChampCountry:lr._nationalChampCountry||null,_restoredStub:true};
     }
     updateNavPhase();
     showTab('results');
