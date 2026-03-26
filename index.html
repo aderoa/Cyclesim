@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.06</title>
+<title>CycleSim v13.07</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.06</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.07</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -488,7 +488,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.06';
+const CACHE_VERSION = '13.07';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -4306,29 +4306,26 @@ function loadSeasonState(){
   // (loadData awaits loadSeasonFromIDB before restoreAppState)
 }
 
-async function loadSeasonFromIDB(){
+function loadSeasonFromIDB(){
+  // Season state is in localStorage (synchronous — always up-to-date even after refresh)
   try{
-    // Try IDB first, fall back to localStorage for old saves
-    let data = await idbGet('cyclesim_season');
-    if(!data){
-      const s = localStorage.getItem('cyclesim_season');
-      if(s){ data = JSON.parse(s); localStorage.removeItem('cyclesim_season'); await idbSet('cyclesim_season', data); }
-    }
-    if(data){
-      seasonSim = data;
+    const s = localStorage.getItem('cyclesim_season');
+    if(s){
+      seasonSim = JSON.parse(s);
       seasonSim.dayQueue = null;
       seasonSim.dayQueueIndex = 0;
       seasonSim.currentDayEvents = null;
       seasonSim._needsRiderListRebuild = true;
     }
   }catch(e){ console.error('loadSeasonFromIDB error:', e); seasonSim=null; }
+  return Promise.resolve(); // keeps async init compatible
 }
 
-async function saveSeasonState(){
-  // Always save country points in localStorage (small, needed synchronously)
+function saveSeasonState(){
+  // Country points in localStorage (small, always needed synchronously)
   try{ localStorage.setItem('cyclesim_country', JSON.stringify(countryPoints)); }catch(e){}
   if(!seasonSim) return;
-  // Build compact version for storage
+  // Build compact version — keeps localStorage under 5MB limit
   const compact = {
     ...seasonSim,
     dayLog: (seasonSim.dayLog||[]).map(d=>({
@@ -4357,7 +4354,17 @@ async function saveSeasonState(){
       }
     }])))
   };
-  await idbSet('cyclesim_season', compact);
+  // Synchronous localStorage write — always current, even across refreshes
+  try{
+    localStorage.removeItem('cyclesim_season');
+    localStorage.setItem('cyclesim_season', JSON.stringify(compact));
+  }catch(e){
+    console.warn('Season state too large for localStorage, trimming dayLog:', e.message);
+    try{
+      compact.dayLog = compact.dayLog.slice(-100); // keep last 100 days
+      localStorage.setItem('cyclesim_season', JSON.stringify(compact));
+    }catch(e2){ console.error('Cannot save season state:', e2); }
+  }
 }
 
 // Build a fresh raceState for a race (self-contained, no globals)
