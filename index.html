@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.02</title>
+<title>CycleSim v13.03</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.02</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.03</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -488,7 +488,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.02';
+const CACHE_VERSION = '13.03';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -783,6 +783,8 @@ function emergencyRecover(){
 }
 function saveAppState(screen, payload){
   try{
+    // Always remove old state first to free space before writing new
+    localStorage.removeItem('cyclesim_appstate');
     // Compress lastResults to avoid localStorage quota issues
     let p = payload;
     if(p && p.lastResults){
@@ -2839,6 +2841,7 @@ function loadSavedTeams(){
       else{teams=p.teams||[];nativePool=p.nativePool||[];draftPool=p.draftPool||[];freeAgent=p.freeAgent||[];nativeFreeAgents=p.nativeFreeAgents||[];}
       buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
       document.getElementById('nav-teams-count').textContent=teams.length||'—';
+      updateNavPhase(); // ensure Calendar tab shows when teams are loaded
       if(nativePool.length){
         document.getElementById('btn-step2').disabled=false;
         updatePoolStatus();
@@ -3652,7 +3655,13 @@ function showFinishScreen(lr){
   const cat = race.category||'';
   const catColor = UCI_CAT_COLOR[cat]||'var(--muted)';
   const isStage = lr.totalStages > 1;
-  const classif = lr.stageResults.length > 0 ? computeClassifications(lr.stageResults, lr.riderList||[], raceState?.officialTeamIds) : null;
+  // Rebuild riderList from gcResult when it's empty (after reload compression)
+  const effectiveRiderList = (lr.riderList?.length > 0) ? lr.riderList
+    : (lr.gcResult||[]).map(r=>r.rider).filter(Boolean).map(r=>({
+        name:r.name, country:r.country||'', avg:+(r.avg||65),
+        FLA:65,MTN:65,MM:65,HIL:65,TTR:65,PRL:65,COB:65,SPR:65,ACC:65,DHI:65,ATT:65,STA:65,RES:65,REC:65
+      }));
+  const classif = lr.stageResults.length > 0 ? computeClassifications(lr.stageResults, effectiveRiderList, raceState?.officialTeamIds) : null;
 
   // ── Top-10 GC / finish
   // Re-sort gcResult numerically (totalGap may be string after serialization)
@@ -3752,13 +3761,34 @@ function showFinishScreen(lr){
       '</div>'+
       // Right: secondary classifications + country rankings
       '<div>'+
-        (classif ? (
-          (isStage ? classifMini('🟢 Points Classification', 'var(--green)', classif.points, 'val') : '') +
-          (isStage ? classifMini('🔴 Mountains Classification', 'var(--red)', classif.mountains, 'val') : '') +
-          (isStage ? classifMini('🔵 Intermediate Sprints', 'var(--blue)', classif.intermed, 'val') : '') +
-          teamsMini(classif.teams)
-        ) : '') +
-        countryRankingMini(race.country) +
+        (()=>{
+          if(!classif) return countryRankingMini(race.country);
+          // National best rider
+          const hostCountry = race.country;
+          const natRiders = sortedGC.filter(r=>r.rider?.country===hostCountry);
+          let natHtml = '';
+          if(natRiders.length){
+            const natLeader = Number(sortedGC[0]?.totalGap)||0;
+            const natRows = natRiders.slice(0,5).map((r,i)=>{
+              const gap = Number(r.totalGap)-natLeader;
+              const t2 = riderTeamMap[r.rider.name]!=null?teams.find(x=>x.id===riderTeamMap[r.rider.name]):null;
+              return '<tr>'+
+                '<td style="padding:3px 8px;color:var(--muted);font-size:.7rem;text-align:center">'+(i+1)+'</td>'+
+                '<td style="padding:3px 10px;font-size:.82rem">'+flagImg(r.rider.country,11)+' '+r.rider.name+'</td>'+
+                '<td style="padding:3px 8px"><span class="rteam" style="font-size:.7rem">'+(t2?t2.name:'—')+'</span></td>'+
+                '<td style="padding:3px 8px;text-align:right;font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+
+                (i===0?'<span style="color:var(--accent);font-size:.72rem">LEADER</span>':gap<=0?'s.t.':'+'+fmtGap(gap))+'</td></tr>';
+            }).join('');
+            natHtml = '<div style="margin-bottom:10px"><div style="padding:5px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.75rem;font-weight:700;text-transform:uppercase;color:rgba(160,100,255,.9)">🏠 Best '+hostCountry+' Rider</div>'+
+              '<table style="width:100%;border-collapse:collapse"><tbody>'+natRows+'</tbody></table></div>';
+          }
+          return (isStage ? classifMini('🟢 Points Classification', 'var(--green)', classif.points, 'val') : '') +
+            (isStage ? classifMini('🔴 Mountains Classification', 'var(--red)', classif.mountains, 'val') : '') +
+            (isStage ? classifMini('🔵 Intermediate Sprints', 'var(--blue)', classif.intermed, 'val') : '') +
+            teamsMini(classif.teams) +
+            natHtml +
+            countryRankingMini(race.country);
+        })() +
       '</div>'+
     '</div></div>';
 
