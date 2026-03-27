@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.31</title>
+<title>CycleSim v13.32</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.31</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.32</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.31';
+const CACHE_VERSION = '13.32';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -5787,9 +5787,30 @@ function advanceSeasonQueue(){
   // Do NOT null lastResults/raceState here — let the next runNextStage replace them.
   // Nulling here causes a blank results render if anything triggers renderResults mid-queue.
   updateNavPhase();
-  // If dayQueue was cleared (after reload), rebuild it before advancing
+  // If dayQueue was cleared (after reload), rebuild from remaining active races
   if(!seasonSim.dayQueue){
-    startSeasonDay();
+    const doneToday = new Set(seasonSim.completedToday||[]);
+    const remaining = Object.keys(seasonSim.activeRaces||{})
+      .map(Number)
+      .filter(id=>{
+        const rs = seasonSim.activeRaces[id]?.rs;
+        if(!rs) return false;
+        // Only include races that haven't had a stage run today yet
+        const stageKey = id+':'+(rs.currentStageIndex+1);
+        const currentKey = id+':'+rs.currentStageIndex;
+        return !doneToday.has(stageKey) && !doneToday.has(currentKey);
+      });
+    if(remaining.length > 0){
+      // Resume from remaining races without advancing the day
+      seasonSim.dayQueue = remaining;
+      seasonSim.dayQueueIndex = 0;
+      seasonSim.currentDayEvents = seasonSim.currentDayEvents||[];
+      saveSeasonState();
+      runSeasonQueueItem();
+    } else {
+      // All races done today — finish the day normally
+      finishSeasonDay();
+    }
     return;
   }
   seasonSim.dayQueueIndex++;
