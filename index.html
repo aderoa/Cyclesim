@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.34</title>
+<title>CycleSim v13.35</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.34</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.35</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.34';
+const CACHE_VERSION = '13.35';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -4014,7 +4014,11 @@ function runNextStage(){
     currentStage:rs.currentStageIndex,
     totalStages:rs.totalStages,
     complete:rs.currentStageIndex>=stages.length,
-    race:calSelectedRace
+    race:calSelectedRace,
+    _seasonRaceId:rs._seasonRaceId||null,
+    _worldChampType:rs._worldChampType||null,
+    _nationalChampCountry:rs._nationalChampCountry||null,
+    _pendingGCShow:false
   };
   // Award UCI points on race completion
   if(rs.currentStageIndex>=stages.length && calSelectedRace){
@@ -7650,23 +7654,16 @@ function showTab(tab){
       showDayPreview(seasonSim.currentDay, seasonSim.dayQueue);
       return;
     }
-    // Always sync activeResultTab from appstate when returning to Results
-    // (navigating away can desync the global from what was last shown)
+    // Sync activeResultTab from appstate when returning to Results after navigating away
     const savedState = (() => { try{ return JSON.parse(localStorage.getItem('cyclesim_appstate')||'null'); }catch(e){ return null; }})();
     if(savedState?.screen==='results' && savedState?.payload){
-      if(!lastResults){
-        // No lastResults — full restore
-        restoreAppState();
-        return;
-      }
-      // lastResults exists — just sync the tab and race reference
       const p = savedState.payload;
-      if(p.activeResultTab) activeResultTab = p.activeResultTab;
-      // If lastResults is for a different race than appstate, restore fully
-      if(p._seasonRaceId != null && lastResults._seasonRaceId !== p._seasonRaceId){
-        restoreAppState();
-        return;
+      if(!lastResults){
+        restoreAppState(); return;
       }
+      // Only sync tab — never restore if lastResults is already populated
+      // Restoring would overwrite live race data with stale appstate
+      if(p.activeResultTab) activeResultTab = p.activeResultTab;
     }
     renderResults();
   }
