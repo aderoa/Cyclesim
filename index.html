@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.15</title>
+<title>CycleSim v13.16</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.15</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.16</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.15';
+const CACHE_VERSION = '13.16';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -974,6 +974,17 @@ function openCheckpointsModal(){
 // ═══════════════════════════════════════════════════════════════
 // DEBUG PANEL
 // ═══════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════
+// ACTION LOG — persistent trace of simulation events
+// ═══════════════════════════════════════════════════════════════
+const _actionLog = [];
+function logAction(msg){
+  const t = new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  _actionLog.push('['+t+'] '+msg);
+  if(_actionLog.length > 50) _actionLog.shift();
+}
+
 function debugClearAndReload(){ if(confirm('Clear appstate and reload?')){ clearAppState(); location.reload(); } }
 function debugLogAll(){
   console.log('APPSTATE:', JSON.parse(localStorage.getItem('cyclesim_appstate')));
@@ -1079,6 +1090,8 @@ async function openDebugPanel(){
       '<span style="color:#666;font-size:.7rem;flex:1">v13.12 · '+new Date().toLocaleTimeString()+'</span>'+
       '<button onclick="document.getElementById(\'debug-modal\').remove()" style="background:#333;border:none;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer">✕ Close</button>'+
     '</div>'+
+    section('Action Log (newest first)', '#ff8844',
+      _actionLog.slice().reverse().join('\n') || '(no actions yet this session)')+
     section('localStorage Sizes (total: '+(totalLS/1024).toFixed(1)+'KB)', '#4d9fff', fmt(lsSizes))+
     section('appstate (screen: '+(appstate?.screen||'none')+')', '#f5c400', fmt({
       screen:appstate?.screen, ts:appstate?.ts?new Date(appstate.ts).toLocaleTimeString():null,
@@ -1159,6 +1172,7 @@ function loadAppState(){
 }
 function restoreAppState(){
   if(!seasonSim) return false;
+  logAction('restoreAppState called');
   const st = loadAppState();
   if(!st) return false;
   const {screen, payload} = st;
@@ -3796,11 +3810,17 @@ function simulateRace(){
 
 // Continue race: simulate next stage
 function simulateNextStage(){
+  logAction('simulateNextStage called | raceState='+(!raceState?'null':raceState.raceName)
+    +' stub='+(!raceState?'N/A':raceState._restoredStub)
+    +' pendingGC='+(!lastResults?'N/A':lastResults._pendingGCShow)
+    +' complete='+(!lastResults?'N/A':lastResults.complete)
+    +' tab='+activeResultTab);
   // No live raceState or stub — resume properly
   if(!raceState || raceState._restoredStub){
     const stubId = raceState?._seasonRaceId;
     // pendingGCShow must be checked FIRST (even complete races need GC before finish screen)
     if(lastResults?._pendingGCShow){
+      logAction('STUB: pendingGCShow → showing GC');
       lastResults._pendingGCShow=false;
       if(raceState) raceState._restoredStub = false;
       activeResultTab='gc';
@@ -3829,6 +3849,7 @@ function simulateNextStage(){
       showFinishScreen(lastResults);
       return;
     }
+    logAction('STUB: clearing state, looking for active race to resume');
     lastResults = null;
     clearAppState();
     updateNavPhase();
@@ -3856,6 +3877,7 @@ function simulateNextStage(){
   if((raceState?._seasonRaceId!=null || raceState?._worldChampType || raceState?._nationalChampCountry) && seasonSim){
     // Multi-stage race: show GC after each stage before advancing
     if(lastResults?.totalStages>1 && lastResults?._pendingGCShow){
+      logAction('NON-STUB: pendingGCShow → showing GC');
       lastResults._pendingGCShow=false;
       saveAppState('results', {lastResults, activeResultTab:'gc'});
       switchResultTab('gc');
@@ -3870,6 +3892,7 @@ function simulateNextStage(){
     }
     // Incomplete multi-stage: run next stage directly if race is still in activeRaces
     if(raceState._seasonRaceId!=null && seasonSim.activeRaces[raceState._seasonRaceId]){
+      logAction('NON-STUB: running next stage directly from activeRaces['+raceState._seasonRaceId+']');
       const entry = seasonSim.activeRaces[raceState._seasonRaceId];
       calSelectedRace = entry.race;
       stageIdSeq=0;
@@ -3896,6 +3919,7 @@ function simulateNextStage(){
 function runNextStage(){
   const rs=raceState;
   const stage=stages[rs.currentStageIndex];
+  logAction('runNextStage: '+rs.raceName+' stage['+(rs.currentStageIndex)+'] '+stage?.name+' (stageResults so far: '+rs.stageResults.length+')');
 
   // Stage-level variance (±10% on top of race variance)
   const stageVariance=makeVariance(rs.activeRiders, 0.10);
@@ -3965,6 +3989,7 @@ function runNextStage(){
     saveSeasonState();
   }
   activeResultTab='stage-'+(rs.stageResults.length-1);
+  logAction('runNextStage done: activeResultTab='+activeResultTab+' stageResults.len='+rs.stageResults.length+' complete='+(rs.currentStageIndex>=stages.length));
   // Flag that we want to show GC after this stage result (multi-stage races only, including final)
   if(rs._seasonRaceId!=null && stages.length>1){
     lastResults._pendingGCShow=true;
