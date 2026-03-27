@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.42</title>
+<title>CycleSim v13.43</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.42</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.43</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.42';
+const CACHE_VERSION = '13.43';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3943,7 +3943,7 @@ function simulateNextStage(){
   if((raceState?._seasonRaceId!=null || raceState?._worldChampType || raceState?._nationalChampCountry) && seasonSim){
     // Multi-stage race: show GC after each stage before advancing
     if(lastResults?.totalStages>1 && lastResults?._pendingGCShow){
-      logAction('NON-STUB: pendingGCShow → showing GC');
+      logAction('NON-STUB: pendingGCShow → showing GC. gcResult[0]='+(lastResults?.gcResult?.[0]?.rider?.name||'none')+' stageResults='+lastResults?.stageResults?.length);
       lastResults._pendingGCShow=false;
       saveAppState('results', {lastResults, activeResultTab:'gc'});
       switchResultTab('gc');
@@ -7441,6 +7441,10 @@ function buildResultRow(pos,rider,gap,isWinner){
 }
 function renderResultTable(rows,subtitle,abandoned,headers){
   const area = document.getElementById('results-area');
+  // Log the first row's rider name so we can compare with what user sees
+  const firstRow = Array.isArray(rows) ? rows[0] : (rows||'');
+  const firstRiderMatch = String(firstRow).match(/data-rider-palmares="([^"]+)"/);
+  logAction('renderResultTable: subtitle="'+subtitle.substring(0,40)+'" firstRider='+(firstRiderMatch?.[1]||'none'));
   area.innerHTML=`
     <div style="font-size:.8rem;color:var(--muted);margin-bottom:8px">${subtitle}</div>
     <div class="result-wrap">
