@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.25</title>
+<title>CycleSim v13.26</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.25</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.26</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.25';
+const CACHE_VERSION = '13.26';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -5766,32 +5766,12 @@ function confirmSeasonRaceStart(raceId){
 
 function advanceSeasonQueue(){
   if(!seasonSim) return;
-  lastResults = null; raceState = null;
-  // Check for active mid-tour race AFTER clearing lastResults
-  // Save appstate pointing to it so a refresh lands on its results, not a blank calendar
-  const activeIds = Object.keys(seasonSim.activeRaces||{});
-  const activeMidTourId = activeIds.find(id=>(seasonSim.activeRaces[id]?.rs?.stageResults?.length||0)>0);
-  if(activeMidTourId){
-    // Save a reference appstate — restoreAppState will rebuild results from activeRaces
-    const entry = seasonSim.activeRaces[activeMidTourId];
-    localStorage.removeItem('cyclesim_appstate');
-    localStorage.setItem('cyclesim_appstate', JSON.stringify({
-      screen:'results',
-      payload:{
-        _seasonRaceId: parseInt(activeMidTourId),
-        activeResultTab: 'stage-'+((entry.rs.stageResults?.length||1)-1),
-        _pendingGCShow: false,
-        complete: false,
-        raceId: entry.race?.id,
-        raceName: entry.race?.name,
-        totalStages: entry.race?.stages?.length,
-        currentStage: entry.rs.currentStageIndex,
-      },
-      ts: Date.now()
-    }));
-  } else {
-    clearAppState();
+  // Save current lastResults BEFORE clearing — so refresh shows last result, not blank calendar
+  // This covers: mid-tour between stages, after a classic before next race, etc.
+  if(lastResults && lastResults.raceName){
+    saveAppState('results', {lastResults, activeResultTab});
   }
+  lastResults = null; raceState = null;
   updateNavPhase();
   // If dayQueue was cleared (after reload), rebuild it before advancing
   if(!seasonSim.dayQueue){
