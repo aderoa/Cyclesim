@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.21</title>
+<title>CycleSim v13.22</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.21</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.22</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.21';
+const CACHE_VERSION = '13.22';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -558,7 +558,8 @@ const TEAM_NAMES = {
   'Turkey':['Istanbul','Ankara','Izmir','Bursa','Adana','Gaziantep','Konya','Antalya','Kayseri','Mersin','Eskişehir','Diyarbakır','Samsun','Denizli','Adapazarı','Malatya','Kahramanmaraş','Erzurum'],
   'Algeria':['Alger','Oran','Constantine','Annaba','Blida','Batna','Sétif','Tizi Ouzou','Djelfa','Béjaïa','Biskra','Tlemcen','Sidi Bel Abbès','Skikda'],
   'South Africa':['Johannesburg','Cape Town','Durban','Pretoria','Port Elizabeth','Bloemfontein','East London','Pietermaritzburg','Benoni','Boksburg','Tembisa','Soweto','Katlehong','Port Shepstone'],
-  'Slovenia':['Ljubljana','Maribor','Celje','Kranj','Velenje','Koper','Novo Mesto','Ptuj','Murska Sobota','Nova Gorica','Domžale','Kamnik','Škofja Loka'],
+  'Slovenia':['Ljubljana','Maribor','Celje','Kranj','Velenje','Koper','Novo Mesto','Ptuj','Murska Sobota','Nova Gorica','Domžale','Kamnik','Škofja Loka','Trbovlje','Izola','Piran','Slovenj Gradec','Jesenice','Radovljica','Medvode','Sežana','Postojna','Ajdovščina','Idrija','Tolmin','Litija','Ribnica','Kočevje','Metlika','Brežice','Krško','Sevnica','Laško','Žalec','Šentjur','Rogaška Slatina','Slovenska Bistrica','Ormož','Ljutomer','Lendava','Gornja Radgona','Radenci'],
+
   'Thailand':['Bangkok','Nonthaburi','Pak Kret','Hat Yai','Chiang Mai','Pattaya','Khon Kaen','Udon Thani','Nakhon Ratchasima','Chiang Rai','Ubon Ratchathani','Nakhon Si Thammarat','Surat Thani','Nakhon Sawan','Phitsanulok','Lampang','Rayong','Chonburi','Samut Prakan','Pathum Thani','Samut Sakhon','Nakhon Pathom','Ayutthaya','Ang Thong','Saraburi','Lop Buri','Sing Buri','Chai Nat','Suphanburi','Kanchanaburi','Ratchaburi','Phetchaburi','Prachuap Khiri Khan','Chumphon','Ranong','Phangnga','Phuket','Krabi','Trang','Satun','Songkhla','Pattani','Yala','Narathiwat','Buriram','Surin','Si Sa Ket','Roi Et','Kalasin','Mahasarakham','Yasothon','Mukdahan','Nakhon Phanom','Sakon Nakhon','Nong Khai','Loei','Nong Bua Lam Phu','Chaiyaphum','Phetchabun','Tak','Mae Hong Son','Lamphun','Phrae','Nan','Phayao','Uttaradit','Sukhothai'],
   'Indonesia':['Jakarta','Surabaya','Bandung','Medan','Semarang','Palembang','Makassar','Depok','Tangerang','Bekasi','South Tangerang'],
   'Canada':['Toronto','Vancouver','Montréal','Calgary','Ottawa','Edmonton','Mississauga','Winnipeg','Quebec City','Hamilton','Kitchener','London','Halifax','Victoria'],
@@ -3323,6 +3324,7 @@ function loadSavedTeams(){
       else{teams=p.teams||[];nativePool=p.nativePool||[];draftPool=p.draftPool||[];freeAgent=p.freeAgent||[];nativeFreeAgents=p.nativeFreeAgents||[];}
       buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
       document.getElementById('nav-teams-count').textContent=teams.length||'—';
+      sweepNumericTeamNames(); // fix any "Country NNN" names from old saves
       updateNavPhase(); // ensure Calendar tab shows when teams are loaded
       if(nativePool.length){
         document.getElementById('btn-step2').disabled=false;
