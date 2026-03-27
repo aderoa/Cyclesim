@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.18</title>
+<title>CycleSim v13.20</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.18</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.20</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.18';
+const CACHE_VERSION = '13.20';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1652,6 +1652,7 @@ function stepSortByNationality(){
 
   // Resolve identities immediately so cards are visible
   resolveTeamIdentities();
+  sweepNumericTeamNames();
 
   console.log(`Teams: ${teams.length} | Native FAs: ${nativeFreeAgents.length}`);
   document.getElementById('nav-teams-count').textContent=teams.length;
@@ -1723,6 +1724,29 @@ function resolveTeamIdentities(){
 }
 
 
+
+// ── SWEEP: Replace numeric team names with real city names ──────
+// Run after resolveTeamIdentities to fix names like "Italy 113", "Slovenia 15"
+function sweepNumericTeamNames(){
+  // Collect all city names already in use (excluding the numeric ones being replaced)
+  const numericPattern = /^.+\s+\d+$/;
+  const usedNames = new Set(teams.filter(t=>t.name&&t.name!=='Empty'&&!numericPattern.test(t.name)).map(t=>t.name));
+  let fixed = 0;
+  teams.forEach(team=>{
+    if(!team.name || !numericPattern.test(team.name)) return; // only "Country NNN" pattern
+    // Find an unused city from the same country only
+    const available = (TEAM_NAMES[team.country]||[]).filter(c=>!usedNames.has(c));
+    if(available.length > 0){
+      const newName = available[0];
+      usedNames.add(newName);
+      team.name = newName;
+      fixed++;
+    }
+    // If no same-country cities left, keep the numeric name — don't borrow from other countries
+  });
+  if(fixed > 0) console.log('sweepNumericTeamNames: fixed '+fixed+' teams');
+  return fixed;
+}
 
 // ── NATIVE FA ASSIGNMENT TOOL ────────────────────────────────────
 // Uses data attributes + event delegation — no inline onclick with names
@@ -1972,6 +1996,7 @@ function autoAssignNativeFA(){
   });
 
   resolveTeamIdentities();
+  sweepNumericTeamNames();
   buildRiderTeamMap();
   populateCountryFilters();
   saveTeams();
@@ -7831,6 +7856,7 @@ function generateTeams(){
   while(teams.length<T) teams.push({id:teams.length,name:'',country:'',riders:[]});
   if(teams.length>T) teams=teams.slice(0,T);
   resolveTeamIdentities();
+  sweepNumericTeamNames();
 
   // Assign native FAs using geographic proximity
   if(nativeFreeAgents.length>0){
@@ -7902,9 +7928,12 @@ function generateTeams(){
   updatePoolStatus();
   renderDraftUI();
   saveTeams();
-  updateNavPhase();
   document.getElementById('nav-teams-count').textContent=teams.length;
   document.getElementById('teams-count-pill').textContent=teams.length+' teams';
+  updateNavPhase(); // must run after nav-teams-count is set
+  // Explicitly show Calendar tab — it should always appear after team generation
+  const calBtn2 = document.getElementById('nav-btn-calendar');
+  if(calBtn2) calBtn2.style.display = '';
   console.log('Done: '+teams.length+' teams, draftLog: '+draftLog.length+' picks');
 }
 
