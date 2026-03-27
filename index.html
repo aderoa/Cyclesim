@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.22</title>
+<title>CycleSim v13.24</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.22</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.24</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.22';
+const CACHE_VERSION = '13.24';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1096,7 +1096,7 @@ async function openDebugPanel(){
   modal.innerHTML = '<div style="background:#111;border:1px solid #444;border-radius:10px;max-width:900px;width:100%;max-height:95vh;overflow-y:auto;padding:16px;color:#ccc">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;border-bottom:1px solid #333;padding-bottom:10px">'+
       '<span style="color:#f5c400;font-family:Barlow Condensed,sans-serif;font-size:1.2rem;font-weight:800">🔍 Debug Panel</span>'+
-      '<span style="color:#666;font-size:.7rem;flex:1">v13.12 · '+new Date().toLocaleTimeString()+'</span>'+
+      '<span style="color:#666;font-size:.7rem;flex:1">'+CACHE_VERSION+' · '+new Date().toLocaleTimeString()+'</span>'+
       '<button onclick="document.getElementById(\'debug-modal\').remove()" style="background:#333;border:none;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer">✕ Close</button>'+
     '</div>'+
     section('Action Log (newest first)', '#ff8844',
@@ -3324,7 +3324,9 @@ function loadSavedTeams(){
       else{teams=p.teams||[];nativePool=p.nativePool||[];draftPool=p.draftPool||[];freeAgent=p.freeAgent||[];nativeFreeAgents=p.nativeFreeAgents||[];}
       buildRiderTeamMap();populateCountryFilters();renderTeams();renderRaceTeamPicker();
       document.getElementById('nav-teams-count').textContent=teams.length||'—';
-      sweepNumericTeamNames(); // fix any "Country NNN" names from old saves
+      if(sweepNumericTeamNames() > 0){ // fix any "Country NNN" names from old saves
+        saveTeams(); renderTeams(); // persist and redisplay fixed names
+      }
       updateNavPhase(); // ensure Calendar tab shows when teams are loaded
       if(nativePool.length){
         document.getElementById('btn-step2').disabled=false;
@@ -6719,6 +6721,32 @@ function stageClimbs(terrain){
 
 // Compute all secondary classifications from stageResults
 function computeClassifications(stageResults, riderList, officialTeamIds){
+  // Check if rider objects are compact (missing FLA attribute)
+  const firstRider = stageResults?.[0]?.result?.[0]?.rider;
+  if(firstRider && firstRider.FLA === undefined){
+    logAction('computeClassifications: COMPACT riders detected! Expanding from allRiders...');
+    // Expand compact riders inline
+    stageResults = stageResults.map(sr=>({
+      ...sr,
+      result: (sr.result||[]).map(r=>{
+        if(r.rider?.FLA === undefined){
+          const full = allRiders.find(x=>x.name===r.rider?.name)||{};
+          return {...r, rider:{...full, name:r.rider?.name||'', country:r.rider?.country||full.country||'', avg:r.rider?.avg||full.avg||65}};
+        }
+        return r;
+      })
+    }));
+    // Also expand riderList if compact
+    if(riderList?.length > 0 && riderList[0]?.FLA === undefined){
+      riderList = riderList.map(r=>{
+        if(r.FLA === undefined){
+          const full = allRiders.find(x=>x.name===r.name)||{};
+          return {...full, name:r.name||'', country:r.country||full.country||'', avg:r.avg||full.avg||65};
+        }
+        return r;
+      });
+    }
+  }
   const pts  = {};  // points classification
   const mtn  = {};  // mountain points
   const inter= {};  // intermediate sprint points
@@ -7226,7 +7254,14 @@ function renderResults(){
     return;
   }
   if(classifTabs.includes(activeResultTab)){
-    const classif=computeClassifications(stageResults,lastResults.riderList||gcResult.map(r=>r.rider), raceState?.officialTeamIds);
+    // Ensure riderList is expanded before computing classifications
+    const rl = (lastResults.riderList?.length > 0 && lastResults.riderList[0]?.FLA !== undefined)
+      ? lastResults.riderList
+      : (lastResults.riderList||gcResult.map(r=>r.rider)).map(r=>{
+          if(r?.FLA === undefined){ const full=allRiders.find(x=>x.name===r?.name)||{}; return {...full,name:r?.name||'',country:r?.country||full.country||'',avg:r?.avg||full.avg||65}; }
+          return r;
+        });
+    const classif=computeClassifications(stageResults, rl, raceState?.officialTeamIds);
     renderClassification(classif,activeResultTab);
     return;
   } else if(activeResultTab==='gc'){
