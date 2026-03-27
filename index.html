@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.35</title>
+<title>CycleSim v13.36</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.35</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.36</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.35';
+const CACHE_VERSION = '13.36';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -7654,16 +7654,20 @@ function showTab(tab){
       showDayPreview(seasonSim.currentDay, seasonSim.dayQueue);
       return;
     }
-    // Sync activeResultTab from appstate when returning to Results after navigating away
+    // Sync activeResultTab from appstate ONLY when returning to same race
     const savedState = (() => { try{ return JSON.parse(localStorage.getItem('cyclesim_appstate')||'null'); }catch(e){ return null; }})();
     if(savedState?.screen==='results' && savedState?.payload){
       const p = savedState.payload;
       if(!lastResults){
         restoreAppState(); return;
       }
-      // Only sync tab — never restore if lastResults is already populated
-      // Restoring would overwrite live race data with stale appstate
-      if(p.activeResultTab) activeResultTab = p.activeResultTab;
+      // Only sync tab if appstate is for the same race currently showing
+      const sameRace = p._seasonRaceId != null && lastResults._seasonRaceId === p._seasonRaceId;
+      const noRaceId = p._seasonRaceId == null && p.raceName === lastResults.raceName;
+      if((sameRace || noRaceId) && p.activeResultTab){
+        activeResultTab = p.activeResultTab;
+      }
+      // If different race — keep whatever activeResultTab runNextStage just set
     }
     renderResults();
   }
