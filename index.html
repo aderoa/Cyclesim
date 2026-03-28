@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.52</title>
+<title>CycleSim v13.53</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.52</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.53</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.52';
+const CACHE_VERSION = '13.53';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1682,17 +1682,24 @@ function stepSortByNationality(){
 // Assigns country (majority riders, tiebreak by best avg, then random)
 // and city name to every team. Called after sorting AND after each NFA assignment.
 function resolveTeamIdentities(){
-  const usedNames={};        // {country: nextIndex}
   const allUsedNames=new Set(); // globally unique names across ALL teams
-  // Pre-populate with existing names that shouldn't change (teams already named)
-  teams.forEach(t=>{ if(t.name&&t.name!=='Empty'&&t.riders.length) allUsedNames.add(t.name); });
+  const usedPerCountry={}; // {country: Set of used city names}
+  // Pre-populate with existing proper names (not numeric, not Empty)
+  const numPat=/^.+\s+\d+$/;
+  teams.forEach(t=>{
+    if(t.name&&t.name!=='Empty'&&!numPat.test(t.name)&&t.riders.length){
+      allUsedNames.add(t.name);
+      if(!usedPerCountry[t.country]) usedPerCountry[t.country]=new Set();
+      usedPerCountry[t.country].add(t.name);
+    }
+  });
   teams.forEach(team=>{
     if(!team.riders.length){
       team.country='Unassigned';
       team.name='Empty';
       return;
     }
-    // Count riders per country
+    // Determine dominant country
     const counts={};
     team.riders.forEach(name=>{
       const r=allRiders.find(x=>x.name===name);
@@ -1706,29 +1713,37 @@ function resolveTeamIdentities(){
     } else {
       const bestAvg=c=>Math.max(...team.riders
         .map(n=>allRiders.find(x=>x.name===n))
-        .filter(r=>r&&r.country===c)
-        .map(r=>r.avg));
+        .filter(r=>r&&r.country===c).map(r=>r.avg));
       const maxAvg=Math.max(...candidates.map(bestAvg));
       const top=candidates.filter(c=>bestAvg(c)>=maxAvg-0.001);
       chosen=top[Math.floor(Math.random()*top.length)];
     }
     team.country=chosen;
-    if(!usedNames[chosen]) usedNames[chosen]=0;
+    // Keep existing proper name if country matches
+    if(team.name&&team.name!=='Empty'&&!numPat.test(team.name)&&team.country===chosen){
+      allUsedNames.add(team.name);
+      if(!usedPerCountry[chosen]) usedPerCountry[chosen]=new Set();
+      usedPerCountry[chosen].add(team.name);
+      return;
+    }
+    // Find next unused city from this country's list
+    if(!usedPerCountry[chosen]) usedPerCountry[chosen]=new Set();
     const nameList=TEAM_NAMES[chosen]||[];
-    // Find next unused name for this country
-    let name, idx=usedNames[chosen];
-    do {
-      name=nameList[idx]||`${chosen} ${idx+1}`;
-      idx++;
-    } while(allUsedNames.has(name) && idx<nameList.length+200);
-    usedNames[chosen]=idx;
-    // Keep existing name if it's already correct (don't rename established teams)
-    if(team.name && team.name!=='Empty' && team.country===chosen){
-      allUsedNames.add(team.name); // already registered
-      return; // don't rename
+    let name=null;
+    for(const city of nameList){
+      if(!allUsedNames.has(city)){
+        name=city; break;
+      }
+    }
+    // Fallback: numeric name if all cities exhausted
+    if(!name){
+      let n=1;
+      while(allUsedNames.has(chosen+' '+n)) n++;
+      name=chosen+' '+n;
     }
     team.name=name;
     allUsedNames.add(name);
+    usedPerCountry[chosen].add(name);
   });
 }
 
@@ -1737,21 +1752,30 @@ function resolveTeamIdentities(){
 // ── SWEEP: Replace numeric team names with real city names ──────
 // Run after resolveTeamIdentities to fix names like "Italy 113", "Slovenia 15"
 function sweepNumericTeamNames(){
-  // Collect all city names already in use (excluding the numeric ones being replaced)
   const numericPattern = /^.+\s+\d+$/;
+  // Build set of used names from non-numeric team names only
   const usedNames = new Set(teams.filter(t=>t.name&&t.name!=='Empty'&&!numericPattern.test(t.name)).map(t=>t.name));
   let fixed = 0;
   teams.forEach(team=>{
-    if(!team.name || !numericPattern.test(team.name)) return; // only "Country NNN" pattern
-    // Find an unused city from the same country only
-    const available = (TEAM_NAMES[team.country]||[]).filter(c=>!usedNames.has(c));
-    if(available.length > 0){
-      const newName = available[0];
-      usedNames.add(newName);
-      team.name = newName;
-      fixed++;
+    if(!team.name || !numericPattern.test(team.name)) return;
+    // Try team.country first, then try to infer country from the name prefix (e.g. "Italy 125" → Italy)
+    const namePrefix = team.name.replace(/\s+\d+$/, '');
+    const countriesToTry = [team.country, namePrefix].filter(Boolean);
+    let found = false;
+    for(const ctry of countriesToTry){
+      const countryList = TEAM_NAMES[ctry]||[];
+      for(const city of countryList){
+        if(!usedNames.has(city)){
+          usedNames.add(city);
+          team.name = city;
+          if(ctry !== team.country) team.country = ctry; // sync country if we used prefix
+          fixed++;
+          found = true;
+          break;
+        }
+      }
+      if(found) break;
     }
-    // If no same-country cities left, keep the numeric name — don't borrow from other countries
   });
   if(fixed > 0) console.log('sweepNumericTeamNames: fixed '+fixed+' teams');
   return fixed;
@@ -3398,6 +3422,58 @@ function editTeamName(teamId){
     if(e.key==='Escape') renderTeams();
   });
 }
+// ── TEAM JERSEY COLORS ─────────────────────────────────────────
+// Generate a deterministic jersey color palette from team name
+function getTeamJerseyColor(teamName){
+  if(!teamName) return {primary:'#4d9fff',secondary:'#ffffff',accent:'#1a1a2e'};
+  // Hash team name to pick from a curated palette of distinct colors
+  let h=0; for(let i=0;i<teamName.length;i++) h=(h*31+teamName.charCodeAt(i))>>>0;
+  const PALETTES=[
+    {primary:'#e63946',secondary:'#ffffff',accent:'#1d3557'},   // red/white
+    {primary:'#2196F3',secondary:'#ffffff',accent:'#0d47a1'},   // blue/white
+    {primary:'#f5a623',secondary:'#1a1a1a',accent:'#7c4800'},   // gold/black
+    {primary:'#4caf50',secondary:'#ffffff',accent:'#1b5e20'},   // green/white
+    {primary:'#9c27b0',secondary:'#ffffff',accent:'#4a148c'},   // purple/white
+    {primary:'#ff5722',secondary:'#ffffff',accent:'#bf360c'},   // orange/white
+    {primary:'#00bcd4',secondary:'#1a1a1a',accent:'#006064'},   // cyan/black
+    {primary:'#607d8b',secondary:'#ffffff',accent:'#263238'},   // slate/white
+    {primary:'#8bc34a',secondary:'#1a1a1a',accent:'#33691e'},   // lime/black
+    {primary:'#ff4081',secondary:'#ffffff',accent:'#880e4f'},   // pink/white
+    {primary:'#795548',secondary:'#ffffff',accent:'#3e2723'},   // brown/white
+    {primary:'#009688',secondary:'#ffffff',accent:'#004d40'},   // teal/white
+    {primary:'#3f51b5',secondary:'#ffffff',accent:'#1a237e'},   // indigo/white
+    {primary:'#ffd600',secondary:'#1a1a1a',accent:'#f57f17'},   // yellow/black
+    {primary:'#e91e63',secondary:'#ffffff',accent:'#880e4f'},   // rose/white
+    {primary:'#00897b',secondary:'#ffffff',accent:'#004d40'},   // emerald/white
+    {primary:'#f44336',secondary:'#ffeb3b',accent:'#b71c1c'},   // red/yellow
+    {primary:'#1565c0',secondary:'#ffeb3b',accent:'#0d47a1'},   // blue/yellow
+    {primary:'#2e7d32',secondary:'#ffeb3b',accent:'#1b5e20'},   // green/yellow
+    {primary:'#4527a0',secondary:'#e8eaf6',accent:'#1a0072'},   // deep purple
+    {primary:'#00695c',secondary:'#e0f2f1',accent:'#004d40'},   // dark teal
+    {primary:'#ad1457',secondary:'#fce4ec',accent:'#880e4f'},   // crimson
+    {primary:'#283593',secondary:'#e8eaf6',accent:'#1a237e'},   // navy
+    {primary:'#558b2f',secondary:'#f1f8e9',accent:'#33691e'},   // forest
+    {primary:'#6d4c41',secondary:'#efebe9',accent:'#3e2723'},   // espresso
+  ];
+  return PALETTES[h % PALETTES.length];
+}
+
+// Draw a mini jersey SVG for a team
+function teamJerseySVG(teamName, size=32){
+  const {primary,secondary,accent}=getTeamJerseyColor(teamName);
+  const s=size;
+  return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">'
+    // Body
+    +'<path d="M8 10 L4 14 L8 16 L8 26 L24 26 L24 16 L28 14 L24 10 L20 8 C20 8 18 10 16 10 C14 10 12 8 12 8 Z" fill="'+primary+'" stroke="'+accent+'" stroke-width="1"/>'
+    // Collar
+    +'<path d="M12 8 C12 8 13 12 16 12 C19 12 20 8 20 8" fill="none" stroke="'+secondary+'" stroke-width="1.5"/>'
+    // Sleeve stripe
+    +'<path d="M4 14 L8 16" stroke="'+secondary+'" stroke-width="2"/>'
+    +'<path d="M24 16 L28 14" stroke="'+secondary+'" stroke-width="2"/>'
+    // Center stripe (some teams)
+    +'</svg>';
+}
+
 function renderTeams(){
   if(!teams.length){
     document.getElementById('teams-count-pill').textContent='—';
@@ -3428,8 +3504,10 @@ function renderTeams(){
     }).join('');
     const emptyCount=7-team.riders.length;
     const freeSlots=emptyCount>0?Array(emptyCount).fill('<div class="team-free-slot">— empty slot —</div>').join(''):'';
-    return `<div class="team-card" id="tcard-${team.id}" style="border-left-color:${color}">
+    const _jc=getTeamJerseyColor(team.name);
+    return `<div class="team-card" id="tcard-${team.id}" style="border-left-color:${_jc.primary}">
         <div class="team-card-head">
+          <span style="margin-right:2px">${teamJerseySVG(team.name,28)}</span>
           <span class="team-flag">${team.country?flagImg(team.country,13):'🏳️'}</span>
           <span class="team-name-text" style="cursor:pointer" title="Click to rename" onclick="editTeamName(${team.id})">${team.name||'Team #'+(team.id+1)}</span>
           <span class="team-avg-pill">${team.riders.length ? avg.toFixed(1) : '—'}</span>
@@ -6825,7 +6903,7 @@ function showTeamPalmares(teamId){
   showPalmaresModal(
     '<div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">'+
       '<div style="flex:1">'+
-        '<div style="font-family:Barlow Condensed,sans-serif;font-size:1.5rem;font-weight:800;text-transform:uppercase">'+flagImg(team.country,14)+' '+team.name+'</div>'+
+        '<div style="font-family:Barlow Condensed,sans-serif;font-size:1.5rem;font-weight:800;text-transform:uppercase;display:flex;align-items:center;gap:10px">'+teamJerseySVG(team.name,36)+' '+flagImg(team.country,14)+' '+team.name+'</div>'+
         '<div style="font-size:.8rem;color:var(--muted);margin-top:2px">'+team.country+'&nbsp;·&nbsp;Races: '+pal.raceCounts+'&nbsp;·&nbsp;UCI: '+(pal.totalPts||0).toLocaleString()+(pal.uciRank?' <span style="color:var(--accent);font-weight:700">#'+pal.uciRank+'</span>':'')+'&nbsp;·&nbsp;Avg: '+teamAvg(team).toFixed(2)+'</div>'+
       '</div>'+
       '<button id="pal-close-btn" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:4px 8px">✕</button>'+
@@ -6862,7 +6940,7 @@ function renderUciRankings(){
     const team = teams.find(t=>t.name===name);
     const rc = raceCounts[name]||0;
     const tIcons = getLeaderIcons(name,true);
-    const teamFlag = team ? flagImg(team.country,12)+' ' : '';
+    const teamFlag = team ? teamJerseySVG(team.name,18)+' '+flagImg(team.country,12)+' ' : '';
     const tprev=_prevT[name]; const td=tprev?tprev-(i+1):0;
     const tarr=tprev?(td>0?'<span style="color:var(--green);font-size:.62rem;font-weight:700">▲'+td+'</span>':td<0?'<span style="color:var(--red);font-size:.62rem;font-weight:700">▼'+(-td)+'</span>':'<span style="color:var(--muted);font-size:.58rem">—</span>'):'<span style="color:var(--muted);font-size:.55rem">new</span>';
     return '<tr style="cursor:pointer" data-team-palmares="'+(team?team.id:'')+'">'
