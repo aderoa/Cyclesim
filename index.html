@@ -5805,46 +5805,51 @@ function showStagePreview(race, raceId, riderPool, rs){
     +'<div style="font-size:.74rem;color:var(--muted)">'+stage.distance+'km · '+(ATTR_LABELS[stage.terrain]||stage.terrain)+'</div></div>'
     +'</div>':'';
 
-  // Roster (shown for 1-day races and first stage only)
+  // Roster: two-column layout for 1-day and first stage
   let rosterHtml='';
   if(is1day || isFirstStage){
     const sortedUci=Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]);
     const uciRankMap={}; sortedUci.forEach(([n],i)=>uciRankMap[n]=i+1);
-    // Group riders by team
-    const byTeam={};
-    (riderPool||[]).forEach(r=>{
+
+    // 25 teams sorted by average
+    const teamObjs=[...new Set((riderPool||[]).map(r=>{
+      const tid=riderTeamMap[r.name]; return tid!=null?teams.find(t=>t.id===tid):null;
+    }).filter(Boolean))].sort((a,b)=>teamAvg(b)-teamAvg(a));
+
+    const teamsCol=teamObjs.map((t,i)=>{
+      const avg=teamAvg(t);
+      const uciPts=teamUciPoints[t.name]||0;
+      return '<div style="display:flex;align-items:center;gap:6px;padding:3px 8px;border-bottom:1px solid var(--border);font-size:.78rem">'
+        +'<span style="color:var(--muted);font-size:.68rem;min-width:18px">'+(i+1)+'</span>'
+        +teamJerseySVG(t.name,14)+' '
+        +flagImg(t.country,10)+' '
+        +'<span style="flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+t.name+'</span>'
+        +'<span style="font-family:JetBrains Mono,monospace;font-size:.66rem;color:var(--muted)">'+avg.toFixed(1)+'</span>'
+        +(uciPts?'<span style="font-family:JetBrains Mono,monospace;font-size:.6rem;color:var(--accent)">'+uciPts.toLocaleString()+'</span>':'')
+        +'</div>';
+    }).join('');
+
+    // 175 riders sorted by average
+    const sortedRiders=[...(riderPool||[])].sort((a,b)=>b.avg-a.avg);
+    const ridersCol=sortedRiders.map((r,i)=>{
       const tid=riderTeamMap[r.name];
       const t=tid!=null?teams.find(x=>x.id===tid):null;
-      const tn=t?t.name:'—';
-      if(!byTeam[tn]) byTeam[tn]={team:t,riders:[]};
-      byTeam[tn].riders.push(r);
-    });
-    const teamList=Object.values(byTeam).sort((a,b)=>{
-      const ta=a.riders.reduce((s,r)=>s+r.avg,0)/a.riders.length;
-      const tb=b.riders.reduce((s,r)=>s+r.avg,0)/b.riders.length;
-      return tb-ta;
-    });
-    const teamRows=teamList.map(({team,riders})=>{
-      const sorted=[...riders].sort((a,b)=>b.avg-a.avg);
-      const jerseyIcon=team?teamJerseySVG(team.name,16):'';
-      const riderRows=sorted.map(r=>{
-        const uciR=uciRankMap[r.name]||0;
-        return '<div style="display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:.76rem;">'
-          +flagImg(r.country,10)+' <span style="flex:1">'+r.name+'</span>'
-          +'<span style="font-family:JetBrains Mono,monospace;font-size:.68rem;color:var(--muted)">'+r.avg.toFixed(1)+'</span>'
-          +(uciR?'<span style="font-family:JetBrains Mono,monospace;font-size:.62rem;color:var(--accent)">#'+uciR+'</span>':'')
-          +'</div>';
-      }).join('');
-      const teamAvgVal=(riders.reduce((s,r)=>s+r.avg,0)/riders.length).toFixed(1);
-      return '<div style="margin-bottom:6px;border:1px solid var(--border);border-radius:5px;overflow:hidden">'
-        +'<div style="padding:4px 8px;background:var(--surface2);display:flex;align-items:center;gap:6px;font-size:.76rem;font-weight:700;">'
-        +jerseyIcon+(team?flagImg(team.country,10)+' ':'')+'<span style="flex:1">'+(team?team.name:'—')+'</span>'
-        +'<span style="font-family:JetBrains Mono,monospace;font-size:.68rem;color:var(--muted)">'+teamAvgVal+'</span>'
-        +'</div>'+riderRows+'</div>';
+      const uciR=uciRankMap[r.name]||0;
+      return '<div style="display:flex;align-items:center;gap:5px;padding:2px 8px;border-bottom:1px solid var(--border);font-size:.75rem">'
+        +'<span style="color:var(--muted);font-size:.65rem;min-width:18px">'+(i+1)+'</span>'
+        +flagImg(r.country,10)+' '
+        +'<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+r.name+'</span>'
+        +(t?'<span style="font-size:.62rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px">'+t.name+'</span>':'')
+        +'<span style="font-family:JetBrains Mono,monospace;font-size:.64rem;color:var(--muted)">'+r.avg.toFixed(1)+'</span>'
+        +(uciR?'<span style="font-family:JetBrains Mono,monospace;font-size:.6rem;color:var(--accent)">#'+uciR+'</span>':'')
+        +'</div>';
     }).join('');
-    rosterHtml='<div style="margin-bottom:14px">'
-      +'<div style="font-family:Barlow Condensed,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:6px">👥 Startlist ('+riderPool.length+' riders · '+teamList.length+' teams)</div>'
-      +'<div style="max-height:400px;overflow-y:auto">'+teamRows+'</div>'
+
+    rosterHtml='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'
+      +'<div><div style="font-family:Barlow Condensed,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">🚴 Teams ('+teamObjs.length+') — by avg</div>'
+      +'<div style="max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:4px">'+teamsCol+'</div></div>'
+      +'<div><div style="font-family:Barlow Condensed,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">👤 Riders ('+sortedRiders.length+') — by avg</div>'
+      +'<div style="max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:4px">'+ridersCol+'</div></div>'
       +'</div>';
   }
 
@@ -7531,13 +7536,37 @@ function getTeamName(riderName){
   return t?t.name:'—';
 }
 
+// Continent emoji badges
+const CONTINENT_BADGES = {'Europe':'🇪🇺','Africa':'🌍','Americas':'🌎','Asia/Pacific':'🌏'};
+function getContLeader(name, isTeam){
+  if(typeof CONTINENT_COUNTRIES === 'undefined') return '';
+  let badge = '';
+  Object.entries(CONTINENT_COUNTRIES).forEach(([cont, ctryList]) => {
+    const rp={}, tp={};
+    ctryList.forEach(ctry => {
+      if(!countryPoints[ctry]) return;
+      Object.entries(countryPoints[ctry]).forEach(([k,v]) => {
+        if(k.startsWith('__team__')) tp[k.replace('__team__','')] = (tp[k.replace('__team__','')]||0)+v;
+        else rp[k] = (rp[k]||0)+v;
+      });
+    });
+    const leader = isTeam
+      ? Object.entries(tp).sort((a,b)=>b[1]-a[1])[0]?.[0]
+      : Object.entries(rp).sort((a,b)=>b[1]-a[1])[0]?.[0];
+    if(leader && leader === name) badge += CONTINENT_BADGES[cont]||'';
+  });
+  return badge;
+}
+
 function getLeaderIcons(name, isTeam){
-  // 🌐 if UCI world ranking leader; flag(s) if leading country ranking(s)
+  // 🌐 if UCI world ranking leader; flag(s) if leading country ranking(s); continent emoji if leading continent
   let icons = '';
   if(isTeam){
     if(!Object.keys(teamUciPoints).length) return icons;
     const worldTeamLeader = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1])[0]?.[0];
     if(worldTeamLeader && name === worldTeamLeader) icons += '🌐';
+    const contBadge = getContLeader(name, true);
+    if(contBadge) icons += contBadge;
     Object.entries(countryPoints).forEach(([country, pts]) => {
       const top = Object.entries(pts).filter(([k])=>k.startsWith('__team__')).sort((a,b)=>b[1]-a[1])[0]?.[0]?.replace('__team__','');
       if(top && top === name) icons += flagImg(country, 11);
@@ -7546,6 +7575,8 @@ function getLeaderIcons(name, isTeam){
     if(!Object.keys(uciPoints).length) return icons;
     const worldLeader = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1])[0]?.[0];
     if(worldLeader && name === worldLeader) icons += '🌐';
+    const contBadge = getContLeader(name, false);
+    if(contBadge) icons += contBadge;
     Object.entries(countryPoints).forEach(([country, pts]) => {
       const top = Object.entries(pts).filter(([k])=>!k.startsWith('__team__')).sort((a,b)=>b[1]-a[1])[0]?.[0];
       if(top && top === name) icons += flagImg(country, 11);
