@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.58</title>
+<title>CycleSim v13.59</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.58</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.59</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.58';
+const CACHE_VERSION = '13.59';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -6973,6 +6973,8 @@ function renderUciRankings(){
     return;
   }
   const th = 'padding:8px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase';
+  const _prevR=seasonSim?.prevDayUciRankings||{};
+  const _prevT=seasonSim?.prevDayTeamRankings||{};
   const rows = sorted.map(([name,pts],i)=>{
     const rider = allRiders.find(r=>r.name===name);
     const teamId = riderTeamMap[name];
@@ -6999,8 +7001,6 @@ function renderUciRankings(){
       +'<td style="padding:7px 12px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right;padding-right:16px">'+pts.toLocaleString()+'</td></tr>';
   }).join('');
   // Rider rows: make rider name + team clickable
-  const _prevR=seasonSim?.prevDayUciRankings||{};
-  const _prevT=seasonSim?.prevDayTeamRankings||{};
   const rows2 = sorted.map(([name,pts],i)=>{
     const rider = allRiders.find(r=>r.name===name);
     const teamId2 = riderTeamMap[name];
