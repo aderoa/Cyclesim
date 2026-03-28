@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.55</title>
+<title>CycleSim v13.56</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.55</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.56</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.55';
+const CACHE_VERSION = '13.56';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1340,6 +1340,11 @@ async function loadData() {
     renderDatabase();
     clearStaleCache();
     loadSavedTeams();
+    // Ensure Calendar tab shows if teams loaded
+    if(teams.length > 0){
+      const _calBtn=document.getElementById('nav-btn-calendar');
+      if(_calBtn) _calBtn.style.display='';
+    }
     // Rebuild compacted riderLists and activeRiders in seasonSim activeRaces
     if(seasonSim?._needsRiderListRebuild){
       Object.values(seasonSim.activeRaces||{}).forEach(entry=>{
@@ -3354,10 +3359,21 @@ function strengthColor(avg){
 }
 
 // ── localStorage ─────────────────────────────────────────────
-function saveTeams(){try{localStorage.setItem('cyclesim_teams',JSON.stringify({teams,nativePool,draftPool,freeAgent,nativeFreeAgents}));localStorage.setItem('cyclesim_version',CACHE_VERSION);}catch(e){}}
+function saveTeams(){
+  try{
+    const data=JSON.stringify({teams,nativePool,draftPool,freeAgent,nativeFreeAgents});
+    localStorage.setItem('cyclesim_teams',data);
+    localStorage.setItem('cyclesim_version',CACHE_VERSION);
+    console.log('saveTeams: saved',teams.length,'teams,',data.length,'chars');
+  }catch(e){
+    console.error('saveTeams FAILED:',e);
+    alert('Could not save teams: '+e.message);
+  }
+}
 function loadSavedTeams(){
   try{
     const raw=localStorage.getItem('cyclesim_teams');
+    console.log('loadSavedTeams: raw=',raw?raw.length+'chars':'null');
     if(raw){
       const p=JSON.parse(raw);
       if(Array.isArray(p)){teams=p;nativePool=[];draftPool=[];freeAgent=[];nativeFreeAgents=[];}
@@ -3458,20 +3474,45 @@ function getTeamJerseyColor(teamName){
   return PALETTES[h % PALETTES.length];
 }
 
-// Draw a mini jersey SVG for a team
+// Draw a cycling maillot SVG for a team
 function teamJerseySVG(teamName, size=32){
   const {primary,secondary,accent}=getTeamJerseyColor(teamName);
+  // Pick a design pattern based on name hash
+  let h=0; for(let i=0;i<teamName.length;i++) h=(h*31+teamName.charCodeAt(i))>>>0;
+  const pattern=h%5; // 0=solid, 1=side bands, 2=diagonal, 3=chest band, 4=stripes
   const s=size;
-  return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">'
-    // Body
-    +'<path d="M8 10 L4 14 L8 16 L8 26 L24 26 L24 16 L28 14 L24 10 L20 8 C20 8 18 10 16 10 C14 10 12 8 12 8 Z" fill="'+primary+'" stroke="'+accent+'" stroke-width="1"/>'
-    // Collar
-    +'<path d="M12 8 C12 8 13 12 16 12 C19 12 20 8 20 8" fill="none" stroke="'+secondary+'" stroke-width="1.5"/>'
-    // Sleeve stripe
-    +'<path d="M4 14 L8 16" stroke="'+secondary+'" stroke-width="2"/>'
-    +'<path d="M24 16 L28 14" stroke="'+secondary+'" stroke-width="2"/>'
-    // Center stripe (some teams)
-    +'</svg>';
+  // Cycling maillot shape: form-fitting, longer body, short aerodynamic sleeves
+  // viewBox 0 0 40 44 for good proportions
+  let inner='';
+  // Main body - aerodynamic cut cycling jersey shape
+  const bodyPath='M14 5 Q10 5 7 8 L2 13 L7 16 L8 32 Q8 35 16 35 Q24 35 24 32 L25 16 L30 13 L25 8 Q22 5 18 5 Q17 3 16 3 Q15 3 14 5Z';
+  inner+='<path d="'+bodyPath+'" fill="'+primary+'" stroke="'+accent+'" stroke-width="0.8"/>';
+  // Pattern overlay
+  if(pattern===1){
+    // Side bands in secondary color
+    inner+='<path d="M8 16 L8 32 Q8 35 10 35 L10 15Z" fill="'+secondary+'" opacity="0.7"/>';
+    inner+='<path d="M22 15 L22 35 Q24 35 24 32 L25 16Z" fill="'+secondary+'" opacity="0.7"/>';
+  } else if(pattern===2){
+    // Diagonal sash
+    inner+='<clipPath id="jc'+h+'"><path d="'+bodyPath+'"/></clipPath>';
+    inner+='<rect x="0" y="12" width="35" height="9" fill="'+secondary+'" opacity="0.6" transform="rotate(-20 16 20)" clip-path="url(#jc'+h+')"/>';
+  } else if(pattern===3){
+    // Chest band
+    inner+='<clipPath id="jc'+h+'"><path d="'+bodyPath+'"/></clipPath>';
+    inner+='<rect x="0" y="10" width="40" height="7" fill="'+secondary+'" opacity="0.7" clip-path="url(#jc'+h+')"/>';
+  } else if(pattern===4){
+    // Vertical stripes
+    inner+='<clipPath id="jc'+h+'"><path d="'+bodyPath+'"/></clipPath>';
+    inner+='<rect x="14" y="0" width="4" height="40" fill="'+secondary+'" opacity="0.6" clip-path="url(#jc'+h+')"/>';
+  }
+  // Collar V-neck (cycling style)
+  inner+='<path d="M13 5 L16 11 L19 5" fill="'+accent+'" stroke="'+accent+'" stroke-width="0.5"/>';
+  // Front zip line
+  inner+='<line x1="16" y1="10" x2="16" y2="30" stroke="'+accent+'" stroke-width="0.6" opacity="0.5"/>';
+  // Sleeve cuffs
+  inner+='<path d="M2 13 Q2 15 7 16" stroke="'+secondary+'" stroke-width="1.5" fill="none"/>';
+  inner+='<path d="M25 16 Q30 15 30 13" stroke="'+secondary+'" stroke-width="1.5" fill="none"/>';
+  return '<svg width="'+s+'" height="'+Math.round(s*1.1)+'" viewBox="0 0 32 36" xmlns="http://www.w3.org/2000/svg">'+inner+'</svg>';
 }
 
 function renderTeams(){
