@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.60</title>
+<title>CycleSim v13.61</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.60</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.61</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.60';
+const CACHE_VERSION = '13.61';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -5788,6 +5788,49 @@ function showStagePreview(race, raceId, riderPool, rs){
     +'<div style="font-size:.74rem;color:var(--muted)">'+stage.distance+'km · '+(ATTR_LABELS[stage.terrain]||stage.terrain)+'</div></div>'
     +'</div>':'';
 
+  // Roster (shown for 1-day races and first stage only)
+  let rosterHtml='';
+  if(is1day || isFirstStage){
+    const sortedUci=Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]);
+    const uciRankMap={}; sortedUci.forEach(([n],i)=>uciRankMap[n]=i+1);
+    // Group riders by team
+    const byTeam={};
+    (riderPool||[]).forEach(r=>{
+      const tid=riderTeamMap[r.name];
+      const t=tid!=null?teams.find(x=>x.id===tid):null;
+      const tn=t?t.name:'—';
+      if(!byTeam[tn]) byTeam[tn]={team:t,riders:[]};
+      byTeam[tn].riders.push(r);
+    });
+    const teamList=Object.values(byTeam).sort((a,b)=>{
+      const ta=a.riders.reduce((s,r)=>s+r.avg,0)/a.riders.length;
+      const tb=b.riders.reduce((s,r)=>s+r.avg,0)/b.riders.length;
+      return tb-ta;
+    });
+    const teamRows=teamList.map(({team,riders})=>{
+      const sorted=[...riders].sort((a,b)=>b.avg-a.avg);
+      const jerseyIcon=team?teamJerseySVG(team.name,16):'';
+      const riderRows=sorted.map(r=>{
+        const uciR=uciRankMap[r.name]||0;
+        return '<div style="display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:.76rem;">'
+          +flagImg(r.country,10)+' <span style="flex:1">'+r.name+'</span>'
+          +'<span style="font-family:JetBrains Mono,monospace;font-size:.68rem;color:var(--muted)">'+r.avg.toFixed(1)+'</span>'
+          +(uciR?'<span style="font-family:JetBrains Mono,monospace;font-size:.62rem;color:var(--accent)">#'+uciR+'</span>':'')
+          +'</div>';
+      }).join('');
+      const teamAvgVal=(riders.reduce((s,r)=>s+r.avg,0)/riders.length).toFixed(1);
+      return '<div style="margin-bottom:6px;border:1px solid var(--border);border-radius:5px;overflow:hidden">'
+        +'<div style="padding:4px 8px;background:var(--surface2);display:flex;align-items:center;gap:6px;font-size:.76rem;font-weight:700;">'
+        +jerseyIcon+(team?flagImg(team.country,10)+' ':'')+'<span style="flex:1">'+(team?team.name:'—')+'</span>'
+        +'<span style="font-family:JetBrains Mono,monospace;font-size:.68rem;color:var(--muted)">'+teamAvgVal+'</span>'
+        +'</div>'+riderRows+'</div>';
+    }).join('');
+    rosterHtml='<div style="margin-bottom:14px">'
+      +'<div style="font-family:Barlow Condensed,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:6px">👥 Startlist ('+riderPool.length+' riders · '+teamList.length+' teams)</div>'
+      +'<div style="max-height:400px;overflow-y:auto">'+teamRows+'</div>'
+      +'</div>';
+  }
+
   wrap.innerHTML='<div style="max-width:900px;margin:0 auto;padding:12px 0">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'
     +'<span style="padding:2px 8px;border-radius:3px;background:'+catColor+';font-family:Barlow Condensed,sans-serif;font-size:.68rem;font-weight:800;color:#000">'+cat+'</span>'
@@ -5798,7 +5841,7 @@ function showStagePreview(race, raceId, riderPool, rs){
     +profileHtml
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'
     +'<div>'+favsHtml+classifHtml+'</div>'
-    +'<div>'+gcHtml+'</div>'
+    +'<div>'+gcHtml+rosterHtml+'</div>'
     +'</div>'
     +'<div style="margin-top:12px">'
     +'<button class="btn btn-accent" onclick="confirmSeasonRaceStart('+raceId+')">▶ Start '+(is1day?'Race':'Stage '+(stageIdx+1))+'</button>'
@@ -6608,6 +6651,13 @@ async function loadUciPoints(){
   if(localStorage.getItem('cyclesim_teamuci')){ idbSet('cyclesim_teamuci',teamUciPoints); localStorage.removeItem('cyclesim_teamuci'); }
   if(localStorage.getItem('cyclesim_racecontrib')){ idbSet('cyclesim_racecontrib',raceContributions); localStorage.removeItem('cyclesim_racecontrib'); }
   if(localStorage.getItem('cyclesim_yearslog')){ idbSet('cyclesim_yearslog',allYearsLog); localStorage.removeItem('cyclesim_yearslog'); }
+  // If in year 2+, raceContributions from year 1 cause point subtractions — clear them
+  // allYearsLog will have them archived if ever needed
+  if((seasonSim?.year||1) > 1 && Object.keys(raceContributions).length > 0){
+    console.log('Clearing stale year-1 raceContributions on load (year', seasonSim?.year, ')');
+    raceContributions = {};
+    idbSet('cyclesim_racecontrib', raceContributions);
+  }
 }
 function saveUciPoints(){
   // Small keys in localStorage
@@ -6640,13 +6690,29 @@ function awardRacePoints(race, lastResults){
   const raceId = race.id;
 
   // Reverse previous contribution for this race if it exists (year-over-year replacement)
+  // Only subtract if we're actually replacing a same-year contribution
+  // (raceContributions cleared on year rollover, so prev should only exist for same year)
   const prev = raceContributions[raceId];
   if(prev){
-    Object.entries(prev.riders||{}).forEach(([n,p])=>{ uciPoints[n]=(uciPoints[n]||0)-p; if(uciPoints[n]<=0) delete uciPoints[n]; });
-    Object.entries(prev.teams||{}).forEach(([tn,p])=>{ teamUciPoints[tn]=(teamUciPoints[tn]||0)-p; if(teamUciPoints[tn]<=0) delete teamUciPoints[tn]; });
+    Object.entries(prev.riders||{}).forEach(([n,p])=>{
+      const cur=uciPoints[n]||0;
+      // Safety: only subtract if rider has enough points (guards against stale year-1 data)
+      if(cur > p){ uciPoints[n]=cur-p; }
+      else if(cur > 0){ delete uciPoints[n]; }
+      // If cur <= 0 or p >= cur: skip subtraction (stale data, don't damage)
+    });
+    Object.entries(prev.teams||{}).forEach(([tn,p])=>{ 
+      const cur=teamUciPoints[tn]||0;
+      if(cur > p){ teamUciPoints[tn]=cur-p; }
+      else if(cur > 0){ delete teamUciPoints[tn]; }
+    });
     Object.entries(prev.country||{}).forEach(([ctry,entries])=>{
       if(!countryPoints[ctry]) return;
-      Object.entries(entries).forEach(([k,p])=>{ countryPoints[ctry][k]=(countryPoints[ctry][k]||0)-p; if(countryPoints[ctry][k]<=0) delete countryPoints[ctry][k]; });
+      Object.entries(entries).forEach(([k,p])=>{ 
+        const cur=countryPoints[ctry][k]||0;
+        if(cur > p){ countryPoints[ctry][k]=cur-p; }
+        else if(cur > 0){ delete countryPoints[ctry][k]; }
+      });
     });
   }
 
