@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.49</title>
+<title>CycleSim v13.51</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.49</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.51</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.49';
+const CACHE_VERSION = '13.51';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -3095,11 +3095,18 @@ function autoSelectTeamsForRace(race){
   const byAvg = [...teams].filter(isEligible).sort((a,b)=>teamAvg(b)-teamAvg(a));
 
   // getNational uses notBusyAll — national teams blocked only by "already racing today"
-  function getNational(n){
+  // Race counts for priority (fewer races = higher priority)
+  const _rc = getTeamRaceCounts();
+  const _raceCount = t => _rc[t.name] || 0;
+
+  function getNational(n, byRaceCount=false){
     const sameCountry = notBusyAll.filter(t=>t.country===country);
-    if(sameCountry.length>=n) return sameCountry.slice(0,n);
+    const sortedNat = byRaceCount
+      ? [...sameCountry].sort((a,b)=>_raceCount(a)-_raceCount(b))
+      : sameCountry; // already sorted by avg from notBusyAll
+    if(sortedNat.length>=n) return sortedNat.slice(0,n);
     const sameRegion = notBusyAll.filter(t=>t.country!==country && getRegionLabel(t.country)===region);
-    return [...sameCountry,...sameRegion].slice(0,n);
+    return [...sortedNat,...sameRegion].slice(0,n);
   }
 
   function getNationalRanking(){
@@ -3186,8 +3193,9 @@ function autoSelectTeamsForRace(race){
     selected = [...already,...rand15];
 
   } else if(cat==='1.1'||cat==='2.1'){
-    // Random 12 national, 3 best from national UCI ranking, 10 random world
-    const natAll = notBusyAll.filter(t=>t.country===country); // national = not blocked by reservations
+    // Fewer-races-first national priority: 12 national, 3 best from national UCI ranking, 10 random world
+    const natAll = notBusyAll.filter(t=>t.country===country)
+      .sort((a,b)=>_raceCount(a)-_raceCount(b)); // fewest races first
     const rand12 = pickRandom(natAll,12);
     const natRank = getNationalRanking();
     const natRank3 = excl(natRank,rand12).slice(0,3);
@@ -3203,7 +3211,8 @@ function autoSelectTeamsForRace(race){
     const top50pct = new Set(sortedByUci.slice(0, cutoff).map(t=>t.id));
     const isEligibleLow = t => notBusy(t) && (!top50pct.has(t.id) || t.country===country);
     const byAvgLow = [...teams].filter(isEligibleLow).sort((a,b)=>teamAvg(b)-teamAvg(a));
-    const natAll = notBusyAll.filter(t=>t.country===country);
+    const natAll = notBusyAll.filter(t=>t.country===country)
+      .sort((a,b)=>_raceCount(a)-_raceCount(b)); // fewest races first
     const rand15 = pickRandom(natAll,15);
     const worldPool = excl(byAvgLow, rand15);
     const rand10 = pickRandom(worldPool,10);
@@ -4082,12 +4091,17 @@ function runNextStage(){
         awardRacePoints(race, lrForPts);
         awardCountryPoints(race, lastResults.gcResult);
         seasonSim.currentDayEvents = seasonSim.currentDayEvents||[];
+        const _gcSorted=[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999));
+        const _gcWinName=_gcSorted[0]?.rider?.name||null;
         seasonSim.currentDayEvents.push({raceId:rs._seasonRaceId,raceName:race.name,category:race.category||'',
           country:race.country,stageNum:rs.currentStageIndex,totalStages:race.stages.length,
           stageName:race.stages[rs.currentStageIndex-1]?.name||'',
-          stageWinner:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999))[0]?.rider?.name||'—',complete:true,
-          gcLeader:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999))[0]?.rider?.name||null,
-          gcResult:[...(lastResults.gcResult||[])].sort((a,b)=> Number(a.totalGap)!==Number(b.totalGap) ? Number(a.totalGap)-Number(b.totalGap) : (a.stagePos??a.position??9999)-(b.stagePos??b.position??9999)).slice(0,10).map(r=>({rider:{name:r.rider?.name||'',country:r.rider?.country||'',avg:+(r.rider?.avg||0)},totalGap:r.totalGap,position:r.position})),
+          stageWinner:_gcWinName||'—',
+          stageWinnerTeamId:riderTeamMap[_gcWinName]??null,
+          gcWinnerTeamId:riderTeamMap[_gcWinName]??null,
+          complete:true,
+          gcLeader:_gcWinName,
+          gcResult:_gcSorted.slice(0,10).map(r=>({rider:{name:r.rider?.name||'',country:r.rider?.country||'',avg:+(r.rider?.avg||0)},totalGap:r.totalGap,position:r.position})),
           teamIds:[...(rs.officialTeamIds instanceof Set ? rs.officialTeamIds : [])]});
         seasonSim.completedToday = seasonSim.completedToday||[];
         const _stageKey = rs._seasonRaceId+':'+rs.currentStageIndex;
@@ -4105,11 +4119,13 @@ function runNextStage(){
       } else {
         seasonSim.currentDayEvents = seasonSim.currentDayEvents||[];
         const _lastSR=lastResults.stageResults?.[lastResults.stageResults.length-1];
+        const _stageWinName = _lastSR?.result?.[0]?.rider?.name||'—';
         const incompleteEv={raceId:rs._seasonRaceId,raceName:race.name,category:race.category||'',
           country:race.country,stageNum:rs.currentStageIndex,totalStages:race.stages.length,
           stageName:_lastSR?.stage?.name||'',
           terrain:_lastSR?.stage?.terrain||'',
-          stageWinner:_lastSR?.result?.[0]?.rider?.name||'—',
+          stageWinner:_stageWinName,
+          stageWinnerTeamId:riderTeamMap[_stageWinName]??null,
           complete:false,
           teamIds:[...(rs.officialTeamIds instanceof Set ? rs.officialTeamIds : [])]};
         seasonSim.currentDayEvents.push(incompleteEv);
@@ -6431,9 +6447,16 @@ function getRiderPalmares(riderName){
       // Determine if rider participated: check teamIds OR gcResult directly (for NC/WC)
       const myTeamId=riderTeamMap[riderName];
       const inViaTeam=ev.teamIds&&myTeamId!=null&&[...ev.teamIds].includes(myTeamId);
+      // Also check historical team IDs stored in event (for riders who transferred)
+      const inViaHistoricalTeam = !inViaTeam && ev.teamIds && (() => {
+        // Not in via current team — check if rider appears in stageWinner or gcResult
+        if(ev.stageWinner===riderName) return true;
+        if(ev.gcResult?.some(r=>(r.rider?.name||r.name)===riderName)) return true;
+        return false;
+      })();
       const inViaGC=ev.gcResult&&ev.gcResult.some(r=>(r.rider?.name||r.name)===riderName);
       const isNC=ev.category==='NC'||ev.category==='WC';
-      if(!inViaTeam&&!inViaGC&&!isNC) return;
+      if(!inViaTeam&&!inViaHistoricalTeam&&!inViaGC&&!isNC) return;
       racesSeen.add(ev.raceId||(ev.raceName+d.day));
       const is1day = ev.totalStages===1 || (!ev.totalStages && ev.stageNum===1 && ev.complete);
       // Only count stageWinner as stage win for non-complete stage events (mid-race stages)
@@ -6501,14 +6524,15 @@ function getTeamPalmares(teamId){
       racesSeen.add(ev.raceId||(ev.raceName+d.day));
       const is1day2=ev.totalStages===1||(!ev.totalStages&&ev.stageNum===1&&ev.complete);
       if(ev.stageWinner&&!is1day2&&!ev.complete){
-        const tid2=riderTeamMap[ev.stageWinner];
+        const tid2=ev.stageWinnerTeamId??riderTeamMap[ev.stageWinner];
         if(tid2===teamId&&!pal.stageWins.find(w=>w.race===ev.raceName&&w.stage===(ev.stageName||ev.stageNum)))
           pal.stageWins.push({rider:ev.stageWinner,race:ev.raceName,stage:ev.stageName||('Stage '+ev.stageNum),terrain:ev.terrain,cat:ev.category,date:d.date,yr:calYr,day:d.day});
       }
       if(ev.complete&&ev.gcResult){
         const winner=ev.gcResult[0];
         const wname=winner?.rider?.name||winner?.name;
-        if(wname&&riderTeamMap[wname]===teamId&&!pal.gcWins.find(w=>w.race===ev.raceName&&w.yr===calYr))
+        const winTeam=ev.gcWinnerTeamId??ev.stageWinnerTeamId??riderTeamMap[wname];
+        if(wname&&winTeam===teamId&&!pal.gcWins.find(w=>w.race===ev.raceName&&w.yr===calYr))
           pal.gcWins.push({rider:wname,race:ev.raceName,cat:ev.category,date:d.date,yr:calYr,day:d.day});
       }
     });
