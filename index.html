@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.61</title>
+<title>CycleSim v13.64</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.61</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.64</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -238,6 +238,7 @@ tbody td{padding:6px 10px}
     <button class="nav-btn nav-season-tab" id="nav-btn-calendar" onclick="showTab('calendar')" style="display:none">Calendar <span class="nav-badge" id="nav-calendar-count" style="background:var(--blue)">—</span></button>
     <button class="nav-btn nav-season-tab" id="nav-btn-history" onclick="showTab('history')" style="display:none">History</button>
     <button class="nav-btn nav-season-tab" id="nav-btn-uci" onclick="showTab('uci');renderUciRankings()" style="display:none">UCI Ranking</button>
+    <button class="nav-btn nav-season-tab" id="nav-btn-continent" onclick="showTab('continent');renderContinentRankings()" style="display:none">Continents</button>
     <button class="nav-btn nav-season-tab" id="nav-btn-country" onclick="showTab('country')" style="display:none">Countries</button>
     <button class="nav-btn nav-season-tab" id="nav-btn-market" onclick="showTab('market');renderMarket()" style="display:none">💼 Market</button>
     <div style="display:flex;gap:4px;margin-left:8px;border-left:1px solid var(--border);padding-left:8px">
@@ -490,7 +491,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.61';
+const CACHE_VERSION = '13.64';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -5152,6 +5153,22 @@ function buildWorldChampRiderList(sortAttr, maxPerCountry){
 // ── RUN NATIONAL CHAMPIONSHIPS DAY (batch simulate all countries) ──
 function runNationalChampionshipsDay(day, countries){
   // Snapshot rankings BEFORE this day's NCs run (for delta arrows)
+  // Snapshot continent rankings
+  seasonSim.prevDayContRankings = {};
+  Object.entries(CONTINENT_COUNTRIES).forEach(([cont, ctryList]) => {
+    const rp={}, tp={};
+    ctryList.forEach(ctry => {
+      if(!countryPoints[ctry]) return;
+      Object.entries(countryPoints[ctry]).forEach(([k,v]) => {
+        if(k.startsWith('__team__')) tp[k.replace('__team__','')] = (tp[k.replace('__team__','')]||0)+v;
+        else rp[k] = (rp[k]||0)+v;
+      });
+    });
+    const snap = {};
+    Object.entries(rp).sort((a,b)=>b[1]-a[1]).forEach(([n],i) => snap['r:'+n]=i+1);
+    Object.entries(tp).sort((a,b)=>b[1]-a[1]).forEach(([n],i) => snap['t:'+n]=i+1);
+    seasonSim.prevDayContRankings[cont] = snap;
+  });
   seasonSim.prevDayUciRankings = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]).reduce((m,[n],i)=>{m[n]=i+1;return m;},{});
   seasonSim.prevDayTeamRankings = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]).reduce((m,[n],i)=>{m[n]=i+1;return m;},{});
   seasonSim.prevDayCountryRankings = {};
@@ -6146,6 +6163,22 @@ function finishSeasonDay(){
     seasonSim.dayLog.push({day, date:fmtDate(day), year:seasonSim.year||1, events:todayEvents});
   }
   // Snapshot rankings before advancing day (for delta arrows)
+  // Snapshot continent rankings
+  seasonSim.prevDayContRankings = {};
+  Object.entries(CONTINENT_COUNTRIES).forEach(([cont, ctryList]) => {
+    const rp={}, tp={};
+    ctryList.forEach(ctry => {
+      if(!countryPoints[ctry]) return;
+      Object.entries(countryPoints[ctry]).forEach(([k,v]) => {
+        if(k.startsWith('__team__')) tp[k.replace('__team__','')] = (tp[k.replace('__team__','')]||0)+v;
+        else rp[k] = (rp[k]||0)+v;
+      });
+    });
+    const snap = {};
+    Object.entries(rp).sort((a,b)=>b[1]-a[1]).forEach(([n],i) => snap['r:'+n]=i+1);
+    Object.entries(tp).sort((a,b)=>b[1]-a[1]).forEach(([n],i) => snap['t:'+n]=i+1);
+    seasonSim.prevDayContRankings[cont] = snap;
+  });
   seasonSim.prevDayUciRankings = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]).reduce((m,[n],i)=>{m[n]=i+1;return m;},{});
   seasonSim.prevDayTeamRankings = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]).reduce((m,[n],i)=>{m[n]=i+1;return m;},{});
   seasonSim.prevDayCountryRankings = {};
@@ -6471,6 +6504,104 @@ function renderDayLog(){
 
 
 let selectedCountry = null;
+let selectedContinent = null;
+// ── CONTINENT RANKINGS ─────────────────────────────────────────
+const CONTINENT_COUNTRIES = {"Europe": ["France", "Belgium", "Netherlands", "Luxembourg", "Switzerland", "Germany", "Austria", "Liechtenstein", "Monaco", "Spain", "Portugal", "Italy", "Andorra", "Malta", "Cyprus", "Greece", "Slovenia", "Croatia", "Norway", "Sweden", "Denmark", "Finland", "Iceland", "United Kingdom", "Ireland", "Poland", "Czech Republic", "Slovakia", "Hungary", "Romania", "Bulgaria", "Serbia", "Albania", "Kosovo", "Latvia", "Lithuania", "Estonia", "Belarus", "Ukraine", "North Macedonia", "Russia", "Azerbaijan", "Armenia", "Georgia", "Turkey", "Israel", "Lebanon"], "Africa": ["Morocco", "Algeria", "Tunisia", "Egypt", "Senegal", "Mali", "Burkina Faso", "Ivory Coast", "Ghana", "Benin", "Nigeria", "Cameroon", "Ethiopia", "Eritrea", "Kenya", "Uganda", "Rwanda", "DR Congo", "Angola", "South Africa", "Namibia", "Zimbabwe", "Lesotho", "Mozambique", "Mauritius"], "Americas": ["United States", "Canada", "Mexico", "Guatemala", "Belize", "Honduras", "Costa Rica", "Panama", "Cuba", "Puerto Rico", "Dominican Republic", "Bermuda", "Grenada", "Curaçao", "Colombia", "Venezuela", "Ecuador", "Peru", "Bolivia", "Chile", "Argentina", "Uruguay", "Brazil", "Paraguay", "Guyana", "Trinidad and Tobago"], "Asia/Pacific": ["China", "Japan", "South Korea", "Mongolia", "Taiwan", "Hong Kong", "Macau", "Malaysia", "Thailand", "Indonesia", "Singapore", "Vietnam", "Laos", "Philippines", "Guam", "India", "Pakistan", "Afghanistan", "Syria", "Iraq", "Iran", "Saudi Arabia", "United Arab Emirates", "Qatar", "Bahrain", "Oman", "Kazakhstan", "Kyrgyzstan", "Uzbekistan", "Turkmenistan", "Tajikistan", "Australia", "New Zealand"]};
+
+function renderContinentRankings(){
+  const wrap = document.getElementById('continent-wrap');
+  if(!wrap) return;
+  if(!Object.keys(uciPoints).length){
+    wrap.innerHTML='<div class="empty-state"><div class="empty-icon">🌍</div><div>Simulate races to build continent rankings.</div></div>';
+    return;
+  }
+  const continents = Object.keys(CONTINENT_COUNTRIES);
+  if(!selectedContinent || !continents.includes(selectedContinent)) selectedContinent = continents[0];
+
+  const thS = 'padding:7px 10px;font-family:Barlow Condensed,sans-serif;font-size:.75rem;color:var(--muted);text-transform:uppercase';
+
+  const contTabs = continents.map(c=>
+    '<button onclick="selectedContinent=\''+c+'\';renderContinentRankings()" style="padding:6px 16px;border:none;border-bottom:'+(c===selectedContinent?'2px solid var(--accent)':'2px solid transparent')+';background:none;color:'+(c===selectedContinent?'var(--accent)':'var(--muted)')+';font-family:Barlow Condensed,sans-serif;font-size:.85rem;font-weight:700;text-transform:uppercase;cursor:pointer">'+c+'</button>'
+  ).join('');
+
+  const countries = CONTINENT_COUNTRIES[selectedContinent] || [];
+
+  // Build rider ranking for this continent
+  const riderPts = {};
+  const teamPts = {};
+  countries.forEach(ctry => {
+    if(!countryPoints[ctry]) return;
+    Object.entries(countryPoints[ctry]).forEach(([k,v]) => {
+      if(k.startsWith('__team__')){
+        const tn = k.replace('__team__','');
+        teamPts[tn] = (teamPts[tn]||0) + v;
+      } else {
+        riderPts[k] = (riderPts[k]||0) + v;
+      }
+    });
+  });
+
+  const sortedRiders = Object.entries(riderPts).sort((a,b)=>b[1]-a[1]);
+  const sortedTeams = Object.entries(teamPts).sort((a,b)=>b[1]-a[1]);
+
+  const prevCont = seasonSim?.prevDayContRankings?.[selectedContinent] || {};
+  const mkArrow = (prev,i) => {
+    if(!prev) return '<span style="color:var(--muted);font-size:.55rem">new</span>';
+    const d=prev-(i+1);
+    return d>0?'<span style="color:var(--green);font-size:.6rem;font-weight:700">▲'+d+'</span>':
+           d<0?'<span style="color:var(--red);font-size:.6rem;font-weight:700">▼'+(-d)+'</span>':
+               '<span style="color:var(--muted);font-size:.58rem">—</span>';
+  };
+
+  const riderRows = sortedRiders.map(([name,pts],i) => {
+    const rd = allRiders.find(r=>r.name===name);
+    const tid = riderTeamMap[name];
+    const team = tid!=null?teams.find(t=>t.id===tid):null;
+    return '<tr style="cursor:pointer" data-rider-palmares="'+name.replace(/"/g,'&quot;')+'">'
+      +'<td class="cell-rank">'+(i+1)+'</td>'
+      +'<td style="width:26px;text-align:center;padding:0">'+mkArrow(prevCont['r:'+name],i)+'</td>'
+      +'<td style="padding:6px 10px;font-weight:600">'+(rd?flagImg(rd.country,12)+' ':'')+name+'</td>'
+      +'<td style="padding:6px 10px">'+(team?'<span class="rteam" data-team-palmares="'+team.id+'">'+team.name+'</span>':'—')+'</td>'
+      +'<td style="padding:6px 10px;font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+(rd?rd.avg.toFixed(1):'')+'</td>'
+      +'<td style="padding:6px 10px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
+  }).join('');
+
+  const teamRows = sortedTeams.map(([tn,pts],i) => {
+    const team = teams.find(t=>t.name===tn);
+    return '<tr style="cursor:pointer" '+(team?'data-team-palmares="'+team.id+'"':'')+'>'
+      +'<td class="cell-rank">'+(i+1)+'</td>'
+      +'<td style="width:26px;text-align:center;padding:0">'+mkArrow(prevCont['t:'+tn],i)+'</td>'
+      +'<td style="padding:6px 10px">'+(team?teamJerseySVG(team.name,16)+' '+flagImg(team.country,11)+' ':'')+tn+'</td>'
+      +'<td style="padding:6px 10px;font-family:JetBrains Mono,monospace;font-weight:800;color:var(--accent);text-align:right">'+pts.toLocaleString()+'</td></tr>';
+  }).join('');
+
+  const mkTable = (rows, headers) =>
+    '<table style="width:100%;border-collapse:collapse;font-size:.85rem">'
+    +'<thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border)">'
+    +headers.map((h,i)=>i===0?'<th style="width:36px;'+thS+';text-align:center">'+h+'</th>':'<th style="'+thS+'">'+h+'</th>').join('')
+    +'</tr></thead><tbody>'+rows+'</tbody></table>';
+
+  wrap.innerHTML =
+    '<div style="border-bottom:1px solid var(--border);padding:4px 8px;background:var(--surface2)">'+contTabs+'</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;overflow:hidden">'
+    +'<div style="overflow-y:auto">'
+    +'<div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.85rem;font-weight:700;text-transform:uppercase;color:var(--accent)">'+selectedContinent+' — Riders</div>'
+    +(riderRows ? mkTable(riderRows,['#','','Rider','Team','OVR','Pts']) : '<div style="padding:16px;color:var(--muted);font-size:.82rem">No points yet.</div>')
+    +'</div>'
+    +'<div style="border-left:1px solid var(--border);overflow-y:auto">'
+    +'<div style="padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:Barlow Condensed,sans-serif;font-size:.85rem;font-weight:700;text-transform:uppercase;color:var(--muted)">Teams</div>'
+    +(teamRows ? mkTable(teamRows,['#','','Team','Pts']) : '<div style="padding:16px;color:var(--muted);font-size:.82rem">No team points yet.</div>')
+    +'</div>'
+    +'</div>';
+
+  wrap.onclick = e => {
+    const rr=e.target.closest('[data-rider-palmares]');
+    if(rr){ showRiderPalmares(rr.dataset.riderPalmares); return; }
+    const tr=e.target.closest('[data-team-palmares]');
+    if(tr){ showTeamPalmares(+tr.dataset.teamPalmares); }
+  };
+}
+
 function selectCountry(c){ selectedCountry=c; renderCountryRankings(); }
 function renderCountryRankings(){
   const wrap = document.getElementById('country-wrap');
@@ -6494,7 +6625,7 @@ function renderCountryRankings(){
   const countryList = sorted.map(c=>{
     const total = Object.values(countryPoints[c]).reduce((s,v)=>s+v,0);
     const isSel = c===selectedCountry;
-    return '<div onclick="selectCountry('+JSON.stringify(c)+')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:pointer;background:'+(isSel?'rgba(245,196,0,.08)':'')+'">'+
+    return '<div data-select-country="'+c+'" style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);cursor:pointer;background:'+(isSel?'rgba(245,196,0,.08)':'')+'">'+
       flagImg(c,13)+'<span style="flex:1;font-size:.85rem;font-weight:'+(isSel?'700':'400')+'">'+c+'</span>'+
       '<span style="font-family:JetBrains Mono,monospace;font-size:.72rem;color:var(--muted)">'+total.toLocaleString()+'</span></div>';
   }).join('');
@@ -6567,6 +6698,8 @@ function renderCountryRankings(){
     +'</div>';
 
   wrap.onclick = e => {
+    const sc=e.target.closest('[data-select-country]');
+    if(sc){ selectedCountry=sc.dataset.selectCountry; renderCountryRankings(); return; }
     const rr=e.target.closest('[data-rider-palmares]');
     if(rr){ showRiderPalmares(rr.dataset.riderPalmares); return; }
     const tr=e.target.closest('[data-team-palmares]');
@@ -7045,8 +7178,8 @@ function showTeamPalmares(teamId){
 function renderUciRankings(){
   logAction('renderUciRankings: lastResults='+(lastResults?.raceName||'null')+' lr_raceId='+(lastResults?._seasonRaceId??'—')+' activeResultTab='+activeResultTab);
   console.log('renderUciRankings: uciPoints entries=',Object.keys(uciPoints).length,'sample=',Object.keys(uciPoints).slice(0,3));
-  const sorted = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]).slice(0,200);
-  const teamSorted = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]).slice(0,100);
+  const sorted = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]);
+  const teamSorted = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]);
   const wrap = document.getElementById('uci-wrap');
   if(!wrap) return;
   if(!sorted.length){
@@ -8077,6 +8210,7 @@ function showTab(tab){
   if(tab==='calendar'){renderSeasonPanel();renderCalendar();}
   if(tab==='market'){renderMarket();}
   if(tab==='uci'){renderUciRankings();}
+  if(tab==='continent'){renderContinentRankings();}
   if(tab==='country'){renderCountryRankings();}
   if(tab==='history'){ renderHistoryTab(); renderHistory();}
 }
@@ -8528,6 +8662,14 @@ renderSeasonPanel();
   </div>
   <div class="table-wrap" id="uci-wrap">
     <div class="empty-state"><div class="empty-icon">🏆</div><div>Simulate races to earn UCI points.</div></div>
+  </div>
+</div>
+<div id="tab-continent" class="tab-content">
+  <div class="toolbar">
+    <span style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent)">🌍 Continent Rankings</span>
+  </div>
+  <div id="continent-wrap" style="height:calc(100vh - 130px);overflow-y:auto">
+    <div class="empty-state"><div class="empty-icon">🌍</div><div>Simulate races to build continent rankings.</div></div>
   </div>
 </div>
 </body>
