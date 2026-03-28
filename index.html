@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.57</title>
+<title>CycleSim v13.58</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.57</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.58</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.57';
+const CACHE_VERSION = '13.58';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -5401,6 +5401,7 @@ function awardChampionshipPoints(type, gcResult, country){
   const table = CHAMP_POINTS[type];
   if(!table||!gcResult||!gcResult.length) return;
   const pts = table.finish;
+  console.log('awardChampionshipPoints:',type,'gcResult.length=',gcResult.length,'winner=',gcResult[0]?.rider?.name||gcResult[0]?.name);
   gcResult.slice(0, pts.length).forEach((r,i)=>{
     const name = r.rider?.name||r.name;
     if(!name||!pts[i]) return;
@@ -6583,8 +6584,8 @@ async function loadUciPoints(){
   // champs in localStorage (small, synchronous)
   try{ championships = JSON.parse(localStorage.getItem('cyclesim_champs')||'{"national":{},"ttWorld":null,"roadWorld":null}'); } catch(e){ championships={national:{},ttWorld:null,roadWorld:null}; }
   // Large data from IDB with localStorage fallback
-  uciPoints       = (await idbGet('cyclesim_uci'))       || JSON.parse(localStorage.getItem('cyclesim_uci')||'{}');
-  teamUciPoints   = (await idbGet('cyclesim_teamuci'))   || JSON.parse(localStorage.getItem('cyclesim_teamuci')||'{}');
+  uciPoints       = (await idbGet('cyclesim_uci'))       || JSON.parse(localStorage.getItem('cyclesim_uci_bak')||localStorage.getItem('cyclesim_uci')||'{}');
+  teamUciPoints   = (await idbGet('cyclesim_teamuci'))   || JSON.parse(localStorage.getItem('cyclesim_teamuci_bak')||localStorage.getItem('cyclesim_teamuci')||'{}');
   raceContributions=(await idbGet('cyclesim_racecontrib'))|| JSON.parse(localStorage.getItem('cyclesim_racecontrib')||'{}');
   allYearsLog     = (await idbGet('cyclesim_yearslog'))  || JSON.parse(localStorage.getItem('cyclesim_yearslog')||'{}');
   // Migrate old localStorage data to IDB
@@ -6596,6 +6597,9 @@ async function loadUciPoints(){
 function saveUciPoints(){
   // Small keys in localStorage
   try{ localStorage.setItem('cyclesim_champs', JSON.stringify(championships)); }catch(e){}
+  // Also backup uci/teamuci to localStorage for fast reload (IDB can lag)
+  try{ localStorage.setItem('cyclesim_uci_bak', JSON.stringify(uciPoints)); }catch(e){}
+  try{ localStorage.setItem('cyclesim_teamuci_bak', JSON.stringify(teamUciPoints)); }catch(e){}
   // Large keys in IDB (fire-and-forget)
   idbSet('cyclesim_uci', uciPoints);
   idbSet('cyclesim_teamuci', teamUciPoints);
@@ -6959,6 +6963,7 @@ function showTeamPalmares(teamId){
 
 function renderUciRankings(){
   logAction('renderUciRankings: lastResults='+(lastResults?.raceName||'null')+' lr_raceId='+(lastResults?._seasonRaceId??'—')+' activeResultTab='+activeResultTab);
+  console.log('renderUciRankings: uciPoints entries=',Object.keys(uciPoints).length,'sample=',Object.keys(uciPoints).slice(0,3));
   const sorted = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]).slice(0,200);
   const teamSorted = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]).slice(0,100);
   const wrap = document.getElementById('uci-wrap');
