@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.59</title>
+<title>CycleSim v13.60</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.59</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.60</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -490,7 +490,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.59';
+const CACHE_VERSION = '13.60';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -5151,6 +5151,18 @@ function buildWorldChampRiderList(sortAttr, maxPerCountry){
 
 // ── RUN NATIONAL CHAMPIONSHIPS DAY (batch simulate all countries) ──
 function runNationalChampionshipsDay(day, countries){
+  // Snapshot rankings BEFORE this day's NCs run (for delta arrows)
+  seasonSim.prevDayUciRankings = Object.entries(uciPoints).sort((a,b)=>b[1]-a[1]).reduce((m,[n],i)=>{m[n]=i+1;return m;},{});
+  seasonSim.prevDayTeamRankings = Object.entries(teamUciPoints).sort((a,b)=>b[1]-a[1]).reduce((m,[n],i)=>{m[n]=i+1;return m;},{});
+  seasonSim.prevDayCountryRankings = {};
+  Object.keys(countryPoints).forEach(ctry=>{
+    const re=Object.entries(countryPoints[ctry]).filter(([k])=>!k.startsWith('__team__')).sort((a,b)=>b[1]-a[1]);
+    const te=Object.entries(countryPoints[ctry]).filter(([k])=>k.startsWith('__team__')).sort((a,b)=>b[1]-a[1]);
+    seasonSim.prevDayCountryRankings[ctry]={
+      riders:re.reduce((m,[n],i)=>{m[n]=i+1;return m;},{}),
+      teams:te.reduce((m,[k],i)=>{m[k.replace('__team__','')]=i+1;return m;},{})
+    };
+  });
   // Set up queue for one-by-one simulation
   seasonSim.champQueue = [...countries];
   seasonSim.champQueueIndex = 0;
@@ -5446,6 +5458,9 @@ function startSeasonDay(){
     allYearsLog[endingYear].championships = JSON.parse(JSON.stringify(championships));
     allYearsLog[endingYear].uciSnapshot = {...uciPoints};
     allYearsLog[endingYear].teamSnapshot = {...teamUciPoints};
+    allYearsLog[endingYear].raceContributions = JSON.parse(JSON.stringify(raceContributions));
+    // Clear race contributions so year 2 races don't subtract year 1 data
+    raceContributions = {};
     saveUciPoints();
     seasonSim.year = endingYear + 1;
     seasonSim.currentDay = 0;
@@ -7859,8 +7874,10 @@ function renderDraftUI(){
     // draft-not-ready removed — integrated into teams tab
     return;
   }
-  document.getElementById('draft-not-ready').style.display='none';
-  document.getElementById('draft-layout').style.display='grid';
+  const _dnr=document.getElementById('draft-not-ready');
+  const _dl=document.getElementById('draft-layout');
+  if(_dnr) _dnr.style.display='none';
+  if(_dl) _dl.style.display='grid';
 
   // Status pill
   const pill=document.getElementById('draft-status-pill');
