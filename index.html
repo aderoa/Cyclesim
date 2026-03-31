@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CycleSim v13.66</title>
+<title>CycleSim v13.69</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/6.6.6/css/flag-icons.min.css">
 <style>
@@ -226,7 +226,7 @@ tbody td{padding:6px 10px}
 
 <!-- ═══ HEADER ══════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.66</span></div>
+  <div class="logo">⚡ CycleSim <span>PCM 2026 Race Engine &nbsp;·&nbsp; v13.69</span></div>
   <nav>
     <button class="nav-btn active" onclick="showTab('database')">Database <span class="nav-badge" id="nav-count">—</span></button>
     <button class="nav-btn" onclick="showTab('teams')">Teams <span class="nav-badge" id="nav-teams-count">—</span></button>
@@ -491,7 +491,7 @@ tbody td{padding:6px 10px}
 
 <script>
 'use strict';
-const CACHE_VERSION = '13.66';
+const CACHE_VERSION = '13.69';
 function clearStaleCache(){
   try{
     const stored = localStorage.getItem('cyclesim_version');
@@ -1341,6 +1341,7 @@ async function loadData() {
     renderDatabase();
     clearStaleCache();
     loadSavedTeams();
+    cleanupRemovedRiders(); // remove any riders deleted from DB since last save
     // Ensure Calendar tab shows if teams loaded
     if(teams.length > 0){
       const _calBtn=document.getElementById('nav-btn-calendar');
@@ -2265,6 +2266,28 @@ function detectNewRiders(){
   const badge=document.getElementById('nav-updates-count');
   if(btn) btn.style.display=teams.length>0?'':'none'; // show whenever teams exist
   if(badge) badge.textContent=pendingPool.length||'0';
+}
+
+function cleanupRemovedRiders(){
+  // Remove riders from team rosters who are no longer in the database
+  if(!teams.length || !allRiders.length) return;
+  const knownNames = new Set(allRiders.map(r=>r.name));
+  let removed = 0;
+  teams.forEach(team=>{
+    const before = team.riders.length;
+    team.riders = team.riders.filter(n=>{
+      if(knownNames.has(n)) return true;
+      // Rider removed from DB — move to freeAgent if not already there
+      if(!freeAgent.includes(n)) freeAgent.push(n);
+      removed++;
+      return false;
+    });
+  });
+  if(removed > 0){
+    console.log('cleanupRemovedRiders: removed '+removed+' riders no longer in DB, added to free agents');
+    buildRiderTeamMap();
+    saveTeams();
+  }
 }
 
 function saveKnownRiders(){
@@ -3523,6 +3546,84 @@ function teamJerseySVG(teamName, size=32){
   return '<svg width="'+s+'" height="'+Math.round(s*1.1)+'" viewBox="0 0 32 36" xmlns="http://www.w3.org/2000/svg">'+inner+'</svg>';
 }
 
+// ── SIGN RIDER TO TEAM ─────────────────────────────────────────
+function buildSignRows(available, teamId){
+  return available.map(r=>{
+    const esc=r.name.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    return '<div class="_sign-row" data-tid="'+teamId+'" data-rider="'+esc+'" style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:.85rem">'
+      +flagImg(r.country,12)+' <span style="flex:1">'+r.name+'</span>'
+      +'<span style="font-family:JetBrains Mono,monospace;font-size:.75rem;color:var(--muted)">'+r.avg.toFixed(1)+'</span>'
+      +'</div>';
+  }).join('');
+}
+
+function openSignRider(teamId){
+  computePendingPool();
+  const team = teams.find(t=>t.id===teamId);
+  if(!team) return;
+  if(team.riders.length >= 7){ alert('Team is full (7 riders max).'); return; }
+  const onTeam = new Set(teams.flatMap(t=>t.riders));
+  const available = allRiders.filter(r=>!onTeam.has(r.name)).sort((a,b)=>b.avg-a.avg);
+  if(!available.length){ alert('No available riders to sign.'); return; }
+
+  let modal = document.getElementById('sign-rider-modal');
+  if(modal) modal.remove();
+  modal = document.createElement('div');
+  modal.id = 'sign-rider-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px';
+  document.body.appendChild(modal);
+
+  const inner = document.createElement('div');
+  inner.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;max-width:480px;width:100%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column';
+  modal.appendChild(inner);
+
+  inner.innerHTML =
+    '<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">'
+    +'<div style="flex:1"><div style="font-family:Barlow Condensed,sans-serif;font-size:1.1rem;font-weight:800;text-transform:uppercase">Sign Rider → '+team.name+'</div>'
+    +'<div style="font-size:.75rem;color:var(--muted)">'+available.length+' available · '+team.riders.length+'/7 slots used</div></div>'
+    +'<button id="sign-close-btn" style="background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer">✕</button>'
+    +'</div>'
+    +'<input id="sign-search" placeholder="Search riders…" style="margin:8px 12px;padding:6px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem">'
+    +'<div id="sign-rider-list" style="overflow-y:auto;flex:1">'+buildSignRows(available,teamId)+'</div>';
+
+  inner.querySelector('#sign-close-btn').onclick = ()=>modal.remove();
+  modal.onclick = e=>{ if(e.target===modal) modal.remove(); };
+  inner.querySelector('#sign-search').addEventListener('input', function(){
+    const q=this.value.toLowerCase();
+    const onT=new Set(teams.flatMap(t=>t.riders));
+    const avail=allRiders.filter(r=>!onT.has(r.name)&&(r.name.toLowerCase().includes(q)||r.country.toLowerCase().includes(q))).sort((a,b)=>b.avg-a.avg);
+    const list=document.getElementById('sign-rider-list');
+    if(list) list.innerHTML=avail.length?buildSignRows(avail,teamId):'<div style="padding:16px;color:var(--muted);text-align:center">No riders match.</div>';
+  });
+  inner.addEventListener('click', e=>{
+    const row=e.target.closest('._sign-row');
+    if(row) signRiderToTeam(+row.dataset.tid, row.dataset.rider);
+  });
+  inner.addEventListener('mouseover', e=>{
+    const row=e.target.closest('._sign-row');
+    if(row) row.style.background='var(--surface2)';
+  });
+  inner.addEventListener('mouseout', e=>{
+    const row=e.target.closest('._sign-row');
+    if(row) row.style.background='';
+  });
+}
+
+function filterSignRiders(teamId){} // no-op, handled inline now
+
+function signRiderToTeam(teamId, riderName){
+  const team = teams.find(t=>t.id===teamId);
+  if(!team){ return; }
+  if(team.riders.length >= 7){ alert('Team is full.'); return; }
+  if(team.riders.includes(riderName)) return;
+  team.riders.push(riderName);
+  buildRiderTeamMap();
+  saveTeams();
+  document.getElementById('sign-rider-modal')?.remove();
+  renderTeams();
+}
+
+
 function renderTeams(){
   if(!teams.length){
     document.getElementById('teams-count-pill').textContent='—';
@@ -3552,7 +3653,12 @@ function renderTeams(){
       return `<div class="team-rider-row"><span class="team-rider-num">${i+1}</span>${r?flagImg(r.country,11):''}<span class="team-rider-name">${n}</span><span class="team-rider-ovr">${r?r.avg.toFixed(1):'-'}</span></div>`;
     }).join('');
     const emptyCount=7-team.riders.length;
-    const freeSlots=emptyCount>0?Array(emptyCount).fill('<div class="team-free-slot">— empty slot —</div>').join(''):'';
+    const freeSlots=emptyCount>0?Array(emptyCount).fill(0).map((_,si)=>
+      '<div class="team-free-slot" style="display:flex;align-items:center;justify-content:space-between;padding:3px 10px">'
+      +'<span style="font-size:.7rem;color:var(--border2);font-style:italic">— empty slot —</span>'
+      +'<button onclick="openSignRider('+team.id+')" style="font-size:.62rem;padding:1px 7px;border-radius:3px;background:rgba(62,207,110,.15);border:1px solid rgba(62,207,110,.3);color:var(--green);cursor:pointer">+ Sign</button>'
+      +'</div>'
+    ).join(''):'';
     const _jc=getTeamJerseyColor(team.name);
     return `<div class="team-card" id="tcard-${team.id}" style="border-left-color:${_jc.primary}">
         <div class="team-card-head">
