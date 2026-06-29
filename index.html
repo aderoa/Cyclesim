@@ -91,6 +91,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 .tbl tbody tr{cursor:pointer}
 
 .race{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+.race.justran{border-color:var(--d1);box-shadow:0 0 0 1px var(--d1)}
 .rhead{font-family:var(--disp);font-size:16px;margin-bottom:6px}
 .rtop{list-style:none;margin:0;padding:0;font-size:13px}
 .rtop li{padding:2px 0;display:flex;gap:8px;align-items:baseline}
@@ -168,7 +169,6 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
   <button id="btnReset" class="ghost">Reset</button>
   <span id="msg" class="msg"></span>
 </div>
-<section id="pyramid" class="pyramid"></section>
 <nav class="tabs">
   <button data-tab="divisions" class="on">Divisions</button>
   <button data-tab="phase">Last phase</button>
@@ -515,26 +515,33 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       }
       S.phaseCtx.dmBefore=dm;
     }
+    // resolve races east-to-west (time-zone order): Australia/NZ first, California last
+    S.phaseCtx.races.sort((a,b)=> geo(b.country)[1] - geo(a.country)[1]);
     S.phaseCtx.maxStages=Math.max(1, ...S.phaseCtx.races.map(r=>r.nStages));
+    // unit queue: round-major, race-by-race (stage 1 of every race in TZ order, then stage 2, …)
+    const units=[];
+    for(let round=1; round<=S.phaseCtx.maxStages; round++)
+      S.phaseCtx.races.forEach((rs,ri)=>{ if(rs.nStages>=round) units.push(ri); });
+    S.phaseCtx.units=units; S.phaseCtx.uptr=0;
     return phaseDescriptor(S);
   }
   function phaseDescriptor(S){
     const ctx=S.phaseCtx;
-    return { type:ctx.type, champs:!!ctx.champs, special:!!ctx.special, maxStages:ctx.maxStages||0, stage:ctx.stage||0,
+    return { type:ctx.type, champs:!!ctx.champs, special:!!ctx.special, maxStages:ctx.maxStages||0,
+      totalUnits:(ctx.units||[]).length,
       races: ctx.races.map(rs=>({ name:rs.name, host:rs.host, country:rs.country, division:rs.division,
         nStages:rs.nStages, tier:rs.tier, gt:rs.gt, teams:rs.teams.slice(),
         startlist: rs.riders.map(r=>({name:r.name,teamId:r.teamId})) })) };
   }
   function stepPhase(S){
     const ctx=S.phaseCtx; if(!ctx||ctx.champs) return null;
-    ctx.stage++;
-    const tick={ stage:ctx.stage, results:[] };
-    ctx.races.forEach(rs=>{ const sr=stepRaceStage(rs);
-      if(sr) tick.results.push({ name:rs.name, division:rs.division, host:rs.host, country:rs.country, tier:rs.tier, gt:rs.gt,
+    if(ctx.uptr>=ctx.units.length) return { allDone:true, result:null, unit:ctx.uptr, total:ctx.units.length };
+    const ri=ctx.units[ctx.uptr++]; const rs=ctx.races[ri];
+    const sr=stepRaceStage(rs);
+    return { unit:ctx.uptr, total:ctx.units.length, raceIndex:ri, allDone: ctx.uptr>=ctx.units.length,
+      result:{ name:rs.name, division:rs.division, host:rs.host, country:rs.country, tier:rs.tier, gt:rs.gt,
         stageName:sr.name, terrain:sr.terrain, winner:sr.winner, top:sr.top, gcTop:sr.gcTop,
-        done:rs.done, cur:rs.cur, nStages:rs.nStages }); });
-    tick.allDone = ctx.races.every(rs=>rs.done);
-    return tick;
+        done:rs.done, cur:rs.cur, nStages:rs.nStages } };
   }
   function finishPhase(S){
     const ctx=S.phaseCtx; const log=ctx.log;
@@ -555,7 +562,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   // atomic single-phase run (fast-forward path for Advance year / tests)
   function runPhase(S){
     setupPhase(S); const ctx=S.phaseCtx;
-    if(!ctx.champs){ let g=0; while(!ctx.races.every(r=>r.done) && g++<60) stepPhase(S); }
+    if(!ctx.champs){ let g=0; while(ctx.uptr<ctx.units.length && g++<3000) stepPhase(S); }
     return finishPhase(S);
   }
 
@@ -785,9 +792,20 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       (S.palmares[res.winner.name]||(S.palmares[res.winner.name]=[])).push({y:S.year,p:34,race:'World Championship',div:0,place:'WC'});
       (S.teamPalmares[res.winner.teamId]||(S.teamPalmares[res.winner.teamId]=[])).push({y:S.year,p:34,race:'World Championship',div:0,place:'WC'});
     }
-    log.champs={ nationals, worldChampion: res.winner?{name:res.winner.name,teamId:res.winner.teamId,country:res.winner.rider.country}:null };
-    log.races.push({division:0,name:'World Championship',host:'—',country:'—',terrain:'HIL',nStages:1,tier:'WORLDS',gt:null,
-                    teams:[],result:res});
+    // Time Trial World Championship — field by TT ability, raced on a TT course
+    const ttField=all.slice().sort((a,b)=>b.rider.a.TTR-a.rider.a.TTR).slice(0,120);
+    const ttRes=simulateRace(ttField, buildStages('oneday','TTR'));
+    ttRes.gc.slice(0,16).forEach(g=>{ const p=pointsFor('WORLDS',g.pos);
+      S.ledger.push({teamId:g.teamId, pts:p, abs:S.abs});
+      S.riderLedger.push({name:g.name, pts:p, abs:S.abs}); });
+    if(ttRes.winner){
+      (S.palmares[ttRes.winner.name]||(S.palmares[ttRes.winner.name]=[])).push({y:S.year,p:34,race:'TT World Championship',div:0,place:'WC-TT'});
+      (S.teamPalmares[ttRes.winner.teamId]||(S.teamPalmares[ttRes.winner.teamId]=[])).push({y:S.year,p:34,race:'TT World Championship',div:0,place:'WC-TT'});
+    }
+    log.champs={ nationals, worldChampion: res.winner?{name:res.winner.name,teamId:res.winner.teamId,country:res.winner.rider.country}:null,
+      ttWorldChampion: ttRes.winner?{name:ttRes.winner.name,teamId:ttRes.winner.teamId,country:ttRes.winner.rider.country}:null };
+    log.races.push({division:0,name:'World Championship',host:'—',country:'—',terrain:'HIL',nStages:1,tier:'WORLDS',gt:null,teams:[],result:res});
+    log.races.push({division:0,name:'TT World Championship',host:'—',country:'—',terrain:'TTR',nStages:1,tier:'WORLDS',gt:null,teams:[],result:ttRes});
   }
 
   // ---- new game ---------------------------------------------------------
@@ -821,11 +839,11 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
 (function(){
 const E = window.CycleEngine;
 let S=null, riders=null, lastLog=null, selDiv=1, tab='divisions';
-let pstate='idle', pdesc=null, prog={}, pstep=0;   // phase stepping state
+let pstate='idle', pdesc=null, prog={}, pstep=0, lastRace=null;   // phase stepping state
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0006 · 2026-06-29';
+const BUILD='v14 · build 0007 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan'};
@@ -852,7 +870,7 @@ $('csv').addEventListener('change', e=>{
   rd.readAsText(f);
 });
 $('btnDraft').onclick=()=>{ if(!riders) return;
-  S=E.newGame(riders); lastLog=null; selTeamId=null; pstate='idle'; pdesc=null; prog={}; pstep=0;
+  S=E.newGame(riders); lastLog=null; selTeamId=null; pstate='idle'; pdesc=null; prog={}; pstep=0; lastRace=null;
   msg(S.teams.length+' teams built · '+S.freeAgents.length+' free agents · seeded into divisions by rating');
   tab='divisions'; setTab(); render(); syncButtons();
 };
@@ -864,8 +882,8 @@ $('btnPhase').onclick=()=>{ if(!S) return;
     pstate='racing'; tab='race'; render(); syncButtons(); return;
   }
   if(pstate==='racing'){
-    const tick=E.stepPhase(S); pstep=tick.stage;
-    tick.results.forEach(r=>prog[r.name]=r);
+    const tick=E.stepPhase(S); pstep=tick.unit;
+    if(tick.result){ prog[tick.result.name]=tick.result; lastRace=tick.result.name; }
     if(tick.allDone) pstate='done';
     tab='race'; render(); syncButtons(); return;
   }
@@ -877,8 +895,8 @@ $('btnPhase').onclick=()=>{ if(!S) return;
 // skip the stage-by-stage and resolve the whole phase at once
 $('btnSkip').onclick=()=>{ if(!S) return;
   if(pstate==='idle'){ pdesc=E.setupPhase(S); pstate='racing'; }
-  if(pstate==='racing' && !pdesc.champs){ let g=0,t; do{ t=E.stepPhase(S); g++; }while(t && !t.allDone && g<60); }
-  lastLog=E.finishPhase(S); pstate='idle'; pdesc=null; prog={}; pstep=0;
+  if(pstate==='racing' && !pdesc.champs){ let g=0,t; do{ t=E.stepPhase(S); g++; }while(t && !t.allDone && g<3000); }
+  lastLog=E.finishPhase(S); pstate='idle'; pdesc=null; prog={}; pstep=0; lastRace=null;
   tab='phase'; setTab(); render(); syncButtons();
 };
 $('btnYear').onclick=()=>{ if(!S||pstate!=='idle') return; const y=S.year; let g=0; do{ lastLog=E.runPhase(S); g++; }while(S.year===y && g<40); tab='phase'; setTab(); render(); syncButtons(); };
@@ -888,10 +906,10 @@ function syncButtons(){
   const b=$('btnPhase'); b.disabled=!on;
   if(!on){ b.textContent='Advance phase'; return; }
   if(pstate==='idle'){ const cal=S.calendar[S.phase-1]; b.textContent = cal.type==='CHAMPS'?'Run championships':'Start phase'; }
-  else if(pstate==='racing'){ b.textContent='Next stage ('+pstep+'/'+pdesc.maxStages+')'; }
+  else if(pstate==='racing'){ b.textContent='Next ('+pstep+'/'+pdesc.totalUnits+')'; }
   else { b.textContent='Finish phase'; }
 }
-$('btnReset').onclick=()=>{ S=null;riders=null;lastLog=null;pstate='idle';pdesc=null;prog={};pstep=0;
+$('btnReset').onclick=()=>{ S=null;riders=null;lastLog=null;pstate='idle';pdesc=null;prog={};pstep=0;lastRace=null;
   $('csv').value=''; msg('load a rider database to begin'); syncButtons();
   $('view').innerHTML=''; $('ticker').innerHTML=''; $('pyramid').innerHTML='';
   $('yp').textContent='—'; $('ptype').textContent='';
@@ -912,8 +930,8 @@ function closeModal(){ $('modal').style.display='none'; }
 function findRider(name){ const tid=S.riderTeam[name]; const t=S.teamById[tid];
   const r=t&&t.riders.find(x=>x.name===name); return {r, team:t}; }
 function palmaresLine(e){
-  const lab={win:'Won',['2nd']:'2nd',['3rd']:'3rd',points:'Points jersey',kom:'Mountains jersey',NC:'National Champion',WC:'World Champion'}[e.place]||e.place;
-  const cls=e.place==='win'?'win':(e.place==='NC'||e.place==='WC')?'title':'';
+  const lab={win:'Won',['2nd']:'2nd',['3rd']:'3rd',points:'Points jersey',kom:'Mountains jersey',NC:'National Champion',WC:'World Champion','WC-TT':'TT World Champion'}[e.place]||e.place;
+  const cls=e.place==='win'?'win':(e.place==='NC'||e.place==='WC'||e.place==='WC-TT')?'title':'';
   return '<li><span class="pwhen">Y'+e.y+' P'+e.p+'</span><span class="'+cls+'">'+lab+'</span> — '+e.race+(e.div?' <span class="mut">(D'+e.div+')</span>':'')+'</li>';
 }
 function palmaresBlock(entries){
@@ -954,7 +972,7 @@ function render(){
   $('ptype').textContent = cal.type==='SPECIAL' ? ('SPECIAL — '+cal.special.name)
                          : cal.type==='CHAMPS' ? 'CHAMPIONSHIPS' : 'COMMON';
   $('ptype').className='ptype '+cal.type.toLowerCase();
-  renderTicker(); renderPyramid();
+  renderTicker();
   if(tab==='race') renderRace();
   else if(tab==='divisions') renderDivisions();
   else if(tab==='phase') renderPhase();
@@ -968,17 +986,17 @@ function renderRace(){
   if(!pdesc){ v.appendChild(el('div','empty','No race in progress.')); return; }
   const head=el('div','phead','<b>Year '+S.year+' · Phase '+S.phase+'</b> — '+pdesc.type+
     (pdesc.type==='SPECIAL'?' · '+pdesc.races[0].name:'')+
-    ' <span class="mut">· stage '+pstep+' of '+pdesc.maxStages+(pstate==='done'?' · complete':'')+'</span>');
+    ' <span class="mut">· '+pstep+' of '+pdesc.totalUnits+' stage results'+(pstate==='done'?' · complete':'')+'</span>');
   v.appendChild(head);
   if(pstep===0){
     v.appendChild(el('div','movesum mut','Pre-race — '+pdesc.races.length+' race'+(pdesc.races.length>1?'s':'')+
-      ' on the start line. Press <b>Next stage</b> to begin.'));
+      ' on the start line, resolving east-to-west. Press <b>Next</b> to ride the first stage.'));
   }
-  // sort: marquee divisions first
-  const races=pdesc.races.slice().sort((a,b)=>a.division-b.division);
+  // keep the engine's time-zone order (east to west)
+  const races=pdesc.races;
   races.forEach(rc=>{
     const p=prog[rc.name];                 // latest stage state for this race
-    const card=el('div','race');
+    const card=el('div','race'+(rc.name===lastRace?' justran':''));
     const stageTxt = p? ('stage '+p.cur+'/'+rc.nStages+(p.done?' · done':'')) : (rc.nStages>1?rc.nStages+' stages':'one-day');
     card.appendChild(el('div','rhead', divChip(rc.division)+' '+flag(rc.country)+'<b>'+rc.name+'</b> '+
       '<span class="mut">· '+stageTxt+'</span>'+(p&&p.done?' <span class="debut" style="background:rgba(242,194,0,.16);color:var(--d1)">FINISH</span>':'')));
@@ -1010,29 +1028,6 @@ function renderTicker(){
 }
 
 function rankPts(){ const m={}; E.worldRanking(S).forEach(o=>m[o.team.id]=o.pts); return m; }
-
-function renderPyramid(){
-  const dm=E.divisionMap(S.teams);
-  const counts=[1,2,3,4].map(d=>dm[d].length);
-  const maxc=Math.max.apply(null,counts)||1;
-  const moves={1:{up:0,dn:0},2:{up:0,dn:0},3:{up:0,dn:0},4:{up:0,dn:0}};
-  if(lastLog&&lastLog.moves) lastLog.moves.forEach(m=>{
-    if(m.kind==='promote'){ moves[m.to].up++; } else { moves[m.to].dn++; }
-  });
-  const labels={1:'D1 · World Tour',2:'D2 · Pro',3:'D3 · Continental',4:'D4 · Open floor'};
-  const p=$('pyramid'); p.innerHTML='';
-  [1,2,3,4].forEach((d,i)=>{
-    const row=el('div','prow');
-    const bar=el('div','pbar '+DIVCOL[d]);
-    bar.style.width=(12+88*counts[i]/maxc)+'%';
-    bar.innerHTML='<span class="plabel">'+labels[d]+'</span><span class="pcount">'+counts[i]+(d===4?' ·∞':'')+'</span>';
-    const flow=el('div','pflow');
-    if(moves[d].up) flow.innerHTML+='<span class="up">↑'+moves[d].up+'</span>';
-    if(moves[d].dn) flow.innerHTML+='<span class="dn">↓'+moves[d].dn+'</span>';
-    row.appendChild(bar); row.appendChild(flow);
-    p.appendChild(row);
-  });
-}
 
 function divChip(d){ return '<span class="chip '+DIVCOL[d]+'">D'+d+'</span>'; }
 
@@ -1068,9 +1063,11 @@ function renderPhase(){
     const c=lastLog.champs;
     const box=el('div','champbox');
     let h='<div class="dsec" style="margin-top:0">Championship phase — national titles, then the World Championship</div>';
-    const wc=c.worldChampion;
-    h+='<div style="font-family:var(--disp);font-size:18px;margin:4px 0 10px">🌈 World Champion: '+
+    const wc=c.worldChampion, tt=c.ttWorldChampion;
+    h+='<div style="font-family:var(--disp);font-size:18px;margin:4px 0 4px">🌈 World Champion: '+
       (wc?flag(wc.country)+rname(wc.name)+' <span class="mut">'+teamNameById(wc.teamId)+'</span>':'—')+'</div>';
+    h+='<div style="font-family:var(--disp);font-size:16px;margin:0 0 10px">⏱ TT World Champion: '+
+      (tt?flag(tt.country)+rname(tt.name)+' <span class="mut">'+teamNameById(tt.teamId)+'</span>':'—')+'</div>';
     h+='<div class="dsec">National champions ('+c.nationals.length+')</div><div class="slgrid">';
     c.nationals.forEach(n=>{ h+='<div class="slteam"><div class="slname">'+flag(n.country)+cname(n.country)+'</div>'+
       '<div class="slr">'+rname(n.name)+'</div></div>'; });
