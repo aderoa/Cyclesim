@@ -141,6 +141,11 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 .fullgc.tall{max-height:520px}
 .resumebar{background:rgba(242,194,0,.12);border:1px solid var(--d1);border-radius:7px;
   padding:8px 12px;margin-bottom:12px;font-size:13px;color:var(--ink)}
+.injlist{display:flex;flex-direction:column;gap:3px}
+.injrow{display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:12px;
+  padding:5px 10px;background:var(--bg);border-radius:5px}
+.injr{display:flex;align-items:center;gap:5px;min-width:0}
+.injtag{font-family:var(--mono);font-size:11px;white-space:nowrap}
 .stagelist{display:flex;flex-direction:column;gap:2px}
 .stagerow{display:grid;grid-template-columns:80px 110px 1fr;gap:8px;align-items:baseline;font-size:12px;
   padding:3px 8px;background:var(--bg);border-radius:4px}
@@ -505,7 +510,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     const safe=new Set(); gc.slice(0,10).forEach(g=>safe.add(g.teamId)); if(jpTid!=null)safe.add(jpTid); if(jkTid!=null)safe.add(jkTid);
     const n = division===1?2:4; const rel=[];
     for(let i=teamClass.length-1;i>=0 && rel.length<n;i--){ if(!safe.has(teamClass[i].teamId)) rel.push(teamClass[i].teamId); }
-    return { relZone:rel, promoTeam:(division>1 && gc[0])?gc[0].teamId:null };
+    return { relZone:rel, promoTeam:(division>1 && teamClass[0])?teamClass[0].teamId:null };
   }
 
   // ---- world ranking (rolling 33 phases) -------------------------------
@@ -968,7 +973,7 @@ let riderSort={key:'rating',dir:-1};           // riders table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0011 · 2026-06-29';
+const BUILD='v14 · build 0012 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1027,7 +1032,12 @@ $('btnPhase').onclick=()=>{ if(!S) return;
     else { lastLog=E.finishPhase(S); flow='phaserecap'; }
     tab='flow'; render(); syncButtons(); return;
   }
-  if(flow==='phaserecap'){ flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); return; }
+  if(flow==='phaserecap'){
+    if((S.market||[]).length){ flow='market'; tab='flow'; render(); syncButtons(); }
+    else { flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); }
+    return;
+  }
+  if(flow==='market'){ flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); return; }
 };
 // skip the guided pages and resolve the whole phase at once
 $('btnSkip').onclick=()=>{ if(!S) return;
@@ -1039,7 +1049,7 @@ $('btnSkip').onclick=()=>{ if(!S) return;
 $('btnYear').onclick=()=>{ if(!S||flow!==null) return; const y=S.year; let g=0; do{ lastLog=E.runPhase(S); g++; }while(S.year===y && g<40); tab='phase'; setTab(); render(); syncButtons(); };
 function syncButtons(){
   const on=!!S;
-  $('btnSkip').disabled=!on||flow==='phaserecap'; $('btnYear').disabled=!on||flow!==null;
+  $('btnSkip').disabled=!on||flow==='phaserecap'||flow==='market'; $('btnYear').disabled=!on||flow!==null;
   const b=$('btnPhase'); b.disabled=!on;
   if(!on){ b.textContent='Advance phase'; return; }
   if(flow===null){ const cal=S.calendar[S.phase-1]; b.textContent = cal.type==='CHAMPS'?'Run championships':'Start phase'; return; }
@@ -1049,7 +1059,8 @@ function syncButtons(){
   else if(flow==='result') b.textContent='Continue →';
   else if(flow==='gc') b.textContent='Next stage →'+prog;
   else if(flow==='recap') b.textContent=hasMore()?('Next race →'+prog):'Finish phase →';
-  else if(flow==='phaserecap') b.textContent='Done →';
+  else if(flow==='phaserecap') b.textContent=(S.market||[]).length?'Transfer market →':'Done →';
+  else if(flow==='market') b.textContent='Close market →';
 }
 $('btnReset').onclick=()=>{ S=null;riders=null;lastLog=null;flow=null;cur=null;pdesc=null;
   $('csv').value=''; msg('load a rider database to begin'); syncButtons();
@@ -1142,6 +1153,7 @@ function renderFlow(){
   if(flow==='gc') return flowGC(v);
   if(flow==='recap') return flowRecap(v);
   if(flow==='phaserecap') return renderPhase();
+  if(flow==='market') return renderMarket();
   v.appendChild(el('div','empty','—'));
 }
 function flowDay(v){
@@ -1166,8 +1178,9 @@ function flowPreview(v){
     ' — <b>'+(E.TERRAIN_LABEL[u.terrain]||u.terrain)+'</b>'+(u.nStages>1?' stage':' parcours')+'. Press <b>'+(u.nStages>1?'Ride stage':'Ride race')+'</b>.'));
   if(u.isRaceStart && u.startlist){
     const byTeam={}; u.startlist.forEach(s=>{(byTeam[s.teamId]||(byTeam[s.teamId]=[])).push(s);});
-    let h='<div class="dsec">Start list · '+Object.keys(byTeam).length+' teams · '+u.startlist.length+' riders</div><div class="slgrid">';
-    Object.keys(byTeam).forEach(tid=>{ const t=S.teamById[tid];
+    const order=Object.keys(byTeam).sort((a,b)=>Math.max.apply(null,byTeam[b].map(s=>s.rating))-Math.max.apply(null,byTeam[a].map(s=>s.rating)));
+    let h='<div class="dsec">Start list · '+order.length+' teams · '+u.startlist.length+' riders <span class="mut">(strongest leader first)</span></div><div class="slgrid">';
+    order.forEach(tid=>{ const t=S.teamById[tid];
       const mem=byTeam[tid].slice().sort((a,b)=>b.rating-a.rating);
       h+='<div class="slteam"><div class="slname">'+(t?flag(t.country)+tname(t):tid)+'</div>'+
         mem.map(s=>'<div class="slr">'+flag(s.country)+rname(s.name)+'<span class="srat">'+s.rating.toFixed(0)+'</span></div>').join('')+'</div>'; });
@@ -1227,13 +1240,13 @@ function flowRecap(v){
 function flowInjuries(v, list){
   if(!list||!list.length){ v.appendChild(el('div','flowsub mut','No abandons.')); return; }
   const hurt=list.filter(i=>i.missed>0), fine=list.filter(i=>i.missed===0);
+  const row=(i,tagHtml)=>{ const t=S.teamById[i.teamId];
+    return '<div class="injrow"><span class="injr">'+flag(rcountry(i.name))+rname(i.name)+
+      ' <span class="mut">·&nbsp;'+(t?tname(t):'—')+'</span></span>'+tagHtml+'</div>'; };
   let h='<div class="dsec">Abandons & injury report <span class="mut">· '+list.length+' out, '+hurt.length+' injured</span></div><div class="injlist">';
-  hurt.forEach(i=>{ const t=S.teamById[i.teamId]; const c=i.severity==='minor'?'':'dn';
-    h+='<div class="injrow"><span class="injr">'+flag(rcountry(i.name))+rname(i.name)+'</span><span class="mut">'+(t?tname(t):'')+
-       '</span><span class="injtag '+c+'">'+i.severity+' · '+i.days+'d · out '+i.missed+'p</span></div>'; });
-  fine.forEach(i=>{ const t=S.teamById[i.teamId];
-    h+='<div class="injrow"><span class="injr">'+flag(rcountry(i.name))+rname(i.name)+'</span><span class="mut">'+(t?tname(t):'')+
-       '</span><span class="injtag mut">no injury</span></div>'; });
+  hurt.forEach(i=>{ const c=i.severity==='minor'?'':'dn';
+    h+=row(i,'<span class="injtag '+c+'">'+i.severity+' · '+i.days+'d · out '+i.missed+'p</span>'); });
+  fine.forEach(i=>{ h+=row(i,'<span class="injtag mut">no injury</span>'); });
   h+='</div>'; const d=el('div'); d.innerHTML=h; v.appendChild(d);
 }
 
