@@ -175,6 +175,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 .palm .pwhen{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:54px}
 .palm .win{color:var(--d1)} .palm .title{color:var(--champ)}
 .palmsum{font-size:12px;color:var(--muted);margin-top:8px}
+.saveinfo{font-family:var(--mono);font-size:11px;color:var(--up)}
 </style>
 </head>
 <body>
@@ -190,6 +191,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
   <button id="btnSkip" disabled>Skip to result</button>
   <button id="btnYear" disabled>Advance year</button>
   <button id="btnReset" class="ghost">Reset</button>
+  <button id="btnSave" class="ghost" disabled>Save</button>
+  <span id="saveinfo" class="saveinfo"></span>
   <span id="msg" class="msg"></span>
 </div>
 <nav class="tabs">
@@ -956,9 +959,41 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     return S;
   }
 
+  // ---- persistence: serialize/rebuild a game (idle state only) ----------
+  function serialize(S){
+    const rid=r=>({name:r.name,country:r.country,avg:r.avg,a:r.a,id:r.id,lastSeen:r.lastSeen,retired:!!r.retired});
+    // prune ranking ledgers to the rolling window (+margin) to keep saves small
+    const keep=e=> (S.abs - e.abs) < 45;
+    return { v:1, year:S.year, phase:S.phase, abs:S.abs, commonCount:S.commonCount,
+      teams:S.teams.map(t=>({ id:t.id, name:t.name, country:t.country, division:t.division, avg:t.avg,
+        phasesByDivision:t.phasesByDivision, riders:t.riders.map(rid) })),
+      freeAgents:(S.freeAgents||[]).map(rid),
+      ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep),
+      palmares:S.palmares, teamPalmares:S.teamPalmares,
+      injuries:S.injuries, injuryDays:S.injuryDays, phasesRidden:S.phasesRidden, gt:S.gt,
+      champions:S.champions, market:S.market };
+  }
+  function deserialize(obj){
+    const teams=obj.teams.map(t=>({ id:t.id, name:t.name, country:t.country, division:t.division, avg:t.avg,
+      phasesByDivision:t.phasesByDivision||{}, riders:t.riders.map(r=>({...r})) }));
+    const teamById={}; teams.forEach(t=>teamById[t.id]=t);
+    const riderTeam={}, riderCountry={};
+    teams.forEach(t=>t.riders.forEach(r=>{ riderTeam[r.name]=t.id; riderCountry[r.name]=r.country; }));
+    (obj.freeAgents||[]).forEach(r=>{ riderCountry[r.name]=r.country; });
+    return { riders:[], teams, teamById, freeAgents:(obj.freeAgents||[]).map(r=>({...r})),
+      fixtures:buildFixtures(teams), calendar:buildCalendar(),
+      year:obj.year, phase:obj.phase, abs:obj.abs, commonCount:obj.commonCount||0,
+      ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], riderTeam, riderCountry,
+      palmares:obj.palmares||{}, teamPalmares:obj.teamPalmares||{},
+      injuries:obj.injuries||{}, injuryDays:obj.injuryDays||{}, phasesRidden:obj.phasesRidden||{}, gt:obj.gt||{},
+      champions:obj.champions||{world:null,worldTT:null,national:{}}, market:obj.market||[],
+      _divRaces:{} };
+  }
+
   const API={ ATTRS, parseCSV, genesisDraft, seedDivisions, divisionMap, racesPerDivision,
               buildCalendar, runPhase, setupPhase, stepPhase, nextUnit, finishPhase, phaseRaceSnapshot,
               worldRanking, worldRankingRiders, rankIndex, newGame, openMarket, transferRider,
+              serialize, deserialize,
               regionOf, gdist, tierFor, pointsFor, simulateRace, SPECIALS, TERRAIN_LABEL };
   if(typeof module!=='undefined' && module.exports) module.exports=API;
   root.CycleEngine=API;
@@ -966,6 +1001,20 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
 /* CycleSim v14 skeleton — UI controller */
 (function(){
 const E = window.CycleEngine;
+// ---- persistence (IndexedDB; auto-save each phase, auto-resume on load) ----
+const DBNAME='cyclesim_v14', STORE='saves', SKEY='current';
+function idbOpen(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DBNAME,1);
+  r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE); };
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function saveStamp(ts){ const e=document.getElementById('saveinfo'); if(e) e.textContent = ts?('saved '+new Date(ts).toLocaleTimeString()):''; }
+async function saveGame(){ if(!S) return; try{ const db=await idbOpen(); const data=E.serialize(S); data.savedAt=Date.now();
+  await new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).put(data,SKEY); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); });
+  saveStamp(data.savedAt); }catch(e){ console.warn('CycleSim save failed', e); } }
+async function loadGame(){ try{ const db=await idbOpen();
+  const data=await new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readonly'); const rq=tx.objectStore(STORE).get(SKEY); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); });
+  if(!data) return false; S=E.deserialize(data); riders=null; lastLog=null; flow=null; cur=null; pdesc=null; selTeamId=null;
+  saveStamp(data.savedAt); return true; }catch(e){ console.warn('CycleSim load failed', e); return false; } }
+async function clearSave(){ try{ const db=await idbOpen(); await new Promise(res=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).delete(SKEY); tx.oncomplete=res; tx.onerror=res; }); }catch(e){} saveStamp(null); }
 let S=null, riders=null, lastLog=null, selDiv=1, tab='divisions';
 let flow=null, cur=null, pdesc=null;          // guided race flow: day→preview→result→gc→recap→phaserecap
 let raceView=null, raceBackTab='phase', raceTab='gc', flowTab='gc'; // race screen + classification tabs
@@ -973,7 +1022,7 @@ let riderSort={key:'rating',dir:-1};           // riders table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0012 · 2026-06-29';
+const BUILD='v14 · build 0013 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1010,8 +1059,9 @@ $('csv').addEventListener('change', e=>{
 $('btnDraft').onclick=()=>{ if(!riders) return;
   S=E.newGame(riders); lastLog=null; selTeamId=null; flow=null; cur=null; pdesc=null;
   msg(S.teams.length+' teams built · '+S.freeAgents.length+' free agents · seeded into divisions by rating');
-  tab='divisions'; setTab(); render(); syncButtons();
+  tab='divisions'; setTab(); render(); syncButtons(); saveGame();
 };
+$('btnSave').onclick=()=>{ if(S){ saveGame(); msg('game saved'); } };
 const hasMore=()=>!!E.nextUnit(S);
 // primary stepper walks the guided pages: day → (preview → stage result → GC) per stage → recap → phase recap
 $('btnPhase').onclick=()=>{ if(!S) return;
@@ -1034,22 +1084,23 @@ $('btnPhase').onclick=()=>{ if(!S) return;
   }
   if(flow==='phaserecap'){
     if((S.market||[]).length){ flow='market'; tab='flow'; render(); syncButtons(); }
-    else { flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); }
+    else { flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); }
     return;
   }
-  if(flow==='market'){ flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); return; }
+  if(flow==='market'){ flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); return; }
 };
 // skip the guided pages and resolve the whole phase at once
 $('btnSkip').onclick=()=>{ if(!S) return;
   if(flow===null){ pdesc=E.setupPhase(S); }
   if(pdesc && !pdesc.champs){ let g=0; while(hasMore() && g++<3000) E.stepPhase(S); }
   lastLog=E.finishPhase(S); flow=null; cur=null; pdesc=null;
-  tab='phase'; setTab(); render(); syncButtons();
+  tab='phase'; setTab(); render(); syncButtons(); saveGame();
 };
-$('btnYear').onclick=()=>{ if(!S||flow!==null) return; const y=S.year; let g=0; do{ lastLog=E.runPhase(S); g++; }while(S.year===y && g<40); tab='phase'; setTab(); render(); syncButtons(); };
+$('btnYear').onclick=()=>{ if(!S||flow!==null) return; const y=S.year; let g=0; do{ lastLog=E.runPhase(S); g++; }while(S.year===y && g<40); tab='phase'; setTab(); render(); syncButtons(); saveGame(); };
 function syncButtons(){
   const on=!!S;
   $('btnSkip').disabled=!on||flow==='phaserecap'||flow==='market'; $('btnYear').disabled=!on||flow!==null;
+  $('btnSave').disabled=!on;
   const b=$('btnPhase'); b.disabled=!on;
   if(!on){ b.textContent='Advance phase'; return; }
   if(flow===null){ const cal=S.calendar[S.phase-1]; b.textContent = cal.type==='CHAMPS'?'Run championships':'Start phase'; return; }
@@ -1062,7 +1113,7 @@ function syncButtons(){
   else if(flow==='phaserecap') b.textContent=(S.market||[]).length?'Transfer market →':'Done →';
   else if(flow==='market') b.textContent='Close market →';
 }
-$('btnReset').onclick=()=>{ S=null;riders=null;lastLog=null;flow=null;cur=null;pdesc=null;
+$('btnReset').onclick=()=>{ S=null;riders=null;lastLog=null;flow=null;cur=null;pdesc=null; clearSave();
   $('csv').value=''; msg('load a rider database to begin'); syncButtons();
   $('view').innerHTML=''; $('ticker').innerHTML='';
   $('yp').textContent='—'; $('ptype').textContent='';
@@ -1507,6 +1558,10 @@ function renderMarket(){
 }
 
 msg('load a rider database to begin');
+// auto-resume a saved season if one exists
+(async function boot(){ try{ const ok=await loadGame();
+  if(ok){ tab='divisions'; setTab(); render(); syncButtons(); msg('resumed your saved season — Year '+S.year+' · Phase '+S.phase); }
+}catch(e){} })();
 })();
 
 </script>
