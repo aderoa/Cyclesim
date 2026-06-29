@@ -162,7 +162,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 <div class="controls">
   <label class="filebtn">Load database<input type="file" id="csv" accept=".csv"></label>
   <button id="btnDraft" disabled>Run draft</button>
-  <button id="btnPhase" disabled>Advance phase</button>
+  <button id="btnPhase" disabled>Start phase</button>
+  <button id="btnSkip" disabled>Skip to result</button>
   <button id="btnYear" disabled>Advance year</button>
   <button id="btnReset" class="ghost">Reset</button>
   <span id="msg" class="msg"></span>
@@ -491,82 +492,125 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   }
   function rankIndex(S){ const r=worldRanking(S); const idx={}; r.forEach((o,i)=>idx[o.team.id]=i); return idx; }
 
-  // ---- run one phase ----------------------------------------------------
-  function runPhase(S){
-    const cal = S.calendar[(S.phase-1)];
-    const log = { year:S.year, phase:S.phase, type:cal.type, races:[], moves:[] };
-
-    if(cal.type==='CHAMPS'){ runChamps(S, log); finalizePhase(S,log); return log; }
-
-    const dm = divisionMap(S.teams);
-    const ranking = rankIndex(S);
-
+  // ---- phase execution: setup -> step each stage -> finish -------------
+  // setupPhase builds the races (selecting riders + stages) without simulating;
+  // stepPhase runs the next stage of every active race; finishPhase resolves
+  // standings/points/promotion. runPhase composes them for fast-forward.
+  function setupPhase(S){
+    const cal=S.calendar[S.phase-1];
+    S.phaseCtx={ type:cal.type, races:[], log:{year:S.year,phase:S.phase,type:cal.type,races:[],moves:[]}, stage:0, maxStages:0 };
+    if(cal.type==='CHAMPS'){ S.phaseCtx.champs=true; return phaseDescriptor(S); }
+    const dm=divisionMap(S.teams);
     if(cal.type==='SPECIAL'){
-      // D1 reshaped to top-25 by world ranking; only D1 races. D2-D4 frozen.
       reshapeEliteD1(S, dm);
-      const fresh = divisionMap(S.teams);
-      const d1 = fresh[1];
-      const race = makeRace(1, cal.special, d1, S);
-      log.races.push(race);
-      awardPoints(S, race, 1);
-      processInjuries(S, race);
-      trackPhases(S, race, 1);
-      specialPromoRelegate(S, race, fresh);
-      finalizePhase(S,log);
-      return log;
+      const fresh=divisionMap(S.teams);
+      S.phaseCtx.races.push(prepareRace(1, cal.special, fresh[1], S));
+      S.phaseCtx.special=true;
+    } else {
+      for(let d=1; d<=4; d++){
+        const teams=dm[d]; if(!teams||!teams.length) continue;
+        const nR=racesPerDivision(teams.length,d); const pool=S.fixtures[d]||[]; if(!pool.length) continue;
+        const ci=S.commonCount; const hosts=[]; for(let k=0;k<nR;k++) hosts.push(pool[((ci*nR)+k)%pool.length]);
+        assignTeams(teams,hosts).forEach(b=>{ if(b.teams.length) S.phaseCtx.races.push(prepareRace(d,b.fixture,b.teams,S)); });
+      }
+      S.phaseCtx.dmBefore=dm;
     }
-
-    // COMMON phase: every division races, drawing from its fixed city-race pool.
-    for(let d=1; d<=4; d++){
-      const teams=dm[d]; if(!teams || !teams.length) continue;
-      const nR = racesPerDivision(teams.length, d);
-      const pool = S.fixtures[d]||[]; if(!pool.length) continue;
-      const ci = S.commonCount;
-      const hosts=[]; for(let k=0;k<nR;k++) hosts.push(pool[((ci*nR)+k)%pool.length]);
-      const buckets = assignTeams(teams, hosts);
-      const divRaces=[];
-      buckets.forEach(b=>{
-        if(!b.teams.length) return;
-        const race = makeRace(d, b.fixture, b.teams, S);
-        log.races.push(race); divRaces.push(race);
-        awardPoints(S, race, d);
-        processInjuries(S, race);
-        trackPhases(S, race, d);
-      });
-      S._divRaces = S._divRaces||{}; S._divRaces[d]=divRaces;
-    }
-    commonPromoRelegate(S, dm, log);
+    S.phaseCtx.maxStages=Math.max(1, ...S.phaseCtx.races.map(r=>r.nStages));
+    return phaseDescriptor(S);
+  }
+  function phaseDescriptor(S){
+    const ctx=S.phaseCtx;
+    return { type:ctx.type, champs:!!ctx.champs, special:!!ctx.special, maxStages:ctx.maxStages||0, stage:ctx.stage||0,
+      races: ctx.races.map(rs=>({ name:rs.name, host:rs.host, country:rs.country, division:rs.division,
+        nStages:rs.nStages, tier:rs.tier, gt:rs.gt, teams:rs.teams.slice(),
+        startlist: rs.riders.map(r=>({name:r.name,teamId:r.teamId})) })) };
+  }
+  function stepPhase(S){
+    const ctx=S.phaseCtx; if(!ctx||ctx.champs) return null;
+    ctx.stage++;
+    const tick={ stage:ctx.stage, results:[] };
+    ctx.races.forEach(rs=>{ const sr=stepRaceStage(rs);
+      if(sr) tick.results.push({ name:rs.name, division:rs.division, host:rs.host, country:rs.country, tier:rs.tier, gt:rs.gt,
+        stageName:sr.name, terrain:sr.terrain, winner:sr.winner, top:sr.top, gcTop:sr.gcTop,
+        done:rs.done, cur:rs.cur, nStages:rs.nStages }); });
+    tick.allDone = ctx.races.every(rs=>rs.done);
+    return tick;
+  }
+  function finishPhase(S){
+    const ctx=S.phaseCtx; const log=ctx.log;
+    if(ctx.champs){ runChamps(S, log); advanceCounters(S); S.phaseCtx=null; return log; }
+    const dr={};
+    ctx.races.forEach(rs=>{ const race=finalizeRace(rs,S); log.races.push(race);
+      awardPoints(S,race,rs.division); processInjuries(S,race); trackPhases(S,race,rs.division);
+      (dr[rs.division]||(dr[rs.division]=[])).push(race); });
+    S._divRaces=dr;
+    if(ctx.special){ log.moves=specialPromoRelegate(S, log.races[0], divisionMap(S.teams)); }
+    else { commonPromoRelegate(S, ctx.dmBefore, log); S.commonCount++; }
     S._divRaces={};
-    S.commonCount++;
-    finalizePhase(S,log);
+    advanceCounters(S); S.phaseCtx=null;
     return log;
   }
+  function advanceCounters(S){ S.abs++; if(S.phase>=34){ S.year++; S.phase=1; } else { S.phase++; } }
 
-  function finalizePhase(S, log){
-    S.abs++;
-    if(S.phase>=34){ S.year++; S.phase=1; } else { S.phase++; }
+  // atomic single-phase run (fast-forward path for Advance year / tests)
+  function runPhase(S){
+    setupPhase(S); const ctx=S.phaseCtx;
+    if(!ctx.champs){ let g=0; while(!ctx.races.every(r=>r.done) && g++<60) stepPhase(S); }
+    return finishPhase(S);
   }
 
-  // ---- phase helpers ----------------------------------------------------
-  function makeRace(division, meta, teams, S){
+  // ---- race construction + per-stage stepping --------------------------
+  function prepareRace(division, meta, teams, S){
     const entries=[];
-    teams.forEach(t=>{
-      const sel = selectRaceRiders(t, meta, S);
-      sel.forEach(r=>{
-        entries.push({rider:r, teamId:t.id});
+    teams.forEach(t=>{ const sel=selectRaceRiders(t, meta, S);
+      sel.forEach(r=>{ entries.push({rider:r, teamId:t.id});
         S.phasesRidden[r.name]=(S.phasesRidden[r.name]||0)+1;
-        if(meta.gt) S.gt[r.name]=(S.gt[r.name]||0)+1;
-      });
-    });
+        if(meta.gt) S.gt[r.name]=(S.gt[r.name]||0)+1; }); });
     let stages;
     if(meta.gt) stages=buildStages('gt');
     else if(meta.oneday===false) stages=buildStages(randInt(3,7));
     else stages=buildStages('oneday', meta.terrain);
-    const res = simulateRace(entries, stages);
-    const race = { division, name:meta.name, host:meta.host, country:meta.country||meta.host,
-             terrain: stages.length>1?'stage race':stages[0].terrain, nStages: stages.length,
-             tier:tierFor(division,{special:meta.tier?meta:null}), gt:meta.gt||null,
-             teams:teams.map(t=>t.id), result:res };
+    const riders=entries.map(e=>({name:e.rider.name, teamId:e.teamId, country:e.rider.country,
+      rider:e.rider, gc:0, pts:0, kom:0, out:false}));
+    return { division, name:meta.name, host:meta.host, country:meta.country||meta.host,
+      tier:tierFor(division,{special:meta.tier?meta:null}), gt:meta.gt||null,
+      nStages:stages.length, teams:teams.map(t=>t.id),
+      stages, riders, stageResults:[], cur:0, done:false, abandons:[] };
+  }
+  function stepRaceStage(rs){
+    if(rs.done) return null;
+    const st=rs.stages[rs.cur];
+    const wa=TERRAIN_ATTRS[st.terrain]||['FLA','STA'];
+    const dnf=rs.stages.length>1?0.012:0.04;
+    rs.riders.forEach(r=>{ if(!r.out && Math.random()<dnf){ r.out=true; rs.abandons.push(r);} });
+    const racing=rs.riders.filter(r=>!r.out);
+    racing.forEach(r=>{ const spec=(r.rider.a[wa[0]]+r.rider.a[wa[1]])/2; r._p=0.5*r.rider.avg+0.5*spec+4*randn(); });
+    const order=racing.slice().sort((a,b)=>b._p-a._p);
+    order.forEach((r,i)=>{ r.gc+=r._p;
+      if(FLATISH.has(st.terrain)) r.pts+=Math.max(0,15-i)*(r.rider.a.SPR/100);
+      if(CLIMBISH.has(st.terrain)) r.kom+=Math.max(0,15-i)*(r.rider.a.MTN/100); });
+    const gcNow=rs.riders.filter(r=>!r.out).sort((a,b)=>b.gc-a.gc);
+    const sr={ name:st.name, terrain:st.terrain,
+      top: order.slice(0,5).map((r,i)=>({pos:i,name:r.name,teamId:r.teamId})),
+      winner: order[0]?{name:order[0].name,teamId:order[0].teamId}:null,
+      gcTop: gcNow.slice(0,5).map((r,i)=>({pos:i,name:r.name,teamId:r.teamId})) };
+    rs.stageResults.push(sr);
+    rs.cur++; if(rs.cur>=rs.stages.length) rs.done=true;
+    return sr;
+  }
+  function finalizeRace(rs, S){
+    const finishers=rs.riders.filter(r=>!r.out).sort((a,b)=>b.gc-a.gc);
+    const gc=finishers.map((r,i)=>({pos:i,name:r.name,teamId:r.teamId,rider:r.rider}));
+    const byTeam={}; gc.forEach(g=>{ (byTeam[g.teamId]||(byTeam[g.teamId]=[])).push(g.pos); });
+    const teamClass=Object.keys(byTeam).map(tid=>{ const ps=byTeam[tid].sort((a,b)=>a-b).slice(0,3);
+      return { teamId:+tid, score:ps.reduce((s,x)=>s+x,0)+(3-ps.length)*999 }; }).sort((a,b)=>a.score-b.score);
+    const jp=best(finishers,r=>r.pts), jk=best(finishers,r=>r.kom);
+    const result={ gc, abandons:rs.abandons.map(a=>({name:a.name,teamId:a.teamId})), teamClass,
+      jersey:{ points:jp?{name:jp.name,teamId:jp.teamId}:null, kom:jk?{name:jk.name,teamId:jk.teamId}:null },
+      winner:gc[0]||null, stages:rs.stageResults };
+    const race={ division:rs.division, name:rs.name, host:rs.host, country:rs.country,
+      terrain: rs.nStages>1?'stage race':rs.stages[0].terrain, nStages:rs.nStages,
+      tier:rs.tier, gt:rs.gt, teams:rs.teams, result };
     recordPalmares(S, race);
     return race;
   }
@@ -767,7 +811,8 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   }
 
   const API={ ATTRS, parseCSV, genesisDraft, seedDivisions, divisionMap, racesPerDivision,
-              buildCalendar, runPhase, worldRanking, worldRankingRiders, rankIndex, newGame,
+              buildCalendar, runPhase, setupPhase, stepPhase, finishPhase,
+              worldRanking, worldRankingRiders, rankIndex, newGame,
               regionOf, gdist, tierFor, pointsFor, simulateRace, SPECIALS, TERRAIN_LABEL };
   if(typeof module!=='undefined' && module.exports) module.exports=API;
   root.CycleEngine=API;
@@ -776,10 +821,11 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
 (function(){
 const E = window.CycleEngine;
 let S=null, riders=null, lastLog=null, selDiv=1, tab='divisions';
+let pstate='idle', pdesc=null, prog={}, pstep=0;   // phase stepping state
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0005 · 2026-06-29';
+const BUILD='v14 · build 0006 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan'};
@@ -806,16 +852,47 @@ $('csv').addEventListener('change', e=>{
   rd.readAsText(f);
 });
 $('btnDraft').onclick=()=>{ if(!riders) return;
-  S=E.newGame(riders); lastLog=null; selTeamId=null;
-  $('btnPhase').disabled=false; $('btnYear').disabled=false;
-  msg(S.teams.length+' teams built (8 home + 7 drafted) · '+S.freeAgents.length+' free agents · seeded into divisions by rating');
-  tab='divisions'; setTab(); render();
+  S=E.newGame(riders); lastLog=null; selTeamId=null; pstate='idle'; pdesc=null; prog={}; pstep=0;
+  msg(S.teams.length+' teams built · '+S.freeAgents.length+' free agents · seeded into divisions by rating');
+  tab='divisions'; setTab(); render(); syncButtons();
 };
-$('btnPhase').onclick=()=>{ if(!S) return; lastLog=E.runPhase(S); tab='phase'; setTab(); render(); };
-$('btnYear').onclick=()=>{ if(!S) return; const y=S.year; let g=0; do{ lastLog=E.runPhase(S); g++; }while(S.year===y && g<40); tab='phase'; setTab(); render(); };
-$('btnReset').onclick=()=>{ S=null;riders=null;lastLog=null;
-  ['btnDraft','btnPhase','btnYear'].forEach(b=>$(b).disabled=true);
-  $('csv').value=''; msg('load a rider database to begin');
+// primary stepper: Start phase -> Next stage… -> Finish phase
+$('btnPhase').onclick=()=>{ if(!S) return;
+  if(pstate==='idle'){
+    pdesc=E.setupPhase(S); prog={}; pstep=0;
+    if(pdesc.champs){ lastLog=E.finishPhase(S); pstate='idle'; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); return; }
+    pstate='racing'; tab='race'; render(); syncButtons(); return;
+  }
+  if(pstate==='racing'){
+    const tick=E.stepPhase(S); pstep=tick.stage;
+    tick.results.forEach(r=>prog[r.name]=r);
+    if(tick.allDone) pstate='done';
+    tab='race'; render(); syncButtons(); return;
+  }
+  if(pstate==='done'){
+    lastLog=E.finishPhase(S); pstate='idle'; pdesc=null;
+    tab='phase'; setTab(); render(); syncButtons(); return;
+  }
+};
+// skip the stage-by-stage and resolve the whole phase at once
+$('btnSkip').onclick=()=>{ if(!S) return;
+  if(pstate==='idle'){ pdesc=E.setupPhase(S); pstate='racing'; }
+  if(pstate==='racing' && !pdesc.champs){ let g=0,t; do{ t=E.stepPhase(S); g++; }while(t && !t.allDone && g<60); }
+  lastLog=E.finishPhase(S); pstate='idle'; pdesc=null; prog={}; pstep=0;
+  tab='phase'; setTab(); render(); syncButtons();
+};
+$('btnYear').onclick=()=>{ if(!S||pstate!=='idle') return; const y=S.year; let g=0; do{ lastLog=E.runPhase(S); g++; }while(S.year===y && g<40); tab='phase'; setTab(); render(); syncButtons(); };
+function syncButtons(){
+  const on=!!S;
+  $('btnSkip').disabled=!on; $('btnYear').disabled=!on||pstate!=='idle';
+  const b=$('btnPhase'); b.disabled=!on;
+  if(!on){ b.textContent='Advance phase'; return; }
+  if(pstate==='idle'){ const cal=S.calendar[S.phase-1]; b.textContent = cal.type==='CHAMPS'?'Run championships':'Start phase'; }
+  else if(pstate==='racing'){ b.textContent='Next stage ('+pstep+'/'+pdesc.maxStages+')'; }
+  else { b.textContent='Finish phase'; }
+}
+$('btnReset').onclick=()=>{ S=null;riders=null;lastLog=null;pstate='idle';pdesc=null;prog={};pstep=0;
+  $('csv').value=''; msg('load a rider database to begin'); syncButtons();
   $('view').innerHTML=''; $('ticker').innerHTML=''; $('pyramid').innerHTML='';
   $('yp').textContent='—'; $('ptype').textContent='';
 };
@@ -867,6 +944,7 @@ function openRider(name){
 
 $('build').textContent=BUILD;
 msg('load a rider database to begin');
+syncButtons();
 
 // ---- master render ----
 function render(){
@@ -877,11 +955,47 @@ function render(){
                          : cal.type==='CHAMPS' ? 'CHAMPIONSHIPS' : 'COMMON';
   $('ptype').className='ptype '+cal.type.toLowerCase();
   renderTicker(); renderPyramid();
-  if(tab==='divisions') renderDivisions();
+  if(tab==='race') renderRace();
+  else if(tab==='divisions') renderDivisions();
   else if(tab==='phase') renderPhase();
   else if(tab==='ranking') renderRanking();
   else if(tab==='riders') renderRiders();
   else if(tab==='team') renderTeam();
+}
+
+function renderRace(){
+  const v=$('view'); v.innerHTML='';
+  if(!pdesc){ v.appendChild(el('div','empty','No race in progress.')); return; }
+  const head=el('div','phead','<b>Year '+S.year+' · Phase '+S.phase+'</b> — '+pdesc.type+
+    (pdesc.type==='SPECIAL'?' · '+pdesc.races[0].name:'')+
+    ' <span class="mut">· stage '+pstep+' of '+pdesc.maxStages+(pstate==='done'?' · complete':'')+'</span>');
+  v.appendChild(head);
+  if(pstep===0){
+    v.appendChild(el('div','movesum mut','Pre-race — '+pdesc.races.length+' race'+(pdesc.races.length>1?'s':'')+
+      ' on the start line. Press <b>Next stage</b> to begin.'));
+  }
+  // sort: marquee divisions first
+  const races=pdesc.races.slice().sort((a,b)=>a.division-b.division);
+  races.forEach(rc=>{
+    const p=prog[rc.name];                 // latest stage state for this race
+    const card=el('div','race');
+    const stageTxt = p? ('stage '+p.cur+'/'+rc.nStages+(p.done?' · done':'')) : (rc.nStages>1?rc.nStages+' stages':'one-day');
+    card.appendChild(el('div','rhead', divChip(rc.division)+' '+flag(rc.country)+'<b>'+rc.name+'</b> '+
+      '<span class="mut">· '+stageTxt+'</span>'+(p&&p.done?' <span class="debut" style="background:rgba(242,194,0,.16);color:var(--d1)">FINISH</span>':'')));
+    if(p){
+      const lab = rc.nStages>1 ? ('Stage '+p.cur+' ('+(E.TERRAIN_LABEL[p.terrain]||p.terrain)+')') : (E.TERRAIN_LABEL[p.terrain]||p.terrain);
+      card.appendChild(el('div','rfoot','<span class="mut">'+lab+' winner:</span> '+(p.winner?rname(p.winner.name)+' '+teamNameById(p.winner.teamId):'—')));
+      // running GC (only meaningful for stage races; for one-day it's the result)
+      const gcLabel = rc.nStages>1 ? (p.done?'Final GC':'GC after stage '+p.cur) : 'Result';
+      const top=(p.gcTop||[]).map((g,i)=>'<li><span class="pos">'+(i+1)+'</span> '+rname(g.name)+' <span class="mut">'+teamNameById(g.teamId)+'</span></li>').join('');
+      const block=el('div'); block.innerHTML='<div class="dsec">'+gcLabel+'</div><ol class="rtop">'+top+'</ol>';
+      card.appendChild(block);
+    } else {
+      // pre-race startlist preview (compact)
+      card.appendChild(el('div','rfoot mut',rc.startlist.length+' riders · '+rc.teams.length+' teams on the start line'));
+    }
+    v.appendChild(card);
+  });
 }
 
 function renderTicker(){
