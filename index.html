@@ -360,19 +360,20 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   const CONTINENT_LABEL={ EUW:'Western Europe', EUE:'Eastern Europe', NA:'North America',
     SA:'Latin America', OCE:'Oceania', ASE:'East & SE Asia', ASW:'West & Central Asia', AFR:'Africa', OTH:'Other' };
   function continentOf(c){ return CONTINENT_LABEL[regionOf(c)]||'Other'; }
-  // nation ranking: total rolling world-ranking points of a country's riders
+  // nation ranking: points scored in races HELD in each country (rolling 33 phases),
+  // regardless of rider nationality — i.e. the country's racing calendar strength
   function nationRanking(S){
-    const riders=worldRankingRiders(S); const by={};
-    riders.forEach(r=>{ const c=S.riderCountry[r.name]||'—';
-      (by[c]||(by[c]={country:c, pts:0, riders:0, top:null})); by[c].pts+=r.pts; by[c].riders++;
-      if(!by[c].top) by[c].top={name:r.name, pts:r.pts}; });
+    const by={};
+    (S.countryLedger||[]).forEach(e=>{ if(S.abs-e.abs<33){
+      (by[e.country]||(by[e.country]={country:e.country, pts:0, races:0})); by[e.country].pts+=e.pts; by[e.country].races++; }});
     return Object.values(by).filter(x=>x.pts>0).sort((a,b)=>b.pts-a.pts);
   }
   function continentRanking(S){
-    const nations=nationRanking(S); const by={};
-    nations.forEach(n=>{ const k=continentOf(n.country);
-      (by[k]||(by[k]={continent:k, pts:0, nations:0})); by[k].pts+=n.pts; by[k].nations++; });
-    return Object.values(by).filter(x=>x.pts>0).sort((a,b)=>b.pts-a.pts);
+    const by={};
+    (S.countryLedger||[]).forEach(e=>{ if(S.abs-e.abs<33){ const k=continentOf(e.country);
+      (by[k]||(by[k]={continent:k, pts:0, races:0, countries:new Set()})); by[k].pts+=e.pts; by[k].races++; by[k].countries.add(e.country); }});
+    return Object.values(by).filter(x=>x.pts>0).map(x=>({continent:x.continent, pts:x.pts, races:x.races, nations:x.countries.size}))
+      .sort((a,b)=>b.pts-a.pts);
   }
   function gdist(a,b){
     const A=geo(a),B=geo(b); let dlng=Math.abs(A[1]-B[1]); if(dlng>180) dlng=360-dlng;
@@ -713,8 +714,13 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
         return {name:r.name,teamId:r.teamId,country:r.country,score:s}; })
       .sort((x,y)=>y.score-x.score).slice(0,6)
       .map((f,i)=>({rank:i+1,name:f.name,teamId:f.teamId,country:f.country}));
+    // teams making their first-ever appearance in this division
+    const seenT=new Set(); const debutTeams=[];
+    rs.riders.forEach(r=>{ if(seenT.has(r.teamId)) return; seenT.add(r.teamId);
+      const t=S.teamById[r.teamId];
+      if(t && !((t.phasesByDivision||{})[rs.division])) debutTeams.push({teamId:r.teamId, name:t.name, country:t.country}); });
     return { raceIndex:ri, name:rs.name, division:rs.division, country:rs.country, host:rs.host,
-      tier:rs.tier, gt:rs.gt, nStages:rs.nStages, stageNo:rs.cur+1, terrain:st.terrain, favorites,
+      tier:rs.tier, gt:rs.gt, nStages:rs.nStages, stageNo:rs.cur+1, terrain:st.terrain, favorites, debutTeams,
       isRaceStart: rs.cur===0, isRaceEnd: rs.cur+1>=rs.nStages,
       unit:ctx.uptr+1, total:ctx.units.length,
       startlist: rs.cur===0 ? rs.riders.map(r=>({name:r.name,teamId:r.teamId,country:r.country,rating:r.rider.avg})) : null,
@@ -737,9 +743,19 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   }
   // transfer market: ~0.8% of the whole pool is listed each phase; signing is manual (UI)
   const ROSTER_SIZE=15;
-  function eligibleMarketTeams(S){ return S.teams.filter(t=>t.riders.length<ROSTER_SIZE); }
-  // up to three random teams that still need riders (re-rolled after every signing)
-  function rollMarketTeams(S){ const ids=eligibleMarketTeams(S).map(t=>t.id); shuffle(ids); S.marketTeams=ids.slice(0,3); }
+  // a rider may only move within one division of where they currently are
+  function riderPoolDiv(S, p){ const ft=p&&S.teamById[p.fromId]; return ft?ft.division:null; }
+  function eligibleMarketTeams(S, division){
+    return S.teams.filter(t=>t.riders.length<ROSTER_SIZE && (division==null || Math.abs(t.division-division)<=1));
+  }
+  // up to three random teams that still need riders, within ±1 division of the rider on the block
+  function rollMarketTeams(S){
+    const active=(S.marketPool||[])[0];
+    const div=riderPoolDiv(S, active);
+    let ids=eligibleMarketTeams(S, div).map(t=>t.id);
+    if(!ids.length) ids=eligibleMarketTeams(S, null).map(t=>t.id);   // fallback: nothing in range
+    shuffle(ids); S.marketTeams=ids.slice(0,3);
+  }
   // open the window: release ~0.8% of all riders into a floating pool sorted best→worst,
   // each release leaving an open slot on its former team. The pool is re-signed one rider
   // at a time (best first) until every team is back to exactly 15.
@@ -762,6 +778,9 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   function signFromPool(S, name, toId){
     const i=(S.marketPool||[]).findIndex(p=>p.name===name); if(i<0) return false;
     const t=S.teamById[toId]; if(!t || t.riders.length>=ROSTER_SIZE) return false;
+    // division gate: only sign within ±1 division, unless no in-range team exists at all
+    const div=riderPoolDiv(S, S.marketPool[i]);
+    if(div!=null && Math.abs(t.division-div)>1 && eligibleMarketTeams(S, div).length>0) return false;
     const p=S.marketPool.splice(i,1)[0]; const {fromId, ...rid}=p;
     t.riders.push(rid); S.riderTeam[name]=toId; S.riderCountry[name]=rid.country;
     t.avg=mean(t.riders.map(x=>x.avg));
@@ -773,8 +792,9 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   // place any leftover pool riders so every team ends at exactly 15 (former team first)
   function finishMarket(S){
     (S.marketPool||[]).slice().forEach(p=>{
-      let to=(S.teamById[p.fromId] && S.teamById[p.fromId].riders.length<ROSTER_SIZE) ? p.fromId : null;
-      if(to==null){ const e=eligibleMarketTeams(S)[0]; to=e?e.id:null; }
+      const ft=S.teamById[p.fromId], div=ft?ft.division:null;
+      let to=(ft && ft.riders.length<ROSTER_SIZE) ? p.fromId : null;     // former team first (always in range)
+      if(to==null){ let e=eligibleMarketTeams(S, div); if(!e.length) e=eligibleMarketTeams(S,null); to=e.length?e[0].id:null; }
       if(to!=null) signFromPool(S, p.name, to);
     });
     S.market=[]; S.marketTeams=[];
@@ -1105,11 +1125,15 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   }
 
   function awardPoints(S, race, division){
+    let total=0;
     race.result.gc.forEach(g=>{
       const pts=pointsFor(race.tier, g.pos);
       if(pts>0){ S.ledger.push({teamId:g.teamId, pts, abs:S.abs});
-                 S.riderLedger.push({name:g.name, pts, abs:S.abs}); }
+                 S.riderLedger.push({name:g.name, pts, abs:S.abs}); total+=pts; }
     });
+    // territory ranking: all points scored in a race credit its host country (and continent)
+    if(total>0 && race.country && race.country!=='—')
+      (S.countryLedger||(S.countryLedger=[])).push({country:race.country, pts:total, abs:S.abs});
   }
 
   function processInjuries(S, race){
@@ -1212,9 +1236,11 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       const w=field[0]; champs[nat]=w.r.name; nationals.push({country:nat, name:w.r.name, teamId:w.teamId});
       S.champions.national[nat]=w.r.name;
       (S.palmares[w.r.name]||(S.palmares[w.r.name]=[])).push({y:S.year,p:34,race:nat+' National Championship',div:0,place:'NC'});
+      let natTotal=0;
       field.slice(0,8).forEach((e,i)=>{ const p=pointsFor('NATIONAL',i);
         S.ledger.push({teamId:e.teamId, pts:p, abs:S.abs});
-        S.riderLedger.push({name:e.r.name, pts:p, abs:S.abs}); });
+        S.riderLedger.push({name:e.r.name, pts:p, abs:S.abs}); natTotal+=p; });
+      if(natTotal>0) (S.countryLedger||(S.countryLedger=[])).push({country:nat, pts:natTotal, abs:S.abs});
     });
     // Worlds: top ~150 riders by avg, one race
     const all=[]; S.teams.forEach(t=>t.riders.forEach(r=>all.push({rider:r,teamId:t.id})));
@@ -1262,7 +1288,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       fixtures: buildFixtures(teams),
       calendar: buildCalendar(),
       year:0, phase:1, abs:0, commonCount:0,   // Year 0 boots straight into championships (phase 1)
-      ledger:[], riderLedger:[], riderTeam, riderCountry,
+      ledger:[], riderLedger:[], countryLedger:[], riderTeam, riderCountry,
       palmares:{}, teamPalmares:{},
       injuries:{}, injuryDays:{}, phasesRidden:{}, gt:{},
       champions:{ world:null, worldTT:null, national:{} },
@@ -1292,7 +1318,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       teams:S.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity, country:t.country, division:t.division, avg:t.avg,
         phasesByDivision:t.phasesByDivision, riders:t.riders.map(rid) })),
       freeAgents:(S.freeAgents||[]).map(rid),
-      ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep),
+      ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep), countryLedger:(S.countryLedger||[]).filter(keep),
       palmares:S.palmares, teamPalmares:S.teamPalmares,
       injuries:S.injuries, injuryDays:S.injuryDays, phasesRidden:S.phasesRidden, gt:S.gt,
       champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketPool:S.marketPool, marketLog:S.marketLog, history:S.history, majorWins:(S.majorWins||[]).slice(-400), form:S.form||{} };
@@ -1310,7 +1336,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     return { riders:[], teams, teamById, freeAgents:(obj.freeAgents||[]).map(r=>({...r})),
       fixtures:buildFixtures(teams), calendar:buildCalendar(),
       year:obj.year, phase, abs:obj.abs, commonCount:obj.commonCount||0,
-      ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], riderTeam, riderCountry,
+      ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], countryLedger:obj.countryLedger||[], riderTeam, riderCountry,
       palmares:obj.palmares||{}, teamPalmares:obj.teamPalmares||{},
       injuries:obj.injuries||{}, injuryDays:obj.injuryDays||{}, phasesRidden:obj.phasesRidden||{}, gt:obj.gt||{},
       champions:obj.champions||{world:null,worldTT:null,national:{}}, market:obj.market||[], marketTeams:obj.marketTeams||[], marketPool:obj.marketPool||[], marketLog:obj.marketLog||[], history:obj.history||[], majorWins:obj.majorWins||[], form:obj.form||null,
@@ -1369,7 +1395,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0028 · 2026-06-29';
+const BUILD='v14 · build 0029 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1650,6 +1676,11 @@ function flowPreview(v){
     h+=u.favorites.map((f,i)=>'<span class="favchip">'+(medal[i]||'<b class="favn">'+(i+1)+'</b>')+' '+flag(rcountry(f.name))+rname(f.name)+'</span>').join('');
     h+='</div>'; const fd=el('div'); fd.innerHTML=h; v.appendChild(fd);
   }
+  if(u.debutTeams && u.debutTeams.length){
+    const d=el('div'); d.innerHTML='<div class="dsec">Division debut <span class="mut">· first time in '+divChip(u.division)+'</span></div><div class="favrow">'+
+      u.debutTeams.map(t=>'<span class="favchip">✦ '+flag(t.country)+(S.teamById[t.teamId]?tname(S.teamById[t.teamId]):t.name)+'</span>').join('')+'</div>';
+    v.appendChild(d);
+  }
   if(u.isRaceStart && u.startlist){
     const byTeam={}; u.startlist.forEach(s=>{(byTeam[s.teamId]||(byTeam[s.teamId]=[])).push(s);});
     const order=Object.keys(byTeam).sort((a,b)=>Math.max.apply(null,byTeam[b].map(s=>s.rating))-Math.max.apply(null,byTeam[a].map(s=>s.rating)));
@@ -1895,24 +1926,23 @@ function renderRanking(){
 let nationsView='nations';
 function renderNations(){
   const v=$('view'); v.innerHTML='';
-  v.appendChild(el('div','phead','<b>Nation ranking</b> <span class="mut">— combined rolling points of each country\u2019s riders</span>'));
+  v.appendChild(el('div','phead','<b>Territory ranking</b> <span class="mut">— points scored in races held in each place (rolling 33 phases), any nationality</span>'));
   const bar=el('div','subtabs');
-  [['nations','By nation'],['continents','By continent']].forEach(x=>{ const b=el('button','subtab'+(x[0]===nationsView?' on':''),x[1]);
+  [['nations','By country'],['continents','By continent']].forEach(x=>{ const b=el('button','subtab'+(x[0]===nationsView?' on':''),x[1]);
     b.onclick=()=>{ nationsView=x[0]; renderNations(); }; bar.appendChild(b); });
   v.appendChild(bar);
   const tbl=el('table','tbl'); const tb=el('tbody');
   if(nationsView==='continents'){
-    tbl.innerHTML='<thead><tr><th>#</th><th>Continent</th><th class="r">Nations</th><th class="r">Points</th></tr></thead>';
+    tbl.innerHTML='<thead><tr><th>#</th><th>Continent</th><th class="r">Countries</th><th class="r">Races</th><th class="r">Points</th></tr></thead>';
     E.continentRanking(S).forEach((c,i)=>{ const tr=el('tr');
       tr.innerHTML='<td class="mut">'+(i+1)+'</td><td class="tn">'+c.continent+'</td>'+
-        '<td class="r mono">'+c.nations+'</td><td class="r mono">'+Math.round(c.pts)+'</td>'; tb.appendChild(tr); });
+        '<td class="r mono">'+c.nations+'</td><td class="r mono">'+c.races+'</td><td class="r mono">'+Math.round(c.pts)+'</td>'; tb.appendChild(tr); });
   } else {
-    tbl.innerHTML='<thead><tr><th>#</th><th>Country</th><th>Continent</th><th>Top rider</th><th class="r">Riders</th><th class="r">Points</th></tr></thead>';
-    E.nationRanking(S).slice(0,60).forEach((n,i)=>{ const tr=el('tr');
+    tbl.innerHTML='<thead><tr><th>#</th><th>Country</th><th>Continent</th><th class="r">Races</th><th class="r">Points</th></tr></thead>';
+    E.nationRanking(S).slice(0,80).forEach((n,i)=>{ const tr=el('tr');
       tr.innerHTML='<td class="mut">'+(i+1)+'</td><td class="tn">'+flag(n.country)+cname(n.country)+'</td>'+
         '<td class="mut">'+E.continentOf(n.country)+'</td>'+
-        '<td>'+(n.top?flag(rcountry(n.top.name))+rname(n.top.name):'—')+'</td>'+
-        '<td class="r mono">'+n.riders+'</td><td class="r mono">'+Math.round(n.pts)+'</td>'; tb.appendChild(tr); });
+        '<td class="r mono">'+n.races+'</td><td class="r mono">'+Math.round(n.pts)+'</td>'; tb.appendChild(tr); });
   }
   tbl.appendChild(tb); v.appendChild(tbl);
 }
@@ -2022,7 +2052,9 @@ function renderMarket(){
   }
   const active=pool[0];                                   // best unsigned rider = the one in play
   const cand=(S.marketTeams||[]).map(id=>S.teamById[id]).filter(Boolean);
-  v.appendChild(el('div','flowsub','Now signing: '+flag(active.country)+'<b>'+active.name+'</b> <span class="mut">'+active.avg.toFixed(1)+' — pick one of three teams</span>'));
+  const aft=S.teamById[active.fromId]; const adiv=aft?aft.division:null;
+  const range = adiv!=null ? (' <span class="mut">· eligible divisions '+[adiv-1,adiv,adiv+1].filter(d=>d>=1&&d<=4).map(d=>'D'+d).join('/')+'</span>') : '';
+  v.appendChild(el('div','flowsub','Now signing: '+flag(active.country)+'<b>'+active.name+'</b> <span class="mut">'+active.avg.toFixed(1)+' — pick one of three teams</span>'+range));
   const rows=pool.map(p=>{ const ft=S.teamById[p.fromId];
     return { name:p.name, country:p.country||'', cn:cname(p.country||''), avg:p.avg,
       fromId:p.fromId, fromName:ft?ft.name:'', fromDiv:ft?ft.division:9 }; });
