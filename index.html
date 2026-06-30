@@ -156,6 +156,14 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 .mktqueue{margin-top:14px;display:flex;flex-wrap:wrap;gap:6px 14px}
 .mktqueue .mktq{font-size:12px;color:var(--text);display:inline-flex;align-items:center;gap:5px}
 tr.mktactive td{background:rgba(63,179,107,.08)}
+.jersey{vertical-align:-3px;margin-right:5px;border-radius:2px;flex:none}
+.histyear{margin:0 0 16px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--panel)}
+.histyear h3{margin:0 0 8px;font-size:14px;display:flex;align-items:center;gap:10px}
+.histyear h3 .yr{font-family:var(--mono);color:var(--up)}
+.histcrown{font-size:13px;margin:2px 0;color:var(--text)}
+.histmaj{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:8px;font-size:12px}
+.histmaj .hm{color:var(--muted)}
+.histmaj .hm b{color:var(--text);font-weight:600}
 .stagelist{display:flex;flex-direction:column;gap:2px}
 .stagerow{display:grid;grid-template-columns:80px 110px 1fr;gap:8px;align-items:baseline;font-size:12px;
   padding:3px 8px;background:var(--bg);border-radius:4px}
@@ -199,7 +207,6 @@ tr.mktactive td{background:rgba(63,179,107,.08)}
   <label class="filebtn ghost" id="updatewrap" style="display:none">Update database<input type="file" id="updcsv" accept=".csv"></label>
   <button id="btnDraft" disabled>Run draft</button>
   <button id="btnPhase" disabled>Start phase</button>
-  <button id="btnSkip" disabled>Skip to result</button>
   <button id="btnYear" disabled>Advance year</button>
   <button id="btnReset" class="ghost">Reset</button>
   <button id="btnSave" class="ghost" disabled>Save</button>
@@ -210,6 +217,7 @@ tr.mktactive td{background:rgba(63,179,107,.08)}
   <button data-tab="divisions" class="on">Divisions</button>
   <button data-tab="phase">Last phase</button>
   <button data-tab="ranking">World ranking</button>
+  <button data-tab="history">History</button>
   <button data-tab="riders">Riders</button>
   <button data-tab="team">Team</button>
   <button data-tab="market">Market</button>
@@ -432,13 +440,13 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     {name:'Il Lombardia',    host:'Italy',   terrain:'MTN',tier:'MONUMENT'}
   ];
   function buildCalendar(){
-    // place 8 specials across phases 1..33, evenly, Lombardia at phase 32.
-    const specialPhase = {}; // phase -> special index
-    for(let i=0;i<8;i++){ const p = Math.round((i+1)*33/9); specialPhase[p]=i; }
-    // guarantee distinctness & Lombardia last
-    const used=new Set(); const phases=[];
-    for(let p=1;p<=34;p++){
-      if(p===34){ phases.push({phase:34,type:'CHAMPS'}); continue; }
+    // Championships open the year at phase 1; the racing season runs phases 2..34.
+    const phases=[{phase:1, type:'CHAMPS'}];
+    // place 8 specials across phases 2..34, evenly, distinct; Lombardia falls last.
+    const specialPhase={};
+    for(let i=0;i<8;i++){ const p=2+Math.round((i+1)*32/9); specialPhase[p]=i; }
+    const used=new Set();
+    for(let p=2;p<=34;p++){
       if(specialPhase[p]!=null && !used.has(specialPhase[p])){
         used.add(specialPhase[p]);
         phases.push({phase:p,type:'SPECIAL',special:SPECIALS[specialPhase[p]]});
@@ -869,6 +877,9 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     const addR=(name,place)=>{ (S.palmares[name]||(S.palmares[name]=[])).push({y,p,race:rn,div:dv,place}); };
     const addT=(tid,place)=>{ (S.teamPalmares[tid]||(S.teamPalmares[tid]=[])).push({y,p,race:rn,div:dv,place}); };
     if(fin[0]){ addR(fin[0].name,'win'); addT(fin[0].teamId,'win'); }
+    if(fin[0] && /MONUMENT|TOUR|GT/.test(rs.tier||'')){
+      (S.majorWins||(S.majorWins=[])).push({y, race:rn, name:fin[0].name, teamId:fin[0].teamId, country:fin[0].country, tier:rs.tier});
+    }
     if(fin[1]) addR(fin[1].name,'2nd');
     if(fin[2]) addR(fin[2].name,'3rd');
     const jp=fin.slice().sort((a,b)=>b.pts-a.pts)[0], jk=fin.slice().sort((a,b)=>b.kom-a.kom)[0];
@@ -1078,6 +1089,10 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     }
     log.champs={ nationals, worldChampion: res.winner?{name:res.winner.name,teamId:res.winner.teamId,country:res.winner.rider.country}:null,
       ttWorldChampion: ttRes.winner?{name:ttRes.winner.name,teamId:ttRes.winner.teamId,country:ttRes.winner.rider.country}:null };
+    (S.history||(S.history=[])).push({ year:S.year,
+      world: res.winner?{name:res.winner.name, country:res.winner.rider.country, teamId:res.winner.teamId}:null,
+      worldTT: ttRes.winner?{name:ttRes.winner.name, country:ttRes.winner.rider.country, teamId:ttRes.winner.teamId}:null,
+      nationals: nationals.length });
     log.races.push({division:0,name:'World Championship',host:'—',country:'—',terrain:'HIL',nStages:1,tier:'WORLDS',gt:null,teams:[],result:res});
     log.races.push({division:0,name:'TT World Championship',host:'—',country:'—',terrain:'TTR',nStages:1,tier:'WORLDS',gt:null,teams:[],result:ttRes});
   }
@@ -1093,12 +1108,12 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       riders, teams, teamById, freeAgents,
       fixtures: buildFixtures(teams),
       calendar: buildCalendar(),
-      year:0, phase:34, abs:0, commonCount:0,   // Year 0 boots straight into championships
+      year:0, phase:1, abs:0, commonCount:0,   // Year 0 boots straight into championships (phase 1)
       ledger:[], riderLedger:[], riderTeam, riderCountry,
       palmares:{}, teamPalmares:{},
       injuries:{}, injuryDays:{}, phasesRidden:{}, gt:{},
       champions:{ world:null, worldTT:null, national:{} },
-      market:[], marketTeams:[], marketPool:[], marketLog:[],
+      market:[], marketTeams:[], marketPool:[], marketLog:[], history:[], majorWins:[],
       _divRaces:{}
     };
     return S;
@@ -1116,7 +1131,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep),
       palmares:S.palmares, teamPalmares:S.teamPalmares,
       injuries:S.injuries, injuryDays:S.injuryDays, phasesRidden:S.phasesRidden, gt:S.gt,
-      champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketPool:S.marketPool, marketLog:S.marketLog };
+      champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketPool:S.marketPool, marketLog:S.marketLog, history:S.history, majorWins:(S.majorWins||[]).slice(-400) };
   }
   function deserialize(obj){
     const teams=obj.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity||t.name, country:t.country, division:t.division, avg:t.avg,
@@ -1132,7 +1147,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], riderTeam, riderCountry,
       palmares:obj.palmares||{}, teamPalmares:obj.teamPalmares||{},
       injuries:obj.injuries||{}, injuryDays:obj.injuryDays||{}, phasesRidden:obj.phasesRidden||{}, gt:obj.gt||{},
-      champions:obj.champions||{world:null,worldTT:null,national:{}}, market:obj.market||[], marketTeams:obj.marketTeams||[], marketPool:obj.marketPool||[], marketLog:obj.marketLog||[],
+      champions:obj.champions||{world:null,worldTT:null,national:{}}, market:obj.market||[], marketTeams:obj.marketTeams||[], marketPool:obj.marketPool||[], marketLog:obj.marketLog||[], history:obj.history||[], majorWins:obj.majorWins||[],
       _divRaces:{} };
   }
 
@@ -1170,7 +1185,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0020 · 2026-06-29';
+const BUILD='v14 · build 0022 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1187,7 +1202,13 @@ const champBadge=n=>{ if(!S||!S.champions||!n) return ''; let b='';
   const c=S.riderCountry[n]; if(c&&S.champions.national[c]===n) b+='<span class="chmp" title="National Champion">🏅</span>';
   return b?(' '+b):''; };
 const rname=n=>'<span class="rl" data-r="'+(n||'').replace(/"/g,'&quot;')+'">'+(n||'')+'</span>'+champBadge(n);
-const tname=(t)=>t?'<span class="tl" data-t="'+t.id+'">'+t.name+'</span>':'';
+const JERSEY_PAL=[['#e6194b','#fff'],['#3cb44b','#fff'],['#4363d8','#fff'],['#f58231','#111'],['#911eb4','#fff'],['#1aa6c4','#111'],['#f032e6','#fff'],['#8bbf2a','#111'],['#469990','#fff'],['#9a6324','#fff'],['#e6c200','#111'],['#800000','#fff'],['#3fa37a','#fff'],['#808000','#fff'],['#d35400','#fff'],['#000075','#fff'],['#5d6d7e','#fff'],['#c0392b','#fff'],['#16a085','#fff'],['#7d3c98','#fff']];
+function teamColors(t){ const id=(t&&t.id!=null)?t.id:0; const a=JERSEY_PAL[id%JERSEY_PAL.length]; const b=JERSEY_PAL[(id*7+5)%JERSEY_PAL.length]; return {body:a[0], ink:a[1], accent:b[0]}; }
+function jersey(t,sz){ const c=teamColors(t); const w=sz||17, h=Math.round(w*0.92);
+  return '<svg class="jersey" viewBox="0 0 24 22" width="'+w+'" height="'+h+'" aria-hidden="true">'+
+    '<path d="M6 3 L2 7 L4 10.5 L6 9 L6 19 Q6 20 7 20 L17 20 Q18 20 18 19 L18 9 L20 10.5 L22 7 L18 3 L15 3 Q12 5 9 3 Z" fill="'+c.body+'" stroke="rgba(0,0,0,.45)" stroke-width=".6"/>'+
+    '<rect x="10.8" y="3.6" width="2.4" height="16.4" fill="'+c.accent+'"/></svg>'; }
+const tname=(t)=>t?jersey(t)+'<span class="tl" data-t="'+t.id+'">'+t.name+'</span>':'';
 let selTeamId=null;
 const fmt=n=>Math.round(n);
 // cycling-style time gap: +1'23" / +12" / leader shows —
@@ -1256,18 +1277,10 @@ $('btnPhase').onclick=()=>{ if(!S) return;
     flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); return;        // recap shown → close
   }
 };
-// skip the guided pages and resolve the whole phase at once
-$('btnSkip').onclick=()=>{ if(!S) return;
-  if(flow===null){ pdesc=E.setupPhase(S); }
-  if(pdesc && !pdesc.champs){ let g=0; while(hasMore() && g++<3000) E.stepPhase(S); }
-  lastLog=E.finishPhase(S);
-  if((S.market||[]).length){ flow='market'; cur=null; pdesc=null; tab='flow'; render(); syncButtons(); }
-  else { flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); }
-};
 $('btnYear').onclick=()=>{ if(!S||flow!==null) return; const y=S.year; let g=0; do{ lastLog=E.runPhase(S); g++; }while(S.year===y && g<40); tab='phase'; setTab(); render(); syncButtons(); saveGame(); };
 function syncButtons(){
   const on=!!S;
-  $('btnSkip').disabled=!on||flow==='phaserecap'||flow==='market'; $('btnYear').disabled=!on||flow!==null;
+  $('btnYear').disabled=!on||flow!==null;
   $('btnSave').disabled=!on;
   $('btnDraft').style.display = (riders && !S) ? '' : 'none';
   { const lw=$('loadwrap'), uw=$('updatewrap'); if(lw) lw.style.display = S?'none':''; if(uw) uw.style.display = S?'':'none'; }
@@ -1357,6 +1370,7 @@ function render(){
   else if(tab==='divisions') renderDivisions();
   else if(tab==='phase') renderPhase();
   else if(tab==='ranking') renderRanking();
+  else if(tab==='history') renderHistory();
   else if(tab==='riders') renderRiders();
   else if(tab==='team') renderTeam();
   else if(tab==='market') renderMarket();
@@ -1369,6 +1383,24 @@ function render(){
 }
 
 const rcountry=n=>(S&&S.riderCountry[n])||'';
+function renderHistory(){
+  const v=$('view'); v.innerHTML='';
+  v.appendChild(el('div','phead','<b>History</b> <span class="mut">— champions and prestige-race winners by year</span>'));
+  const hist=(S.history||[]).slice().sort((a,b)=>b.year-a.year);
+  if(!hist.length){ v.appendChild(el('div','empty','No seasons completed yet. Championships are contested in phase 1 each year.')); return; }
+  const majByYear={}; (S.majorWins||[]).forEach(m=>{ (majByYear[m.y]||(majByYear[m.y]=[])).push(m); });
+  const champLine=(label,c)=> c?('<div class="histcrown">'+label+': '+flag(c.country)+'<b>'+rname(c.name)+'</b> '+teamNameById(c.teamId)+'</div>'):'';
+  hist.forEach(h=>{
+    const box=el('div','histyear');
+    let html='<h3>🌈 Season <span class="yr">Year '+h.year+'</span></h3>';
+    html+=champLine('World Champion', h.world);
+    html+=champLine('TT World Champion', h.worldTT);
+    if(h.nationals) html+='<div class="histcrown mut">'+h.nationals+' national championships awarded</div>';
+    const maj=(majByYear[h.year]||[]).slice().sort((a,b)=>a.race.localeCompare(b.race));
+    if(maj.length){ html+='<div class="histmaj">'+maj.map(m=>'<span class="hm">'+m.race+': <b>'+m.name+'</b></span>').join('')+'</div>'; }
+    box.innerHTML=html; v.appendChild(box);
+  });
+}
 // ---- guided race flow: day → preview → stage result → GC → recap → phase recap ----
 function renderFlow(){
   const v=$('view'); v.innerHTML='';
@@ -1539,7 +1571,8 @@ function renderPhase(){
   }
   lastLog.races.forEach(r=>{
     const card=el('div','race');
-    const dbt=(r.result.debutTeams&&r.result.debutTeams.length)?' <span class="debut">'+r.result.debutTeams.length+' debut</span>':'';
+    const dbtArr=(r.result.debutTeams||[]).map(tid=>S.teamById[tid]).filter(Boolean);
+    const dbt=dbtArr.length?' <span class="debut">debut: '+dbtArr.map(t=>flag(t.country)+t.name).join(', ')+'</span>':'';
     const terr = r.nStages>1 ? (r.nStages+' stages') : (E.TERRAIN_LABEL[r.terrain]||r.terrain);
     card.appendChild(el('div','rhead',(r.division?divChip(r.division):'<span class="chip champ">WC</span>')+
       ' '+flag(r.country)+'<b>'+r.name+'</b> <span class="mut">· '+terr+' · '+r.tier+'</span>'+dbt));
@@ -1638,10 +1671,10 @@ function renderRiders(){
   S.teams.forEach(t=>t.riders.forEach(r=>{
     const inj=S.injuries[r.name]; const out=(inj!=null&&inj>=S.abs)?(inj-S.abs+1):0;
     rows.push({name:r.name, country:r.country, cn:cname(r.country), teamId:t.id, teamName:t.name,
-      division:t.division, rating:r.avg, phases:S.phasesRidden[r.name]||0, out, pts:rankPts[r.name]||0}); }));
+      division:t.division, rating:r.avg, phases:S.phasesRidden[r.name]||0, out, pts:rankPts[r.name]||0, retired:!!r.retired}); }));
   (S.freeAgents||[]).forEach(r=>{ const inj=S.injuries[r.name]; const out=(inj!=null&&inj>=S.abs)?(inj-S.abs+1):0;
     rows.push({name:r.name, country:r.country, cn:cname(r.country), teamId:null, teamName:'', division:9,
-      rating:r.avg, phases:S.phasesRidden[r.name]||0, out, pts:rankPts[r.name]||0}); });
+      rating:r.avg, phases:S.phasesRidden[r.name]||0, out, pts:rankPts[r.name]||0, retired:!!r.retired}); });
   v.appendChild(el('div','phead','<b>Riders</b> <span class="mut">— '+rows.length.toLocaleString()+' riders · click a column to sort</span>'));
 
   const cmp={ name:(a,b)=>a.name.localeCompare(b.name), country:(a,b)=>a.cn.localeCompare(b.cn)||a.name.localeCompare(b.name),
@@ -1657,7 +1690,7 @@ function renderRiders(){
   tbl.innerHTML='<thead><tr><th>#</th>'+cols.map(c=>'<th class="sort'+(c[0]==='rating'||c[0]==='phases'||c[0]==='points'?' r':'')+'" data-k="'+c[0]+'" data-d="'+c[2]+'">'+c[1]+' '+ar(c[0])+'</th>').join('')+'</tr></thead>';
   const tb=el('tbody');
   rows.slice(0,400).forEach((o,i)=>{ const t=o.teamId!=null?S.teamById[o.teamId]:null;
-    const health=o.out>0?'<span class="dn">out '+o.out+'p</span>':'<span class="up">fit</span>';
+    const health=o.retired?'<span class="dn">retired</span>':o.out>0?'<span class="dn">out '+o.out+'p</span>':'<span class="up">fit</span>';
     const tr=el('tr');
     tr.innerHTML='<td class="mut">'+(i+1)+'</td><td class="tn">'+rname(o.name)+'</td>'+
       '<td class="mut">'+flag(o.country)+cname(o.country||'')+'</td>'+
