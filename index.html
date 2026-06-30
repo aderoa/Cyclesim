@@ -146,6 +146,11 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
   padding:5px 10px;background:var(--bg);border-radius:5px}
 .injr{display:flex;align-items:center;gap:5px;min-width:0}
 .injtag{font-family:var(--mono);font-size:11px;white-space:nowrap}
+.mktcell{display:flex;gap:5px;flex-wrap:wrap}
+.mktbtn{background:rgba(63,179,107,.14);border:1px solid rgba(63,179,107,.4);color:var(--up);
+  border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:3px}
+.mktbtn:hover{background:rgba(63,179,107,.26)}
+.mktbtn.cur{background:var(--panel);border-color:var(--line);color:var(--muted);cursor:default}
 .stagelist{display:flex;flex-direction:column;gap:2px}
 .stagerow{display:grid;grid-template-columns:80px 110px 1fr;gap:8px;align-items:baseline;font-size:12px;
   padding:3px 8px;background:var(--bg);border-radius:4px}
@@ -185,7 +190,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 </header>
 <div id="ticker" class="ticker"></div>
 <div class="controls">
-  <label class="filebtn">Load database<input type="file" id="csv" accept=".csv"></label>
+  <label class="filebtn" id="loadwrap">Load database<input type="file" id="csv" accept=".csv"></label>
+  <label class="filebtn ghost" id="updatewrap" style="display:none">Update database<input type="file" id="updcsv" accept=".csv"></label>
   <button id="btnDraft" disabled>Run draft</button>
   <button id="btnPhase" disabled>Start phase</button>
   <button id="btnSkip" disabled>Skip to result</button>
@@ -458,6 +464,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   function selectRaceRiders(team, race, S){
     const abs=S.abs;
     let pool = team.riders.filter(r=>{
+      if(r.retired) return false;                                           // retired
       const inj=S.injuries[r.name]; if(inj!=null && inj>=abs) return false;  // still out
       if(race.gt && (S.gt[r.name]||0)>=2) return false;                       // GT cap
       return true;
@@ -629,6 +636,8 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     const names=[]; S.teams.forEach(t=>t.riders.forEach(r=>names.push(r.name)));
     const n=Math.max(1, Math.round(names.length*0.008));
     shuffle(names); S.market=names.slice(0,n).sort();
+    // three random teams are the candidate destinations this shift
+    const ids=S.teams.map(t=>t.id); shuffle(ids); S.marketTeams=ids.slice(0,3);
   }
   function transferRider(S, name, toTeamId){
     const fromId=S.riderTeam[name]; if(fromId===toTeamId) return false;
@@ -641,6 +650,39 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     return true;
   }
   function advanceCounters(S){ S.abs++; if(S.phase>=34){ S.year++; S.phase=1; } else { S.phase++; } }
+
+  // ---- import pipeline: overwrite stats from a re-imported database --------
+  function normName(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+  function importUpdate(S, incoming){
+    const existing=[]; S.teams.forEach(t=>t.riders.forEach(r=>existing.push(r))); (S.freeAgents||[]).forEach(r=>existing.push(r));
+    const byId={}, byNorm={};
+    existing.forEach(r=>{ if(r.id) byId[r.id]=r; const n=normName(r.name); (byNorm[n]||(byNorm[n]=[])).push(r); });
+    const seen=new Set();
+    const report={updated:0, added:0, ambiguous:[], addedNames:[], notSeen:[]};
+    incoming.forEach(nr=>{
+      let target=null;
+      if(nr.id && byId[nr.id]) target=byId[nr.id];                          // 1) stable id
+      else { const cand=byNorm[normName(nr.name)];                          // 2) normalized name
+        if(cand){ if(cand.length===1) target=cand[0];
+          else { report.ambiguous.push({name:nr.name, matches:cand.map(c=>c.name)}); return; } } } // homonyms: never auto-merge
+      if(target){ target.avg=nr.avg; target.a=nr.a;
+        if(nr.lastSeen) target.lastSeen=nr.lastSeen; if(nr.id&&!target.id) target.id=nr.id;
+        if(nr.country){ target.country=nr.country; S.riderCountry[target.name]=nr.country; }
+        seen.add(target); report.updated++; }
+      else { const fa={name:nr.name,country:nr.country,avg:nr.avg,a:nr.a,id:nr.id,lastSeen:nr.lastSeen,retired:false};
+        S.freeAgents.push(fa); S.riderCountry[nr.name]=nr.country; report.added++; report.addedNames.push(nr.name); }
+    });
+    S.teams.forEach(t=>{ t.avg=mean(t.riders.map(r=>r.avg)); });
+    existing.forEach(r=>{ if(!seen.has(r)) report.notSeen.push(r.name); });   // staleness candidates
+    return report;
+  }
+  // riders whose last-seen date is older than `days` (retirement-staleness alert)
+  function staleRiders(S, days){
+    const now=Date.now(), out=[];
+    const scan=r=>{ if(r.retired||!r.lastSeen) return; const t=Date.parse(r.lastSeen); if(!isNaN(t) && (now-t)/86400000 > days) out.push({name:r.name, lastSeen:r.lastSeen}); };
+    S.teams.forEach(t=>t.riders.forEach(scan)); (S.freeAgents||[]).forEach(scan);
+    return out;
+  }
 
   // atomic single-phase run (fast-forward path for Advance year / tests)
   function runPhase(S){
@@ -661,32 +703,74 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     else if(meta.oneday===false) stages=buildStages(randInt(3,7));
     else stages=buildStages('oneday', meta.terrain);
     const riders=entries.map(e=>({name:e.rider.name, teamId:e.teamId, country:e.rider.country,
-      rider:e.rider, gc:0, pts:0, kom:0, out:false}));
+      rider:e.rider, gc:0, pts:0, kom:0, out:false, energy:100, time:0}));
     return { division, name:meta.name, host:meta.host, country:meta.country||meta.host,
       tier:tierFor(division,{special:meta.tier?meta:null}), gt:meta.gt||null,
       nStages:stages.length, teams:teams.map(t=>t.id),
       stages, riders, stageResults:[], cur:0, done:false, abandons:[] };
   }
+  function rand(a,b){ return a+Math.random()*(b-a); }
   function stepRaceStage(rs){
     if(rs.done) return null;
-    const st=rs.stages[rs.cur];
-    const wa=TERRAIN_ATTRS[st.terrain]||['FLA','STA'];
-    const dnf=rs.stages.length>1?0.012:0.04;
+    const st=rs.stages[rs.cur], wa=TERRAIN_ATTRS[st.terrain]||['FLA','STA'];
+    const climb = CLIMBISH.has(st.terrain) || st.terrain==='HIL';
+    const flat  = st.terrain==='FLA' || st.terrain==='COB';
+    const tt    = st.terrain==='TTR' || st.terrain==='PRL';
+    const stageRace = rs.stages.length>1;
+    // abandons this stage
     const fell=[];
-    rs.riders.forEach(r=>{ if(!r.out && Math.random()<dnf){ r.out=true; rs.abandons.push(r); fell.push(r); } });
+    rs.riders.forEach(r=>{ if(!r.out && Math.random()<(stageRace?0.012:0.04)){ r.out=true; rs.abandons.push(r); fell.push(r);} });
     const racing=rs.riders.filter(r=>!r.out);
-    racing.forEach(r=>{ const spec=(r.rider.a[wa[0]]+r.rider.a[wa[1]])/2; r._p=0.5*r.rider.avg+0.5*spec+4*randn(); });
-    const order=racing.slice().sort((a,b)=>b._p-a._p);
-    const sec=TERRAIN_GAP[st.terrain]||5, bunch=BUNCH[st.terrain]||0, topP=order.length?order[0]._p:0;
+    // team leaders + headcount, for tactical support
+    const leaderByTeam={}, matesByTeam={};
+    racing.forEach(r=>{ matesByTeam[r.teamId]=(matesByTeam[r.teamId]||0)+1;
+      const b=leaderByTeam[r.teamId]; if(!b||r.rider.avg>b.rider.avg) leaderByTeam[r.teamId]=r; });
+    // performance: rating + specialism − fatigue + team support + noise
+    racing.forEach(r=>{ const a=r.rider.a; if(r.energy==null) r.energy=100;
+      const spec=(a[wa[0]]+a[wa[1]])/2;
+      const fatigue=(100-r.energy)*0.05;
+      let support=0; const mates=matesByTeam[r.teamId]-1;
+      if(leaderByTeam[r.teamId]===r){
+        if(climb) support += Math.min(3, mates*0.7);                 // domestiques pace uphill
+        if(flat)  support += Math.min(2, mates*0.5)*(a.SPR/100);      // lead-out train
+      }
+      const noise=(tt?2.5:climb?4.5:flat?5.5:4)*randn();
+      r._p = 0.5*r.rider.avg + 0.5*spec - fatigue + support + noise;
+    });
+    // breakaway: aggressive riders try to escape; survives more often uphill, rarely on the flat
+    let note=null; const breakSet=new Set(); let bonus=0;
+    if(racing.length>12 && !tt){
+      const aggr=racing.slice().sort((a,b)=>(b.rider.a.ATT+b.rider.a.STA)-(a.rider.a.ATT+a.rider.a.STA));
+      const brk=aggr.slice(0, 2+(Math.random()*5|0)).filter(()=>Math.random()<0.6);
+      const survive = flat?0.10:climb?0.40:0.22;
+      if(brk.length && Math.random()<survive){
+        brk.forEach(r=>breakSet.add(r));
+        bonus = Math.round(flat?rand(20,70):climb?rand(60,210):rand(40,150));
+        note='Breakaway survived · '+brk.length+' riders, +'+bonus+'s';
+      }
+    }
+    if(!note) note = tt?'Individual test':flat?'Bunch sprint':climb?'Summit showdown':'Punchy finish';
+    // ordering: a surviving break contests the win, peloton arrives `bonus` seconds later
+    const brkArr=racing.filter(r=>breakSet.has(r)).sort((a,b)=>b._p-a._p);
+    const pelArr=racing.filter(r=>!breakSet.has(r)).sort((a,b)=>b._p-a._p);
+    const order = breakSet.size ? brkArr.concat(pelArr) : racing.slice().sort((a,b)=>b._p-a._p);
+    const sec=TERRAIN_GAP[st.terrain]||5, bunch=BUNCH[st.terrain]||0;
+    const topP=order.length?order[0]._p:0, brkTopP=brkArr.length?brkArr[0]._p:topP;
     order.forEach((r,i)=>{
-      const gap=Math.round(Math.max(0,(topP-r._p)-bunch)*sec);
+      let gap;
+      if(breakSet.size){
+        if(breakSet.has(r)) gap=Math.round(Math.max(0,(brkTopP-r._p))*sec);
+        else gap=bonus+Math.round(Math.max(0,(brkArr[brkArr.length-1]._p - r._p))*(sec*0.3));
+      } else gap=Math.round(Math.max(0,(topP-r._p)-bunch)*sec);
       r._gap=gap; r.time=(r.time||0)+gap; r.gc+=r._p;
-      if(FLATISH.has(st.terrain)) r.pts+=Math.max(0,15-i)*(r.rider.a.SPR/100);
-      if(CLIMBISH.has(st.terrain)) r.kom+=Math.max(0,15-i)*(r.rider.a.MTN/100);
+      if(flat||st.terrain==='HIL') r.pts+=Math.max(0,15-i)*(r.rider.a.SPR/100);
+      if(climb) r.kom+=Math.max(0,15-i)*(r.rider.a.MTN/100);
+      const cost=(climb?14:tt?10:flat?8:11)*(1-(r.rider.a.STA/250));
+      r.energy=Math.max(20, Math.min(100, r.energy - cost + r.rider.a.REC/14));
     });
     const gcNow=racing.slice().sort((a,b)=>(a.time||0)-(b.time||0)||b.gc-a.gc);
     const lead=gcNow.length?(gcNow[0].time||0):0;
-    const sr={ name:st.name, terrain:st.terrain,
+    const sr={ name:st.name, terrain:st.terrain, note,
       results: order.slice(0,10).map((r,i)=>({pos:i,name:r.name,teamId:r.teamId,gap:r._gap})),
       winner: order[0]?{name:order[0].name,teamId:order[0].teamId}:null,
       gcTop: gcNow.slice(0,10).map((r,i)=>({pos:i,name:r.name,teamId:r.teamId,gap:(r.time||0)-lead})),
@@ -965,7 +1049,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       palmares:{}, teamPalmares:{},
       injuries:{}, injuryDays:{}, phasesRidden:{}, gt:{},
       champions:{ world:null, worldTT:null, national:{} },
-      market:[],
+      market:[], marketTeams:[],
       _divRaces:{}
     };
     return S;
@@ -983,7 +1067,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep),
       palmares:S.palmares, teamPalmares:S.teamPalmares,
       injuries:S.injuries, injuryDays:S.injuryDays, phasesRidden:S.phasesRidden, gt:S.gt,
-      champions:S.champions, market:S.market };
+      champions:S.champions, market:S.market, marketTeams:S.marketTeams };
   }
   function deserialize(obj){
     const teams=obj.teams.map(t=>({ id:t.id, name:t.name, country:t.country, division:t.division, avg:t.avg,
@@ -998,13 +1082,14 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], riderTeam, riderCountry,
       palmares:obj.palmares||{}, teamPalmares:obj.teamPalmares||{},
       injuries:obj.injuries||{}, injuryDays:obj.injuryDays||{}, phasesRidden:obj.phasesRidden||{}, gt:obj.gt||{},
-      champions:obj.champions||{world:null,worldTT:null,national:{}}, market:obj.market||[],
+      champions:obj.champions||{world:null,worldTT:null,national:{}}, market:obj.market||[], marketTeams:obj.marketTeams||[],
       _divRaces:{} };
   }
 
   const API={ ATTRS, parseCSV, genesisDraft, seedDivisions, divisionMap, racesPerDivision,
               buildCalendar, runPhase, setupPhase, stepPhase, nextUnit, finishPhase, phaseRaceSnapshot,
               worldRanking, worldRankingRiders, rankIndex, newGame, openMarket, transferRider,
+              importUpdate, staleRiders,
               serialize, deserialize,
               regionOf, gdist, tierFor, pointsFor, simulateRace, SPECIALS, TERRAIN_LABEL };
   if(typeof module!=='undefined' && module.exports) module.exports=API;
@@ -1035,7 +1120,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0014 · 2026-06-29';
+const BUILD='v14 · build 0015 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1067,6 +1152,22 @@ $('csv').addEventListener('change', e=>{
   const rd=new FileReader();
   rd.onload=()=>{ riders=E.parseCSV(rd.result); msg(riders.length.toLocaleString()+' riders loaded — run the draft to build the world');
     $('btnDraft').disabled = riders.length<15; syncButtons(); };
+  rd.readAsText(f);
+});
+$('updcsv').addEventListener('change', e=>{
+  const f=e.target.files[0]; if(!f||!S) return; e.target.value='';
+  const rd=new FileReader();
+  rd.onload=()=>{ const incoming=E.parseCSV(rd.result);
+    const rep=E.importUpdate(S, incoming);
+    const stale=E.staleRiders(S, 365);
+    let m=rep.updated+' riders updated, '+rep.added+' new (free agents)';
+    if(rep.ambiguous.length) m+=', '+rep.ambiguous.length+' ambiguous (skipped — confirm manually)';
+    if(rep.notSeen.length) m+='. '+rep.notSeen.length+' not in this import';
+    if(stale.length) m+=' · '+stale.length+' stale >1yr (possible retirements)';
+    msg(m); saveGame(); render(); syncButtons();
+    if(rep.ambiguous.length){ alert('Ambiguous matches (not auto-merged — same normalized name as multiple existing riders):\n\n'+
+      rep.ambiguous.slice(0,20).map(a=>'• '+a.name+'  →  '+a.matches.join(', ')).join('\n')); }
+  };
   rd.readAsText(f);
 });
 $('btnDraft').onclick=()=>{ if(!riders) return;
@@ -1116,6 +1217,7 @@ function syncButtons(){
   $('btnSkip').disabled=!on||flow==='phaserecap'||flow==='market'; $('btnYear').disabled=!on||flow!==null;
   $('btnSave').disabled=!on;
   $('btnDraft').style.display = (riders && !S) ? '' : 'none';
+  { const lw=$('loadwrap'), uw=$('updatewrap'); if(lw) lw.style.display = S?'none':''; if(uw) uw.style.display = S?'':'none'; }
   const b=$('btnPhase'); b.disabled=!on;
   if(!on){ b.textContent='Advance phase'; return; }
   if(flow===null){ const cal=S.calendar[S.phase-1]; b.textContent = cal.type==='CHAMPS'?'Run championships':'Start phase'; return; }
@@ -1173,12 +1275,14 @@ function openRider(name){
   if(!r){ box.innerHTML='<div class="pmtitle">'+name+'</div><div class="pmsub">Not on a current roster.</div>'+palmaresBlock(S.palmares[name]); $('modal').style.display='flex'; return; }
   const inj=S.injuries[name]; const out=(inj!=null&&inj>=S.abs);
   const attrs=E.ATTRS.map(a=>'<div class="attr"><b>'+r.a[a]+'</b><span>'+a+'</span></div>').join('');
-  box.innerHTML='<div class="pmtitle">'+flag(r.country)+name+'</div>'+
+  box.innerHTML='<div class="pmtitle">'+flag(r.country)+name+(r.retired?' <span class="dn" style="font-size:.6em">RETIRED</span>':'')+'</div>'+
     '<div class="pmsub">'+cname(r.country)+' · '+(team?(divChip(team.division)+' '+tname(team)):'free agent')+
     ' · avg '+r.avg.toFixed(1)+' · '+(S.phasesRidden[name]||0)+' phases · '+(S.gt[name]||0)+' GTs'+
-    (out?' · <span class="dn">OUT '+(inj-S.abs+1)+'p</span>':'')+'</div>'+
+    (out?' · <span class="dn">OUT '+(inj-S.abs+1)+'p</span>':'')+(r.lastSeen?' · last seen '+r.lastSeen:'')+'</div>'+
     '<div class="attrgrid">'+attrs+'</div>'+
+    '<div style="margin:2px 0 12px"><button class="lnk" id="retireBtn">'+(r.retired?'↩ Un-retire rider':'⛔ Mark as retired')+'</button></div>'+
     '<div class="dsec">Palmarès</div>'+palmaresBlock(S.palmares[name]);
+  const rb=document.getElementById('retireBtn'); if(rb) rb.onclick=()=>{ r.retired=!r.retired; saveGame(); openRider(name); render(); };
   $('modal').style.display='flex';
 }
 
@@ -1264,7 +1368,8 @@ function flowResult(v){
   v.appendChild(el('div','phead',divChip(r.division)+' '+flag(r.country)+'<b>'+r.name+'</b> <span class="mut">· '+
     (r.nStages>1?'stage '+r.cur+'/'+r.nStages+' · ':'')+(E.TERRAIN_LABEL[sr.terrain]||sr.terrain)+'</span>'));
   v.appendChild(el('div','flowsub','🏁 '+(r.nStages>1?'Stage':'Race')+' winner: '+
-    (sr.winner?flag(rcountry(sr.winner.name))+rname(sr.winner.name)+' '+teamNameById(sr.winner.teamId):'—')));
+    (sr.winner?flag(rcountry(sr.winner.name))+rname(sr.winner.name)+' '+teamNameById(sr.winner.teamId):'—')+
+    (sr.note?' <span class="mut">· '+sr.note+'</span>':'')));
   const d=el('div'); d.innerHTML='<div class="dsec">'+(r.nStages>1?'Stage result':'Result')+'</div><ol class="fullgc">'+
     sr.results.map((g,i)=>gline(g,i,g.gap)).join('')+'</ol>';
   v.appendChild(d);
@@ -1552,36 +1657,33 @@ function renderTeamBody(id){
 
 function renderMarket(){
   const v=$('view'); v.innerHTML='';
-  const m=S.market||[];
-  v.appendChild(el('div','phead','<b>Transfer market</b> <span class="mut">— '+m.length+' rider'+(m.length===1?'':'s')+' listed this phase · signing is manual · click a column to sort</span>'));
-  v.appendChild(el('div','flowsub mut','Pick a new team from the dropdown to sign a rider. Rosters flex; there is no AI bidding.'));
+  const m=S.market||[]; const cand=(S.marketTeams||[]).map(id=>S.teamById[id]).filter(Boolean);
+  v.appendChild(el('div','phead','<b>Transfer market</b> <span class="mut">— '+m.length+' rider'+(m.length===1?'':'s')+' listed this shift · click a column to sort</span>'));
+  if(cand.length) v.appendChild(el('div','flowsub','This shift\u2019s candidate teams: '+cand.map(t=>divChip(t.division)+' '+flag(t.country)+tname(t)).join(' &nbsp; ')+'. Sign a listed rider to one of them.'));
   if(!m.length){ v.appendChild(el('div','empty','No riders on the market — advance a phase.')); return; }
   const rows=m.map(name=>{ const tid=S.riderTeam[name]; const t=S.teamById[tid]; const r=t&&t.riders.find(x=>x.name===name);
-    return { name, country:S.riderCountry[name]||'', cn:cname(S.riderCountry[name]||''), avg:r?r.avg:0,
-      teamId:tid, teamName:t?t.name:'', division:t?t.division:9 }; });
+    return { name, country:S.riderCountry[name]||'', cn:cname(S.riderCountry[name]||''), avg:r?r.avg:0, teamId:tid, teamName:t?t.name:'', division:t?t.division:9 }; });
   const cmp={ name:(a,b)=>a.name.localeCompare(b.name), country:(a,b)=>a.cn.localeCompare(b.cn)||a.name.localeCompare(b.name),
     avg:(a,b)=>a.avg-b.avg, team:(a,b)=>(a.division-b.division)||a.teamName.localeCompare(b.teamName) };
   rows.sort((a,b)=>cmp[marketSort.key](a,b)*marketSort.dir);
-  const teams=S.teams.slice().sort((a,b)=>a.division-b.division||a.name.localeCompare(b.name));
-  const opts=teams.map(t=>'<option value="'+t.id+'">D'+t.division+' · '+t.name+'</option>').join('');
   const cols=[['name','Rider',1],['country','Country',1],['avg','Avg',-1],['team','Current team',1]];
   const ar=k=> marketSort.key===k?('<span class="ar">'+(marketSort.dir>0?'▲':'▼')+'</span>'):'';
   const tbl=el('table','tbl');
   tbl.innerHTML='<thead><tr>'+cols.map(c=>'<th class="sort'+(c[0]==='avg'?' r':'')+'" data-k="'+c[0]+'" data-d="'+c[2]+'">'+c[1]+' '+ar(c[0])+'</th>').join('')+'<th>Sign with</th></tr></thead>';
   const tb=el('tbody');
   rows.forEach(o=>{ const t=S.teamById[o.teamId];
+    const btns=cand.map(ct=>'<button class="mktbtn'+(ct.id===o.teamId?' cur':'')+'" data-n="'+o.name.replace(/"/g,'&quot;')+'" data-t="'+ct.id+'"'+(ct.id===o.teamId?' disabled':'')+'>'+flag(ct.country)+ct.name+'</button>').join(' ');
     const tr=el('tr');
     tr.innerHTML='<td class="tn">'+rname(o.name)+'</td><td class="mut">'+flag(o.country)+cname(o.country)+'</td>'+
       '<td class="r mono">'+(o.avg?o.avg.toFixed(1):'—')+'</td><td class="mut">'+(t?divChip(t.division)+' '+tname(t):'<span class="mut">free agent</span>')+'</td>'+
-      '<td><select class="mktsel" data-n="'+o.name.replace(/"/g,'&quot;')+'">'+opts+'</select></td>';
+      '<td class="mktcell">'+btns+'</td>';
     tb.appendChild(tr);
   });
   tbl.appendChild(tb); v.appendChild(tbl);
   tbl.querySelectorAll('th.sort').forEach(th=>th.onclick=()=>{ const k=th.dataset.k, d=+th.dataset.d;
-    marketSort = (marketSort.key===k)?{key:k,dir:-marketSort.dir}:{key:k,dir:d}; render(); });
-  tbl.querySelectorAll('.mktsel').forEach(sel=>{ const name=sel.dataset.n; sel.value=String(S.riderTeam[name]);
-    sel.onchange=()=>{ const to=+sel.value; if(E.transferRider(S, name, to)){ msg(name+' signed with '+S.teamById[to].name); render(); } };
-  });
+    marketSort=(marketSort.key===k)?{key:k,dir:-marketSort.dir}:{key:k,dir:d}; render(); });
+  tbl.querySelectorAll('.mktbtn').forEach(b=>{ if(b.disabled) return;
+    b.onclick=()=>{ if(E.transferRider(S, b.dataset.n, +b.dataset.t)){ msg(b.dataset.n+' signed with '+S.teamById[+b.dataset.t].name); render(); } }; });
 }
 
 msg('load a rider database to begin');
