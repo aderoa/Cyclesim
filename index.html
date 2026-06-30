@@ -509,11 +509,23 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   }
   function best(arr,f){ let bv=-1,bx=null; arr.forEach(a=>{const v=f(a); if(v>bv){bv=v;bx=a;}}); return bx; }
   // provisional promotion/relegation zones from a race's current standings (for display)
-  function prZones(gc, teamClass, jpTid, jkTid, division){
+  function computeZones(S, division, gc, teamClass, jpTid, jkTid){
+    const ctx=S.phaseCtx, special=!!(ctx&&ctx.special);
+    // how many go down from this race (D4 is the everlasting floor → none)
+    const relN = division===4 ? 0 : ((special && division===1) ? 2 : 4);
+    // how many come up from this race
+    let promoK;
+    if(division===1) promoK = special?2:0;            // D1 only promotes in special phases
+    else { const cnt={}; (ctx?ctx.races:[]).forEach(r=>cnt[r.division]=(cnt[r.division]||0)+1);
+      const above=cnt[division-1]||0, here=cnt[division]||1;
+      promoK = Math.max(1, Math.round(4*above/here)); }
+    // relegation: bottom relN non-exempt teams by team classification
     const safe=new Set(); gc.slice(0,10).forEach(g=>safe.add(g.teamId)); if(jpTid!=null)safe.add(jpTid); if(jkTid!=null)safe.add(jkTid);
-    const n = division===1?2:4; const rel=[];
-    for(let i=teamClass.length-1;i>=0 && rel.length<n;i--){ if(!safe.has(teamClass[i].teamId)) rel.push(teamClass[i].teamId); }
-    return { relZone:rel, promoTeam:(division>1 && teamClass[0])?teamClass[0].teamId:null };
+    const relZone=[]; for(let i=teamClass.length-1;i>=0 && relZone.length<relN;i--){ if(!safe.has(teamClass[i].teamId)) relZone.push(teamClass[i].teamId); }
+    // promotion: the teams of the best riders (one per team), in GC order — "race winners first"
+    const promoZone=[], seen=new Set();
+    for(const g of gc){ if(promoZone.length>=promoK) break; if(!seen.has(g.teamId)){ seen.add(g.teamId); promoZone.push(g.teamId); } }
+    return { relZone, promoZone };
   }
 
   // ---- world ranking (rolling 33 phases) -------------------------------
@@ -710,7 +722,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       .map((r,i)=>({pos:i,name:r.name,teamId:r.teamId,val:Math.round(r.kom)}));
     const result={ gc, abandons:rs.abandons.map(a=>({name:a.name,teamId:a.teamId})), teamClass,
       injuries: rs.injuries||[], pointsStand, komStand,
-      ...prZones(gc, teamClass, jp?jp.teamId:null, jk?jk.teamId:null, rs.division),
+      ...computeZones(S, rs.division, gc, teamClass, jp?jp.teamId:null, jk?jk.teamId:null),
       jersey:{ points:jp?{name:jp.name,teamId:jp.teamId}:null, kom:jk?{name:jk.name,teamId:jk.teamId}:null },
       winner:gc[0]||null, stages:rs.stageResults };
     const race={ division:rs.division, name:rs.name, host:rs.host, country:rs.country,
@@ -746,7 +758,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       komStand: fin.slice().sort((a,b)=>b.kom-a.kom).filter(r=>r.kom>0).slice(0,30).map((r,i)=>({pos:i,name:r.name,teamId:r.teamId,val:Math.round(r.kom)})),
       gc: fin.map((r,i)=>({pos:i,name:r.name,teamId:r.teamId,gap:(r.time||0)-lead})),
       abandons: rs.abandons.map(a=>({name:a.name,teamId:a.teamId})),
-      ...prZones(fin.map((r,i)=>({pos:i,name:r.name,teamId:r.teamId})), teamClass, jp&&jp.pts>0?jp.teamId:null, jk&&jk.kom>0?jk.teamId:null, rs.division),
+      ...computeZones(S, rs.division, fin.map((r,i)=>({pos:i,name:r.name,teamId:r.teamId})), teamClass, jp&&jp.pts>0?jp.teamId:null, jk&&jk.kom>0?jk.teamId:null),
       jersey:{ points: jp&&jp.pts>0?{name:jp.name,teamId:jp.teamId}:null, kom: jk&&jk.kom>0?{name:jk.name,teamId:jk.teamId}:null } };
   }
   // pick nR fixtures from a division's pool, preferring distinct host countries
@@ -1019,10 +1031,11 @@ let S=null, riders=null, lastLog=null, selDiv=1, tab='divisions';
 let flow=null, cur=null, pdesc=null;          // guided race flow: day→preview→result→gc→recap→phaserecap
 let raceView=null, raceBackTab='phase', raceTab='gc', flowTab='gc'; // race screen + classification tabs
 let riderSort={key:'rating',dir:-1};           // riders table sort
+let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0013 · 2026-06-29';
+const BUILD='v14 · build 0014 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1053,7 +1066,7 @@ $('csv').addEventListener('change', e=>{
   msg('reading '+f.name+'…');
   const rd=new FileReader();
   rd.onload=()=>{ riders=E.parseCSV(rd.result); msg(riders.length.toLocaleString()+' riders loaded — run the draft to build the world');
-    $('btnDraft').disabled = riders.length<15; };
+    $('btnDraft').disabled = riders.length<15; syncButtons(); };
   rd.readAsText(f);
 });
 $('btnDraft').onclick=()=>{ if(!riders) return;
@@ -1093,14 +1106,16 @@ $('btnPhase').onclick=()=>{ if(!S) return;
 $('btnSkip').onclick=()=>{ if(!S) return;
   if(flow===null){ pdesc=E.setupPhase(S); }
   if(pdesc && !pdesc.champs){ let g=0; while(hasMore() && g++<3000) E.stepPhase(S); }
-  lastLog=E.finishPhase(S); flow=null; cur=null; pdesc=null;
-  tab='phase'; setTab(); render(); syncButtons(); saveGame();
+  lastLog=E.finishPhase(S);
+  if((S.market||[]).length){ flow='market'; cur=null; pdesc=null; tab='flow'; render(); syncButtons(); }
+  else { flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); }
 };
 $('btnYear').onclick=()=>{ if(!S||flow!==null) return; const y=S.year; let g=0; do{ lastLog=E.runPhase(S); g++; }while(S.year===y && g<40); tab='phase'; setTab(); render(); syncButtons(); saveGame(); };
 function syncButtons(){
   const on=!!S;
   $('btnSkip').disabled=!on||flow==='phaserecap'||flow==='market'; $('btnYear').disabled=!on||flow!==null;
   $('btnSave').disabled=!on;
+  $('btnDraft').style.display = (riders && !S) ? '' : 'none';
   const b=$('btnPhase'); b.disabled=!on;
   if(!on){ b.textContent='Advance phase'; return; }
   if(flow===null){ const cal=S.calendar[S.phase-1]; b.textContent = cal.type==='CHAMPS'?'Run championships':'Start phase'; return; }
@@ -1113,7 +1128,9 @@ function syncButtons(){
   else if(flow==='phaserecap') b.textContent=(S.market||[]).length?'Transfer market →':'Done →';
   else if(flow==='market') b.textContent='Close market →';
 }
-$('btnReset').onclick=()=>{ S=null;riders=null;lastLog=null;flow=null;cur=null;pdesc=null; clearSave();
+$('btnReset').onclick=()=>{
+  if(!confirm('Reset everything and permanently delete your saved season? This cannot be undone.')) return;
+  S=null;riders=null;lastLog=null;flow=null;cur=null;pdesc=null; clearSave();
   $('csv').value=''; msg('load a rider database to begin'); syncButtons();
   $('view').innerHTML=''; $('ticker').innerHTML='';
   $('yp').textContent='—'; $('ptype').textContent='';
@@ -1380,9 +1397,9 @@ function teamNameById(id){ const t=S.teamById[id]; return t?('<span class="mut">
 // rider row for classification lists: flag + name (+champion badges) + team + optional gap/value
 function gline(g,i,gap){ return '<li><span class="pos">'+(i+1)+'</span> '+flag(rcountry(g.name))+rname(g.name)+' '+
   teamNameById(g.teamId)+(gap!==undefined?'<span class="gap">'+(typeof gap==='number'?gtime(gap):gap)+'</span>':'')+'</li>'; }
-function teamClassList(r){ const rel=new Set(r.relZone||[]);
+function teamClassList(r){ const rel=new Set(r.relZone||[]), pro=new Set(r.promoZone||[]);
   return '<ol class="fullgc tall">'+r.teamClass.slice(0,25).map((t,i)=>{ const tm=S.teamById[t.teamId];
-    const mark = t.teamId===r.promoTeam ? '<span class="up" title="promotion">▲</span> '
+    const mark = pro.has(t.teamId) ? '<span class="up" title="promotion">▲</span> '
                : rel.has(t.teamId) ? '<span class="dn" title="relegation">▼</span> ' : '';
     return '<li><span class="pos">'+(i+1)+'</span> '+mark+(tm?flag(tm.country)+tname(tm):t.teamId)+'</li>'; }).join('')+'</ol>'; }
 function classRows(data, which){
@@ -1430,7 +1447,7 @@ function renderRaceScreen(){
   const body=el('div');
   if(raceTab==='gc'||raceTab==='pts'||raceTab==='kom'||raceTab==='team'){
     body.innerHTML=classRows(r, raceTab);
-    if(raceTab==='team' && (r.relZone||r.promoTeam)) body.insertAdjacentHTML('afterbegin','<div class="flowsub mut">▲ promotion / ▼ relegation if standings hold.</div>');
+    if(raceTab==='team' && ((r.relZone&&r.relZone.length)||(r.promoZone&&r.promoZone.length))) body.insertAdjacentHTML('afterbegin','<div class="flowsub mut">▲ promotion / ▼ relegation if standings hold.</div>');
   } else if(raceTab==='stages'){
     body.innerHTML='<div class="stagelist">'+r.stages.map(st=>'<div class="stagerow"><span class="stname">'+st.name+'</span><span class="stterr">'+(E.TERRAIN_LABEL[st.terrain]||st.terrain)+
       '</span><span class="stwin">'+(st.winner?flag(rcountry(st.winner.name))+rname(st.winner.name)+' '+teamNameById(st.winner.teamId):'—')+'</span></div>').join('')+'</div>';
@@ -1536,22 +1553,32 @@ function renderTeamBody(id){
 function renderMarket(){
   const v=$('view'); v.innerHTML='';
   const m=S.market||[];
-  v.appendChild(el('div','phead','<b>Transfer market</b> <span class="mut">— '+m.length+' rider'+(m.length===1?'':'s')+' listed this phase · signing is manual</span>'));
+  v.appendChild(el('div','phead','<b>Transfer market</b> <span class="mut">— '+m.length+' rider'+(m.length===1?'':'s')+' listed this phase · signing is manual · click a column to sort</span>'));
   v.appendChild(el('div','flowsub mut','Pick a new team from the dropdown to sign a rider. Rosters flex; there is no AI bidding.'));
   if(!m.length){ v.appendChild(el('div','empty','No riders on the market — advance a phase.')); return; }
+  const rows=m.map(name=>{ const tid=S.riderTeam[name]; const t=S.teamById[tid]; const r=t&&t.riders.find(x=>x.name===name);
+    return { name, country:S.riderCountry[name]||'', cn:cname(S.riderCountry[name]||''), avg:r?r.avg:0,
+      teamId:tid, teamName:t?t.name:'', division:t?t.division:9 }; });
+  const cmp={ name:(a,b)=>a.name.localeCompare(b.name), country:(a,b)=>a.cn.localeCompare(b.cn)||a.name.localeCompare(b.name),
+    avg:(a,b)=>a.avg-b.avg, team:(a,b)=>(a.division-b.division)||a.teamName.localeCompare(b.teamName) };
+  rows.sort((a,b)=>cmp[marketSort.key](a,b)*marketSort.dir);
   const teams=S.teams.slice().sort((a,b)=>a.division-b.division||a.name.localeCompare(b.name));
   const opts=teams.map(t=>'<option value="'+t.id+'">D'+t.division+' · '+t.name+'</option>').join('');
+  const cols=[['name','Rider',1],['country','Country',1],['avg','Avg',-1],['team','Current team',1]];
+  const ar=k=> marketSort.key===k?('<span class="ar">'+(marketSort.dir>0?'▲':'▼')+'</span>'):'';
   const tbl=el('table','tbl');
-  tbl.innerHTML='<thead><tr><th>Rider</th><th>Country</th><th class="r">Avg</th><th>Current team</th><th>Sign with</th></tr></thead>';
+  tbl.innerHTML='<thead><tr>'+cols.map(c=>'<th class="sort'+(c[0]==='avg'?' r':'')+'" data-k="'+c[0]+'" data-d="'+c[2]+'">'+c[1]+' '+ar(c[0])+'</th>').join('')+'<th>Sign with</th></tr></thead>';
   const tb=el('tbody');
-  m.forEach(name=>{ const tid=S.riderTeam[name]; const t=S.teamById[tid]; const r=t&&t.riders.find(x=>x.name===name);
+  rows.forEach(o=>{ const t=S.teamById[o.teamId];
     const tr=el('tr');
-    tr.innerHTML='<td class="tn">'+rname(name)+'</td><td class="mut">'+flag(S.riderCountry[name])+cname(S.riderCountry[name])+'</td>'+
-      '<td class="r mono">'+(r?r.avg.toFixed(1):'—')+'</td><td class="mut">'+(t?divChip(t.division)+' '+tname(t):'<span class="mut">free agent</span>')+'</td>'+
-      '<td><select class="mktsel" data-n="'+name.replace(/"/g,'&quot;')+'">'+opts+'</select></td>';
+    tr.innerHTML='<td class="tn">'+rname(o.name)+'</td><td class="mut">'+flag(o.country)+cname(o.country)+'</td>'+
+      '<td class="r mono">'+(o.avg?o.avg.toFixed(1):'—')+'</td><td class="mut">'+(t?divChip(t.division)+' '+tname(t):'<span class="mut">free agent</span>')+'</td>'+
+      '<td><select class="mktsel" data-n="'+o.name.replace(/"/g,'&quot;')+'">'+opts+'</select></td>';
     tb.appendChild(tr);
   });
   tbl.appendChild(tb); v.appendChild(tbl);
+  tbl.querySelectorAll('th.sort').forEach(th=>th.onclick=()=>{ const k=th.dataset.k, d=+th.dataset.d;
+    marketSort = (marketSort.key===k)?{key:k,dir:-marketSort.dir}:{key:k,dir:d}; render(); });
   tbl.querySelectorAll('.mktsel').forEach(sel=>{ const name=sel.dataset.n; sel.value=String(S.riderTeam[name]);
     sel.onchange=()=>{ const to=+sel.value; if(E.transferRider(S, name, to)){ msg(name+' signed with '+S.teamById[to].name); render(); } };
   });
