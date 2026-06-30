@@ -151,6 +151,10 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
   border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:3px}
 .mktbtn:hover{background:rgba(63,179,107,.26)}
 .mktbtn.cur{background:var(--panel);border-color:var(--line);color:var(--muted);cursor:default}
+.mktnow .mktlbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.mktnow .mktname{font-size:21px;font-weight:700;margin:3px 0 4px;display:flex;align-items:center;gap:8px}
+.mktqueue{margin-top:14px;display:flex;flex-wrap:wrap;gap:6px 14px}
+.mktqueue .mktq{font-size:12px;color:var(--text);display:inline-flex;align-items:center;gap:5px}
 .stagelist{display:flex;flex-direction:column;gap:2px}
 .stagerow{display:grid;grid-template-columns:80px 110px 1fr;gap:8px;align-items:baseline;font-size:12px;
   padding:3px 8px;background:var(--bg);border-radius:4px}
@@ -561,6 +565,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   // stepPhase runs the next stage of every active race; finishPhase resolves
   // standings/points/promotion. runPhase composes them for fast-forward.
   function setupPhase(S){
+    if(S.marketPool && S.marketPool.length) finishMarket(S);   // ensure every team is at 15 before racing
     const cal=S.calendar[S.phase-1];
     S.phaseCtx={ type:cal.type, races:[], log:{year:S.year,phase:S.phase,type:cal.type,races:[],moves:[]}, stage:0, maxStages:0 };
     if(cal.type==='CHAMPS'){ S.phaseCtx.champs=true; return phaseDescriptor(S); }
@@ -639,14 +644,46 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     return log;
   }
   // transfer market: ~0.8% of the whole pool is listed each phase; signing is manual (UI)
-  function rollMarketTeams(S){ const ids=S.teams.map(t=>t.id); shuffle(ids); S.marketTeams=ids.slice(0,3); }
+  const ROSTER_SIZE=15;
+  function eligibleMarketTeams(S){ return S.teams.filter(t=>t.riders.length<ROSTER_SIZE); }
+  // up to three random teams that still need riders (re-rolled after every signing)
+  function rollMarketTeams(S){ const ids=eligibleMarketTeams(S).map(t=>t.id); shuffle(ids); S.marketTeams=ids.slice(0,3); }
+  // open the window: release ~0.8% of all riders into a floating pool sorted best→worst,
+  // each release leaving an open slot on its former team. The pool is re-signed one rider
+  // at a time (best first) until every team is back to exactly 15.
   function openMarket(S){
-    const names=[]; S.teams.forEach(t=>t.riders.forEach(r=>names.push(r.name)));
-    const n=Math.max(1, Math.round(names.length*0.008));
-    shuffle(names); S.market=names.slice(0,n).sort();
-    // remember where each listed rider started this window (their "former team")
-    S.marketFrom={}; S.market.forEach(nm=>{ S.marketFrom[nm]=S.riderTeam[nm]; });
-    rollMarketTeams(S);   // three random candidate teams (re-rolled after every signing)
+    const all=[]; S.teams.forEach(t=>t.riders.forEach(r=>{ if(!r.retired) all.push({r, tid:t.id}); }));
+    const n=Math.max(1, Math.round(all.length*0.008));
+    shuffle(all); S.marketPool=[];
+    all.slice(0,n).forEach(({r,tid})=>{
+      const t=S.teamById[tid], i=t.riders.indexOf(r); if(i>=0) t.riders.splice(i,1);
+      delete S.riderTeam[r.name];
+      S.marketPool.push(Object.assign({}, r, {fromId:tid}));
+    });
+    S.marketPool.sort((a,b)=>b.avg-a.avg);                 // best to worst
+    S.teams.forEach(t=>{ t.avg=mean(t.riders.map(x=>x.avg)); });
+    S.market=S.marketPool.map(p=>p.name);                  // names list (flow/compat checks)
+    rollMarketTeams(S);
+  }
+  // sign the named pool rider to a team that still has an open slot (<15)
+  function signFromPool(S, name, toId){
+    const i=(S.marketPool||[]).findIndex(p=>p.name===name); if(i<0) return false;
+    const t=S.teamById[toId]; if(!t || t.riders.length>=ROSTER_SIZE) return false;
+    const p=S.marketPool.splice(i,1)[0]; const {fromId, ...rid}=p;
+    t.riders.push(rid); S.riderTeam[name]=toId; S.riderCountry[name]=rid.country;
+    t.avg=mean(t.riders.map(x=>x.avg));
+    S.market=S.marketPool.map(q=>q.name);
+    rollMarketTeams(S);
+    return true;
+  }
+  // place any leftover pool riders so every team ends at exactly 15 (former team first)
+  function finishMarket(S){
+    (S.marketPool||[]).slice().forEach(p=>{
+      let to=(S.teamById[p.fromId] && S.teamById[p.fromId].riders.length<ROSTER_SIZE) ? p.fromId : null;
+      if(to==null){ const e=eligibleMarketTeams(S)[0]; to=e?e.id:null; }
+      if(to!=null) signFromPool(S, p.name, to);
+    });
+    S.market=[]; S.marketTeams=[];
   }
   function transferRider(S, name, toTeamId){
     const fromId=S.riderTeam[name]; if(fromId===toTeamId) return false;
@@ -1058,7 +1095,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       palmares:{}, teamPalmares:{},
       injuries:{}, injuryDays:{}, phasesRidden:{}, gt:{},
       champions:{ world:null, worldTT:null, national:{} },
-      market:[], marketTeams:[], marketFrom:{},
+      market:[], marketTeams:[], marketPool:[],
       _divRaces:{}
     };
     return S;
@@ -1076,7 +1113,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep),
       palmares:S.palmares, teamPalmares:S.teamPalmares,
       injuries:S.injuries, injuryDays:S.injuryDays, phasesRidden:S.phasesRidden, gt:S.gt,
-      champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketFrom:S.marketFrom };
+      champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketPool:S.marketPool };
   }
   function deserialize(obj){
     const teams=obj.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity||t.name, country:t.country, division:t.division, avg:t.avg,
@@ -1085,19 +1122,20 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     const riderTeam={}, riderCountry={};
     teams.forEach(t=>t.riders.forEach(r=>{ riderTeam[r.name]=t.id; riderCountry[r.name]=r.country; }));
     (obj.freeAgents||[]).forEach(r=>{ riderCountry[r.name]=r.country; });
+    (obj.marketPool||[]).forEach(p=>{ riderCountry[p.name]=p.country; });
     return { riders:[], teams, teamById, freeAgents:(obj.freeAgents||[]).map(r=>({...r})),
       fixtures:buildFixtures(teams), calendar:buildCalendar(),
       year:obj.year, phase:obj.phase, abs:obj.abs, commonCount:obj.commonCount||0,
       ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], riderTeam, riderCountry,
       palmares:obj.palmares||{}, teamPalmares:obj.teamPalmares||{},
       injuries:obj.injuries||{}, injuryDays:obj.injuryDays||{}, phasesRidden:obj.phasesRidden||{}, gt:obj.gt||{},
-      champions:obj.champions||{world:null,worldTT:null,national:{}}, market:obj.market||[], marketTeams:obj.marketTeams||[], marketFrom:obj.marketFrom||{},
+      champions:obj.champions||{world:null,worldTT:null,national:{}}, market:obj.market||[], marketTeams:obj.marketTeams||[], marketPool:obj.marketPool||[],
       _divRaces:{} };
   }
 
   const API={ ATTRS, parseCSV, genesisDraft, seedDivisions, divisionMap, racesPerDivision,
               buildCalendar, runPhase, setupPhase, stepPhase, nextUnit, finishPhase, phaseRaceSnapshot,
-              worldRanking, worldRankingRiders, rankIndex, newGame, openMarket, rollMarketTeams, transferRider,
+              worldRanking, worldRankingRiders, rankIndex, newGame, openMarket, rollMarketTeams, transferRider, signFromPool, finishMarket,
               importUpdate, staleRiders,
               serialize, deserialize,
               regionOf, gdist, tierFor, pointsFor, simulateRace, SPECIALS, TERRAIN_LABEL };
@@ -1129,7 +1167,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0016 · 2026-06-29';
+const BUILD='v14 · build 0017 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1210,7 +1248,7 @@ $('btnPhase').onclick=()=>{ if(!S) return;
     else { flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); }
     return;
   }
-  if(flow==='market'){ flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); return; }
+  if(flow==='market'){ if(S.marketPool&&S.marketPool.length) E.finishMarket(S); flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); return; }
 };
 // skip the guided pages and resolve the whole phase at once
 $('btnSkip').onclick=()=>{ if(!S) return;
@@ -1491,7 +1529,7 @@ function renderPhase(){
     box.innerHTML=h; v.appendChild(box);
   }
   if((S.market||[]).length){
-    v.appendChild(el('div','flowsub','🔁 <b>Transfer market open</b> — '+S.market.length+' rider'+(S.market.length===1?'':'s')+' listed. Open the <b>Market</b> tab to sign.'));
+    v.appendChild(el('div','flowsub','🔁 <b>Transfer market open</b> — '+S.market.length+' rider'+(S.market.length===1?'':'s')+' released. Open the <b>Market</b> tab to re-sign them; every team finishes at 15.'));
   }
   lastLog.races.forEach(r=>{
     const card=el('div','race');
@@ -1666,39 +1704,35 @@ function renderTeamBody(id){
 
 function renderMarket(){
   const v=$('view'); v.innerHTML='';
-  const m=S.market||[]; const cand=(S.marketTeams||[]).map(id=>S.teamById[id]).filter(Boolean);
-  v.appendChild(el('div','phead','<b>Transfer market</b> <span class="mut">— '+m.length+' rider'+(m.length===1?'':'s')+' listed this shift · click a column to sort</span>'));
-  if(cand.length) v.appendChild(el('div','flowsub','Candidate teams (re-rolled after every signing): '+cand.map(t=>divChip(t.division)+' '+flag(t.country)+tname(t)).join(' &nbsp; ')+'. Sign a listed rider to one of them.'));
-  if(!m.length){ v.appendChild(el('div','empty','No riders on the market — advance a phase.')); return; }
-  const rows=m.map(name=>{ const tid=S.riderTeam[name]; const t=S.teamById[tid]; const r=t&&t.riders.find(x=>x.name===name);
-    const ftid=(S.marketFrom&&S.marketFrom[name]!=null)?S.marketFrom[name]:tid; const ft=S.teamById[ftid];
-    return { name, country:S.riderCountry[name]||'', cn:cname(S.riderCountry[name]||''), avg:r?r.avg:0,
-      teamId:tid, teamName:t?t.name:'', division:t?t.division:9, fromId:ftid, fromName:ft?ft.name:'', fromDiv:ft?ft.division:9 }; });
-  const cmp={ name:(a,b)=>a.name.localeCompare(b.name), country:(a,b)=>a.cn.localeCompare(b.cn)||a.name.localeCompare(b.name),
-    avg:(a,b)=>a.avg-b.avg, team:(a,b)=>(a.division-b.division)||a.teamName.localeCompare(b.teamName),
-    from:(a,b)=>(a.fromDiv-b.fromDiv)||a.fromName.localeCompare(b.fromName) };
-  rows.sort((a,b)=>cmp[marketSort.key](a,b)*marketSort.dir);
-  const cols=[['name','Rider',1],['country','Country',1],['avg','Avg',-1],['from','Former team',1],['team','Current team',1]];
-  const ar=k=> marketSort.key===k?('<span class="ar">'+(marketSort.dir>0?'▲':'▼')+'</span>'):'';
-  const tbl=el('table','tbl');
-  tbl.innerHTML='<thead><tr>'+cols.map(c=>'<th class="sort'+(c[0]==='avg'?' r':'')+'" data-k="'+c[0]+'" data-d="'+c[2]+'">'+c[1]+' '+ar(c[0])+'</th>').join('')+'<th>Sign with</th></tr></thead>';
-  const tb=el('tbody');
-  rows.forEach(o=>{ const t=S.teamById[o.teamId], ft=S.teamById[o.fromId];
-    const btns=cand.map(ct=>'<button class="mktbtn'+(ct.id===o.teamId?' cur':'')+'" data-n="'+o.name.replace(/"/g,'&quot;')+'" data-t="'+ct.id+'"'+(ct.id===o.teamId?' disabled':'')+'>'+flag(ct.country)+ct.name+'</button>').join(' ');
-    const tcell=tt=>tt?(divChip(tt.division)+' '+tname(tt)):'<span class="mut">free agent</span>';
-    const tr=el('tr');
-    tr.innerHTML='<td class="tn">'+rname(o.name)+'</td><td class="mut">'+flag(o.country)+cname(o.country)+'</td>'+
-      '<td class="r mono">'+(o.avg?o.avg.toFixed(1):'—')+'</td>'+
-      '<td class="mut">'+tcell(ft)+'</td><td class="mut">'+tcell(t)+'</td>'+
-      '<td class="mktcell">'+btns+'</td>';
-    tb.appendChild(tr);
-  });
-  tbl.appendChild(tb); v.appendChild(tbl);
-  tbl.querySelectorAll('th.sort').forEach(th=>th.onclick=()=>{ const k=th.dataset.k, d=+th.dataset.d;
-    marketSort=(marketSort.key===k)?{key:k,dir:-marketSort.dir}:{key:k,dir:d}; render(); });
-  tbl.querySelectorAll('.mktbtn').forEach(b=>{ if(b.disabled) return;
-    b.onclick=()=>{ if(E.transferRider(S, b.dataset.n, +b.dataset.t)){ msg(b.dataset.n+' signed with '+S.teamById[+b.dataset.t].name);
-      E.rollMarketTeams(S); saveGame(); render(); } }; });
+  const pool=S.marketPool||[];
+  v.appendChild(el('div','phead','<b>Transfer market</b> <span class="mut">— riders are re-signed best-to-worst; every team finishes with exactly 15</span>'));
+  if(!pool.length){ v.appendChild(el('div','empty','Market complete — every team is back to 15 riders. Click “Close market”.')); return; }
+  const cur=pool[0]; const ft=S.teamById[cur.fromId];
+  const cand=(S.marketTeams||[]).map(id=>S.teamById[id]).filter(Boolean);
+  v.appendChild(el('div','flowsub',pool.length+' rider'+(pool.length===1?'':'s')+' still to place.'));
+  // current rider in play
+  const card=el('div','daycard');
+  card.innerHTML='<div class="mktnow"><span class="mktlbl">Now signing · best available</span>'+
+    '<div class="mktname">'+flag(cur.country)+rname(cur.name)+' <span class="srat">'+cur.avg.toFixed(1)+'</span></div>'+
+    '<div class="mut">'+cname(cur.country)+' &middot; former team: '+(ft?divChip(ft.division)+' '+tname(ft):'—')+'</div></div>';
+  v.appendChild(card);
+  // candidate teams in play (only teams that still need a rider)
+  v.appendChild(el('div','flowsub','Sign to a team in play <span class="mut">(teams still needing a 15th rider)</span>:'));
+  const wrap=el('div','mktcell');
+  if(!cand.length){ wrap.innerHTML='<span class="mut">No eligible teams left.</span>'; }
+  cand.forEach(ct=>{ const b=el('button','mktbtn');
+    b.innerHTML=flag(ct.country)+ct.name+' <span class="mut">'+ct.riders.length+'/15</span>';
+    b.onclick=()=>{ if(E.signFromPool(S, cur.name, ct.id)){ msg(cur.name+' → '+ct.name); saveGame(); render(); } };
+    wrap.appendChild(b); });
+  v.appendChild(wrap);
+  // upcoming queue — names only, no team options
+  if(pool.length>1){ const q=el('div','mktqueue');
+    q.innerHTML='<div class="dsec">Up next</div>'+pool.slice(1,13).map((p,i)=>
+      '<span class="mktq"><b>'+(i+2)+'.</b> '+flag(p.country)+p.name+' <span class="mut mono">'+p.avg.toFixed(1)+'</span></span>').join('');
+    v.appendChild(q); }
+  const af=el('button','ghost'); af.textContent='Auto-fill remaining'; af.style.marginTop='12px';
+  af.onclick=()=>{ E.finishMarket(S); msg('Remaining riders auto-placed'); saveGame(); render(); };
+  v.appendChild(af);
 }
 
 msg('load a rider database to begin');
