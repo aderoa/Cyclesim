@@ -529,6 +529,19 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   }
   function best(arr,f){ let bv=-1,bx=null; arr.forEach(a=>{const v=f(a); if(v>bv){bv=v;bx=a;}}); return bx; }
   // provisional promotion/relegation zones from a race's current standings (for display)
+  // promotion order = 1st rider, 1st team, 2nd rider, 2nd team, … (skip repeats)
+  function interleavePromote(riderSeq, teamSeq, need, exclude){
+    const out=[], seen=new Set(exclude||[]); let ri=0, ti=0, riderTurn=true;
+    while(out.length<need){
+      if(riderTurn){ while(ri<riderSeq.length && seen.has(riderSeq[ri])) ri++;
+        if(ri<riderSeq.length){ seen.add(riderSeq[ri]); out.push(riderSeq[ri++]); } }
+      else { while(ti<teamSeq.length && seen.has(teamSeq[ti])) ti++;
+        if(ti<teamSeq.length){ seen.add(teamSeq[ti]); out.push(teamSeq[ti++]); } }
+      riderTurn=!riderTurn;
+      if(ri>=riderSeq.length && ti>=teamSeq.length) break;   // both exhausted
+    }
+    return out;
+  }
   function computeZones(S, division, gc, teamClass, jpTid, jkTid){
     const ctx=S.phaseCtx, special=!!(ctx&&ctx.special);
     // how many go down from this race (D4 is the everlasting floor → none)
@@ -542,16 +555,8 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     // relegation: bottom relN non-exempt teams by team classification
     const safe=new Set(); gc.slice(0,10).forEach(g=>safe.add(g.teamId)); if(jpTid!=null)safe.add(jpTid); if(jkTid!=null)safe.add(jkTid);
     const relZone=[]; for(let i=teamClass.length-1;i>=0 && relZone.length<relN;i--){ if(!safe.has(teamClass[i].teamId)) relZone.push(teamClass[i].teamId); }
-    // promotion (display): the race winner's team first, then world-ranking top-up —
-    // mirrors the real promotion (winner + ranking), NOT the 2nd/3rd rider's team.
-    const promoZone=[], seen=new Set();
-    if(promoK>0 && gc.length){ promoZone.push(gc[0].teamId); seen.add(gc[0].teamId); }
-    if(promoZone.length<promoK){
-      const ranking=rankIndex(S);
-      teamClass.map(tc=>tc.teamId).filter(id=>!seen.has(id))
-        .sort((a,b)=>(ranking[a]??1e9)-(ranking[b]??1e9))
-        .forEach(id=>{ if(promoZone.length<promoK){ promoZone.push(id); seen.add(id); } });
-    }
+    // promotion (display): interleave individual GC (rider) with team classification (team)
+    const promoZone=interleavePromote(gc.map(g=>g.teamId), teamClass.map(tc=>tc.teamId), promoK);
     return { relZone, promoZone };
   }
 
@@ -1010,19 +1015,16 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     // promotions (up): promote(D) = 4 * races(divisionAbove); never a team already relegated
     const promoteCount={2:4*(dr[1]?dr[1].length:0), 3:4*(dr[2]?dr[2].length:0), 4:4*(dr[3]?dr[3].length:0)};
     const promote={2:[],3:[],4:[]};
+    const riderRank=worldRankingRiders(S);   // riders best→worst (rolling world ranking)
     [2,3,4].forEach(d=>{
-      const races=dr[d]||[]; const need=promoteCount[d]; if(!need) return;
-      const winners=races.map(r=>r.result.winner?r.result.winner.teamId:null)
-                         .filter(x=>x!=null && !relegateSet.has(x));
-      const chosen=[]; const seen=new Set();
-      winners.forEach(tid=>{ if(chosen.length<need && !seen.has(tid)){chosen.push(tid);seen.add(tid);} });
-      if(chosen.length<need){
-        const pool=(dmBefore[d]||[]).map(t=>t.id)
-          .filter(id=>!seen.has(id) && !relegateSet.has(id))
-          .sort((a,b)=>(ranking[a]??1e9)-(ranking[b]??1e9));
-        for(const id of pool){ if(chosen.length>=need)break; chosen.push(id); seen.add(id); }
-      }
-      promote[d]=chosen.slice(0,need);
+      const need=promoteCount[d]; if(!need) return;
+      // rider sequence: teams of the best individual riders in this division, in rank order
+      const riderSeq=riderRank.map(r=>S.riderTeam[r.name])
+        .filter(tid=>tid!=null && S.teamById[tid] && S.teamById[tid].division===d);
+      // team sequence: this division's teams by team world ranking
+      const teamSeq=(dmBefore[d]||[]).map(t=>t.id).sort((a,b)=>(ranking[a]??1e9)-(ranking[b]??1e9));
+      // 1st rider, 1st team, 2nd rider, 2nd team, … skipping relegated teams and repeats
+      promote[d]=interleavePromote(riderSeq, teamSeq, need, relegateSet);
     });
     // apply: each team moves exactly once
     [2,3,4].forEach(d=>promote[d].forEach(tid=>{ S.teamById[tid].division=d-1; moves.push({tid,from:d,to:d-1,kind:'promote'}); }));
@@ -1185,7 +1187,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0022 · 2026-06-29';
+const BUILD='v14 · build 0023 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
