@@ -598,14 +598,14 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   // provisional promotion/relegation zones from a race's current standings (for display)
   // promotion order = 1st rider, 1st team, 2nd rider, 2nd team, … (skip repeats)
   function interleavePromote(riderSeq, teamSeq, need, exclude){
-    const out=[], seen=new Set(exclude||[]); let ri=0, ti=0, riderTurn=true;
-    while(out.length<need){
-      if(riderTurn){ while(ri<riderSeq.length && seen.has(riderSeq[ri])) ri++;
-        if(ri<riderSeq.length){ seen.add(riderSeq[ri]); out.push(riderSeq[ri++]); } }
-      else { while(ti<teamSeq.length && seen.has(teamSeq[ti])) ti++;
-        if(ti<teamSeq.length){ seen.add(teamSeq[ti]); out.push(teamSeq[ti++]); } }
-      riderTurn=!riderTurn;
-      if(ri>=riderSeq.length && ti>=teamSeq.length) break;   // both exhausted
+    // merge as rider1, team1, rider2, team2, … then keep first occurrence of each team.
+    // when the Nth rider and Nth team are the same club, that pairing collapses and the
+    // next promotion falls to the (N+1)th rider — not the (N+1)th team.
+    const out=[], seen=new Set(exclude||[]);
+    const max=Math.max(riderSeq.length, teamSeq.length);
+    for(let k=0; k<max && out.length<need; k++){
+      if(k<riderSeq.length){ const id=riderSeq[k]; if(!seen.has(id)){ seen.add(id); out.push(id); if(out.length>=need) break; } }
+      if(k<teamSeq.length){ const id=teamSeq[k]; if(!seen.has(id)){ seen.add(id); out.push(id); } }
     }
     return out;
   }
@@ -1056,8 +1056,10 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     }
     if(fin[1]) addR(fin[1].name,'2nd');
     if(fin[2]) addR(fin[2].name,'3rd');
-    const jp=fin.slice().sort((a,b)=>b.pts-a.pts)[0], jk=fin.slice().sort((a,b)=>b.kom-a.kom)[0];
-    if(jp) addR(jp.name,'points'); if(jk) addR(jk.name,'kom');
+    const jk=fin.slice().sort((a,b)=>b.kom-a.kom)[0];
+    if(rs.nStages>1){ const jp=fin.slice().sort((a,b)=>b.pts-a.pts)[0]; if(jp && jp.pts>0) addR(jp.name,'points'); }
+    else { const js=fin.slice().sort((a,b)=>b.sprintPts-a.sprintPts)[0]; if(js && js.sprintPts>0) addR(js.name,'sprints'); }
+    if(jk && jk.kom>0) addR(jk.name,'kom');
   }
   // live snapshot of a race in the current phase (for the full race screen, mid- or post-race)
   function phaseRaceSnapshot(S, name){
@@ -1395,7 +1397,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0029 · 2026-06-29';
+const BUILD='v14 · build 0030 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1531,7 +1533,7 @@ function closeModal(){ $('modal').style.display='none'; }
 function findRider(name){ const tid=S.riderTeam[name]; const t=S.teamById[tid];
   const r=t&&t.riders.find(x=>x.name===name); return {r, team:t}; }
 function palmaresLine(e){
-  const lab={win:'Won',['2nd']:'2nd',['3rd']:'3rd',points:'Points jersey',kom:'Mountains jersey',NC:'National Champion',WC:'World Champion','WC-TT':'TT World Champion',stage:'Stage win'}[e.place]||e.place;
+  const lab={win:'Won',['2nd']:'2nd',['3rd']:'3rd',points:'Points jersey',sprints:'Sprints jersey',kom:'Mountains jersey',NC:'National Champion',WC:'World Champion','WC-TT':'TT World Champion',stage:'Stage win'}[e.place]||e.place;
   const cls=(e.place==='win'||e.place==='stage')?'win':(e.place==='NC'||e.place==='WC'||e.place==='WC-TT')?'title':'';
   return '<li><span class="pwhen">Y'+e.y+' P'+e.p+'</span><span class="'+cls+'">'+lab+'</span> — '+e.race+(e.div?' <span class="mut">(D'+e.div+')</span>':'')+'</li>';
 }
@@ -1542,7 +1544,7 @@ function palmaresBlock(entries){
     .sort((a,b)=>(POrd[a.place]-POrd[b.place])||(b.y-a.y));
   const wins=entries.filter(e=>e.place==='win');
   const stages=entries.filter(e=>e.place==='stage');
-  const jerseys=entries.filter(e=>e.place==='points'||e.place==='kom');
+  const jerseys=entries.filter(e=>e.place==='points'||e.place==='sprints'||e.place==='kom');
   // group one-day/overall wins by race name → "Race ×N (years)"
   const winBy={}; wins.forEach(e=>{ (winBy[e.race]||(winBy[e.race]=[])).push(e.y); });
   const grouped=Object.entries(winBy).map(([race,ys])=>({race,ys:ys.sort((a,b)=>a-b)})).sort((a,b)=>b.ys.length-a.ys.length||a.race.localeCompare(b.race));
