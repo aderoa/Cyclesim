@@ -145,6 +145,14 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 .selwrap .selttl{font-family:var(--disp);font-size:18px}
 .terrsel{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px}
 tr.rrow{cursor:pointer} tr.rrow:hover{background:var(--panel2)}
+.leadflag{margin-left:6px;padding:1px 5px;border-radius:10px;background:var(--panel3,#1c1c22);border:1px solid var(--line);vertical-align:middle}
+.calrace.clk,.logrow.clk{cursor:pointer}
+.calrace.clk:hover,.logrow.clk:hover{background:var(--panel2)}
+.raceed{border-left:2px solid var(--line);padding:2px 0 6px 10px;margin:0 0 8px}
+.raceedh{font-family:var(--disp);font-size:13px;color:var(--mut)}
+.racepod{margin:2px 0;padding-left:20px}
+.racepod li{font-size:13.5px;padding:1px 0}
+.raceedcls{font-size:12px;margin-top:3px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
 .slgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 .slteam{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
 .slname{font-family:var(--disp);font-weight:600;font-size:13px;margin-bottom:3px}
@@ -1116,7 +1124,19 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     const race={ division:rs.division, name:rs.name, host:rs.host, country:rs.country,
       terrain: rs.nStages>1?'stage race':rs.stages[0].terrain, nStages:rs.nStages,
       tier:rs.tier, gt:rs.gt, teams:rs.teams, result };
+    if(!rs._histRec){ rs._histRec=true; recordRaceHistory(S, rs.name, {
+      y:S.year, p:S.phase, host:rs.host, country:rs.country, div:rs.division, tier:rs.tier, nStages:rs.nStages,
+      podium: gc.slice(0,3).map(g=>({name:g.name, teamId:g.teamId, country:g.rider.country, gap:g.gap})),
+      points: pointsStand[0]?{name:pointsStand[0].name, teamId:pointsStand[0].teamId}:null,
+      sprints: sprintStand[0]?{name:sprintStand[0].name, teamId:sprintStand[0].teamId}:null,
+      mountain: komStand[0]?{name:komStand[0].name, teamId:komStand[0].teamId}:null,
+      team: teamClass[0]?{teamId:teamClass[0].teamId}:null }); }
     return race;
+  }
+  function recordRaceHistory(S, name, ed){
+    const H=(S.raceHistory||(S.raceHistory={}));
+    (H[name]||(H[name]=[])).push(ed);
+    if(H[name].length>30) H[name]=H[name].slice(-30);
   }
   function recordRacePalmares(rs, S){
     const fin=rs.riders.filter(r=>!r.out).sort((a,b)=>(a.time||0)-(b.time||0)||b.gc-a.gc);
@@ -1344,6 +1364,12 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     }
     log.champs={ nationals, worldChampion: res.winner?{name:res.winner.name,teamId:res.winner.teamId,country:res.winner.rider.country}:null,
       ttWorldChampion: ttRes.winner?{name:ttRes.winner.name,teamId:ttRes.winner.teamId,country:ttRes.winner.rider.country}:null };
+    const champEd=(rr,tier)=>({ y:S.year, p:1, host:'—', country:'—', div:0, tier, nStages:1,
+      podium: rr.gc.slice(0,3).map(g=>({name:g.name, teamId:g.teamId, country:g.rider.country, gap:0})),
+      points: rr.jersey?rr.jersey.points:null, sprints:null, mountain: rr.jersey?rr.jersey.kom:null,
+      team: rr.teamClass && rr.teamClass[0]?{teamId:rr.teamClass[0].teamId}:null });
+    recordRaceHistory(S, 'World Championship', champEd(res,'WORLDS'));
+    recordRaceHistory(S, 'TT World Championship', champEd(ttRes,'WORLDS'));
     (S.history||(S.history=[])).push({ year:S.year,
       world: res.winner?{name:res.winner.name, country:res.winner.rider.country, teamId:res.winner.teamId}:null,
       worldTT: ttRes.winner?{name:ttRes.winner.name, country:ttRes.winner.rider.country, teamId:ttRes.winner.teamId}:null,
@@ -1372,7 +1398,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       fixtures: buildFixtures(teams),
       calendar: buildCalendar(),
       year:0, phase:1, abs:0, commonCount:0,   // Year 0 boots straight into championships (phase 1)
-      ledger:[], riderLedger:[], territoryPts:{}, riderTeam, riderCountry,
+      ledger:[], riderLedger:[], territoryPts:{}, raceHistory:{}, riderTeam, riderCountry,
       palmares:{}, teamPalmares:{},
       injuries:{}, injuryDays:{}, phasesRidden:{}, gt:{},
       champions:{ world:null, worldTT:null, national:{} },
@@ -1412,7 +1438,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       teams:S.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity, country:t.country, division:t.division, avg:t.avg,
         phasesByDivision:t.phasesByDivision, riders:t.riders.map(rid) })),
       freeAgents:(S.freeAgents||[]).map(rid),
-      ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep), territoryPts:pruneTerritory(S.territoryPts),
+      ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep), territoryPts:pruneTerritory(S.territoryPts), raceHistory:S.raceHistory||{},
       palmares:S.palmares, teamPalmares:S.teamPalmares,
       injuries:S.injuries, injuryDays:S.injuryDays, phasesRidden:S.phasesRidden, gt:S.gt,
       champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketPool:S.marketPool, marketLog:S.marketLog, history:S.history, majorWins:(S.majorWins||[]).slice(-400), log:(S.log||[]).slice(-1500), form:S.form||{} };
@@ -1430,7 +1456,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     return { riders:[], teams, teamById, freeAgents:(obj.freeAgents||[]).map(r=>({...r})),
       fixtures:buildFixtures(teams), calendar:buildCalendar(),
       year:obj.year, phase, abs:obj.abs, commonCount:obj.commonCount||0,
-      ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], territoryPts:obj.territoryPts||{},
+      ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], territoryPts:obj.territoryPts||{}, raceHistory:obj.raceHistory||{},
       riderTeam, riderCountry,
       palmares:obj.palmares||{}, teamPalmares:obj.teamPalmares||{},
       injuries:obj.injuries||{}, injuryDays:obj.injuryDays||{}, phasesRidden:obj.phasesRidden||{}, gt:obj.gt||{},
@@ -1492,7 +1518,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0033 · 2026-06-29';
+const BUILD='v14 · build 0034 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1679,7 +1705,32 @@ function openRider(name){
   $('modal').style.display='flex';
 }
 
-$('build').textContent=BUILD;
+function attrEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function openRace(name){
+  const box=$('modalbody'); const H=(S.raceHistory||{})[name]||[];
+  let h='<div class="pmtitle">'+name+'</div>';
+  if(!H.length){ h+='<div class="pmsub">No editions contested yet — check back once it\u2019s been raced.</div>'; box.innerHTML=h; $('modal').style.display='flex'; return; }
+  const L=H[H.length-1];
+  const kind = L.tier==='MONUMENT'?'Monument':(L.tier==='TOUR'||L.tier==='GT')?'Grand Tour':L.tier==='WORLDS'?'World Championship':L.nStages>1?'stage race':'one-day race';
+  h+='<div class="pmsub">'+(L.country&&L.country!=='—'?flag(L.country)+cname(L.country)+' · ':'')+kind+' · '+H.length+' edition'+(H.length>1?'s':'')+'</div>';
+  // roll of honour
+  h+='<div class="palmh">Roll of honour</div><ul class="palm">'+
+    H.slice().reverse().map(e=>{ const w=e.podium[0]; return '<li><span class="pwhen">'+dyear(e.y)+'</span><span class="win">'+(w?flag(w.country)+rname(w.name):'—')+'</span>'+(w&&w.teamId!=null?' '+teamNameById(w.teamId):'')+'</li>'; }).join('')+'</ul>';
+  // recent editions with podium + secondary classifications
+  h+='<div class="palmh">Recent editions</div>';
+  H.slice().reverse().slice(0,6).forEach(e=>{
+    h+='<div class="raceed"><div class="raceedh">'+dyear(e.y)+'</div>';
+    h+='<ol class="racepod">'+e.podium.map(p=>'<li>'+flag(p.country)+rname(p.name)+(p.teamId!=null?' <span class="mut">'+teamNameById(p.teamId)+'</span>':'')+'</li>').join('')+'</ol>';
+    const cls=[];
+    if(e.points) cls.push('<span class="jw pts">🟢 Points</span> '+rname(e.points.name));
+    if(e.sprints) cls.push('<span class="jw spr">🔵 Sprints</span> '+rname(e.sprints.name));
+    if(e.mountain) cls.push('<span class="jw kom">🔴 Mountains</span> '+rname(e.mountain.name));
+    if(e.team&&e.team.teamId!=null) cls.push('Team: '+teamNameById(e.team.teamId));
+    if(cls.length) h+='<div class="raceedcls">'+cls.join(' &nbsp;·&nbsp; ')+'</div>';
+    h+='</div>';
+  });
+  box.innerHTML=h; $('modal').style.display='flex';
+}
 msg('load a rider database to begin');
 syncButtons();
 
@@ -1733,10 +1784,13 @@ function renderCalendar(){
         right='<span class="mut">D1 only · '+(E.TERRAIN_LABEL[r.terrain]||r.terrain)+(r.gt?' · 3 weeks':'')+'</span>'; }
       else { left='<span class="lr-race">'+divChip(r.division)+' '+flag(r.country)+r.name+'</span>';
         right='<span class="mut">'+(r.oneday?'one-day':'stage race')+'</span>'; }
-      body.innerHTML+='<div class="calrace">'+left+right+'</div>';
+      const clickable = r.name!=='National Championships';
+      const dr = clickable ? ' data-race="'+attrEsc(r.name)+'"' : '';
+      body.innerHTML+='<div class="calrace'+(clickable?' clk':'')+'"'+dr+'>'+left+right+'</div>';
     });
     det.appendChild(body); v.appendChild(det);
   });
+  v.querySelectorAll('.calrace[data-race]').forEach(elm=>elm.onclick=()=>openRace(elm.dataset.race));
 }
 
 function renderHistory(){
@@ -1760,8 +1814,8 @@ function renderHistory(){
       const pb=el('div','logphase');
       let h='<div class="logph">'+(p===1?'🌈 Championships':'Phase '+p)+'</div>';
       evs.forEach(e=>{
-        if(e.kind==='world') h+='<div class="logrow champ">🌈 <b>World Champion</b> — '+flag(e.country)+rname(e.name)+' '+teamNameById(e.teamId)+'</div>';
-        else if(e.kind==='worldtt') h+='<div class="logrow champ">⏱️ <b>TT World Champion</b> — '+flag(e.country)+rname(e.name)+' '+teamNameById(e.teamId)+'</div>';
+        if(e.kind==='world') h+='<div class="logrow champ clk" data-race="World Championship">🌈 <b>World Champion</b> — '+flag(e.country)+rname(e.name)+' '+teamNameById(e.teamId)+'</div>';
+        else if(e.kind==='worldtt') h+='<div class="logrow champ clk" data-race="TT World Championship">⏱️ <b>TT World Champion</b> — '+flag(e.country)+rname(e.name)+' '+teamNameById(e.teamId)+'</div>';
         else if(e.kind==='national'){
           h+='<div class="logrow mut">🏅 National Championships — '+(e.count||0)+' nations';
           if(hy && Array.isArray(hy.nationals) && hy.nationals.length){
@@ -1772,13 +1826,14 @@ function renderHistory(){
           h+='</div>';
         } else {
           const badge = e.tier && /MONUMENT|TOUR|GT/.test(e.tier) ? ' <span class="tierbadge">'+e.tier+'</span>' : '';
-          h+='<div class="logrow"><span class="lr-race">'+divChip(e.div)+' '+e.race+badge+'</span><span class="lr-win">'+flag(e.country)+rname(e.name)+' '+teamNameById(e.teamId)+'</span></div>';
+          h+='<div class="logrow clk" data-race="'+attrEsc(e.race)+'"><span class="lr-race">'+divChip(e.div)+' '+e.race+badge+'</span><span class="lr-win">'+flag(e.country)+rname(e.name)+' '+teamNameById(e.teamId)+'</span></div>';
         }
       });
       pb.innerHTML=h; yb.appendChild(pb);
     });
     v.appendChild(yb);
   });
+  v.querySelectorAll('.logrow[data-race]').forEach(elm=>elm.onclick=()=>openRace(elm.dataset.race));
 }
 // ---- guided race flow: day → preview → stage result → GC → recap → phase recap ----
 function renderFlow(){
@@ -2095,8 +2150,9 @@ function renderNations(){
   const tbl=el('table','tbl'); const tb=el('tbody');
   tbl.innerHTML='<thead><tr><th>#</th><th>Rider</th><th>Team</th><th class="r">Races</th><th class="r">Points</th></tr></thead>';
   riders.slice(0,100).forEach((r,i)=>{ const tr=el('tr'); tr.className='rrow';
+    const leadFlag = (i===0 && nationsView==='country') ? ' <span class="leadflag" title="Leader of '+cname(nationsSel)+'">'+flag(nationsSel)+'</span>' : '';
     tr.innerHTML='<td class="mut">'+(i+1)+'</td>'+
-      '<td class="tn">'+flag(r.country)+rname(r.name)+'</td>'+
+      '<td class="tn">'+flag(r.country)+rname(r.name)+leadFlag+'</td>'+
       '<td>'+(r.teamId!=null?teamNameById(r.teamId):'<span class="mut">—</span>')+'</td>'+
       '<td class="r mono">'+r.races+'</td><td class="r mono">'+Math.round(r.pts)+'</td>';
     tr.onclick=()=>openRider(r.name); tb.appendChild(tr); });
