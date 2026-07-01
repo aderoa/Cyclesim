@@ -146,6 +146,9 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 .terrsel{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px}
 tr.rrow{cursor:pointer} tr.rrow:hover{background:var(--panel2)}
 .leadflag{margin-left:6px;padding:1px 5px;border-radius:10px;background:var(--panel3,#1c1c22);border:1px solid var(--line);vertical-align:middle}
+.leadmark{margin-left:8px;padding:1px 7px;border-radius:10px;vertical-align:middle;font-size:11px;font-weight:700;
+  color:#3a2e00;background:linear-gradient(90deg,#ffd75e,#f4b73d);border:1px solid #d99a1c;text-transform:uppercase;letter-spacing:.3px}
+.leadmark .flag{margin:0 2px;vertical-align:-1px}
 .calrace.clk,.logrow.clk{cursor:pointer}
 .calrace.clk:hover,.logrow.clk:hover{background:var(--panel2)}
 .raceed{border-left:2px solid var(--line);padding:2px 0 6px 10px;margin:0 0 8px}
@@ -395,6 +398,10 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   const CONTINENT_LABEL={ EUW:'Western Europe', EUE:'Eastern Europe', NA:'North America',
     SA:'Latin America', OCE:'Oceania', ASE:'East & SE Asia', ASW:'West & Central Asia', AFR:'Africa', OTH:'Other' };
   function continentOf(c){ return CONTINENT_LABEL[regionOf(c)]||'Other'; }
+  // display-name resolver for ISO-coded countries (e.g. BA → Bosnia & Herzegovina); set by the UI
+  let COUNTRY_NAME={};
+  function setCountryNames(m){ COUNTRY_NAME=m||{}; }
+  function fullCountry(c){ return COUNTRY_NAME[c]||c; }
   // territory points: for each host country, how many points each RIDER has earned there (career).
   // e.g. everyone who scores in Milano-Sanremo / Giro / Italian champ builds up Italy's rider ranking.
   function addTerritory(S, country, name, pts){
@@ -1331,7 +1338,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       const field=byNat[nat].map(e=>({...e, perf:e.r.avg+3*randn()})).sort((a,b)=>b.perf-a.perf);
       const w=field[0]; if(!w) return; champs[nat]=w.r.name; nationals.push({country:nat, name:w.r.name, teamId:w.teamId});
       S.champions.national[nat]=w.r.name;
-      const rn=nat+' National Championship';
+      const rn=fullCountry(nat)+' National Championship';
       // treated exactly like a normal race: a win in the rider's & team's palmarès
       (S.palmares[w.r.name]||(S.palmares[w.r.name]=[])).push({y:S.year,p:1,race:rn,div:0,place:'win'});
       (S.teamPalmares[w.teamId]||(S.teamPalmares[w.teamId]=[])).push({y:S.year,p:1,race:rn,div:0,place:'win'});
@@ -1478,7 +1485,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
               importUpdate, staleRiders,
               serialize, deserialize,
               regionOf, gdist, tierFor, pointsFor, simulateRace, SPECIALS, TERRAIN_LABEL,
-              refreshForm, nationRiderRanking, continentRiderRanking, territoryList, continentList, continentOf, seasonSchedule };
+              refreshForm, nationRiderRanking, continentRiderRanking, territoryList, continentList, continentOf, seasonSchedule, setCountryNames };
   if(typeof module!=='undefined' && module.exports) module.exports=API;
   root.CycleEngine=API;
 })(typeof window!=='undefined'?window:globalThis);
@@ -1526,7 +1533,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0036 · 2026-06-29';
+const BUILD='v14 · build 0037 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1534,6 +1541,7 @@ const isoFor=c=>{ if(typeof CC!=='undefined'&&CC[c]) return CC[c];
   if(/^[A-Za-z]{2}$/.test(c)) return c.toLowerCase(); // value is already an ISO code
   return null; };
 const cname=c=>CODE2NAME[c]||c;                       // display name
+if(E.setCountryNames) E.setCountryNames(CODE2NAME);  // let the engine resolve coded countries too
 const flag=c=>{ const iso=isoFor(c);
   return iso?'<span class="flag fi fi-'+iso+'" title="'+cname(c)+'"></span>'
             :'<span class="ccbadge">'+(c||'??')+'</span>'; };
@@ -2160,7 +2168,7 @@ function renderNations(){
   const tbl=el('table','tbl'); const tb=el('tbody');
   tbl.innerHTML='<thead><tr><th>#</th><th>Rider</th><th>Team</th><th class="r">Races</th><th class="r">Points</th></tr></thead>';
   riders.slice(0,100).forEach((r,i)=>{ const tr=el('tr'); tr.className='rrow';
-    const leadFlag = (i===0 && nationsView==='country') ? ' <span class="leadflag" title="Leader of '+cname(nationsSel)+'">'+flag(nationsSel)+'</span>' : '';
+    const leadFlag = (i===0 && nationsView==='country') ? ' <span class="leadmark" title="Leader of '+cname(nationsSel)+'">👑 '+flag(nationsSel)+' leader</span>' : '';
     tr.innerHTML='<td class="mut">'+(i+1)+'</td>'+
       '<td class="tn">'+flag(r.country)+rname(r.name)+leadFlag+'</td>'+
       '<td>'+(r.teamId!=null?teamNameById(r.teamId):'<span class="mut">—</span>')+'</td>'+
