@@ -1380,40 +1380,59 @@ const SPONSORS = {
   }
   // pick nR fixtures from a division's pool, preferring distinct host countries
   function drawFixtures(pool, nR, offset){
-    const N=pool.length, chosen=[], usedC=new Set();
-    for(let i=0;i<N && chosen.length<nR;i++){ const f=pool[(offset+i)%N];
-      if(!usedC.has(f.country)){ chosen.push(f); usedC.add(f.country); } }
-    for(let i=0;i<N && chosen.length<nR;i++){ const f=pool[(offset+i)%N];
-      if(!chosen.includes(f)) chosen.push(f); }
+    // Draw nR consecutive fixtures from a rolling offset. The pool is pre-interleaved by
+    // country, so a chunk stays geographically varied while consecutive phases never repeat
+    // the same race (the window simply advances by nR each phase, cycling the whole pool).
+    const N=pool.length, chosen=[]; if(!N) return chosen;
+    const start=((offset%N)+N)%N;
+    for(let i=0;i<nR && i<N;i++) chosen.push(pool[(start+i)%N]);
     return chosen;
+  }
+  function interleaveByCountry(list){
+    const groups={}, order=[];
+    list.forEach(f=>{ if(!groups[f.country]){ groups[f.country]=[]; order.push(f.country); } groups[f.country].push(f); });
+    const out=[]; let added=true;
+    while(added){ added=false; for(const c of order){ const g=groups[c]; if(g.length){ out.push(g.shift()); added=true; } } }
+    return out;
   }
   function raceLabel(host,d,ri){ return host+' (D'+d+(ri?(' #'+(ri+1)):'')+')'; }
 
   // per-division race fixtures, generated once from the home cities of the teams
   // seeded into each division (a D1 city -> a D1 race, etc.). Fixed thereafter.
   function buildFixtures(teams){
-    const fx={1:[],2:[],3:[],4:[]}; const dm=divisionMap(teams);
-    // one national tour per country, hosted by that country's HIGHEST-division team, so the
-    // "Tour of X" is the top race of its nation (Tour of Belgium → D1; Tour of Japan → its
-    // best division). FR/IT/ES are excluded — they already have Grand Tours.
+    const fx={1:[],2:[],3:[],4:[]};
     const GT_NATIONS=new Set(['France','Italy','Spain']);
-    const flagship=new Set(); const bestByCountry={};
+    // national tour host per country = that country's highest-division team (non-GT nation),
+    // so "Tour of X" sits at the top of its nation's calendar.
+    const bestByCountry={};
     teams.forEach(t=>{ if(GT_NATIONS.has(t.country)) return;
       const b=bestByCountry[t.country]; if(!b || t.division < b.division) bestByCountry[t.country]=t; });
-    Object.values(bestByCountry).forEach(t=>flagship.add(t.id));
-    [1,2,3,4].forEach(d=>{ dm[d].forEach((t,i)=>{
+    const flagship={}; Object.values(bestByCountry).forEach(t=>{ flagship[t.id]=1; });
+    // split each country's races ~50/50 into tours (stage races) and classics (one-day). The
+    // national tour counts as a tour; odd counts favour tours; a country's lone race is a tour.
+    const byCountry={}; teams.forEach(t=>{ (byCountry[t.country]||(byCountry[t.country]=[])).push(t); });
+    const raceType={};   // teamId -> 'tour' | 'classic'
+    Object.keys(byCountry).forEach(country=>{
+      const order=byCountry[country].slice().sort((a,b)=>a.division-b.division||a.id-b.id);
+      const toursTarget=Math.ceil(order.length/2); let tours=0;
+      order.forEach(t=>{ if(flagship[t.id]){ raceType[t.id]='tour'; tours++; } });
+      order.forEach(t=>{ if(raceType[t.id]) return;
+        if(tours<toursTarget){ raceType[t.id]='tour'; tours++; } else raceType[t.id]='classic'; });
+    });
+    const dm=divisionMap(teams);
+    [1,2,3,4].forEach(d=>{ dm[d].forEach(t=>{
       const city=t.homeCity||t.name;
-      if(flagship.has(t.id)){
-        const cname=fullCountry(t.country);
-        fx[d].push({ name:'Tour of '+cname, host:cname, country:t.country,
-                     terrain:'MTN', division:d, oneday:false, natTour:true });
+      if(flagship[t.id]){
+        const cn=fullCountry(t.country);
+        fx[d].push({ name:'Tour of '+cn, host:cn, country:t.country, terrain:'MTN', division:d, oneday:false, natTour:true });
+      } else if(raceType[t.id]==='tour'){
+        fx[d].push({ name:'Tour de '+city, host:city, country:t.country, terrain:'MTN', division:d, oneday:false });
       } else {
-        const oneday=(i%2===0);
-        fx[d].push({ name:(oneday?'Gran Premio ':'Tour de ')+city, host:city,
-                     country:t.country, terrain:TERRAINS[(Math.random()*TERRAINS.length)|0],
-                     division:d, oneday });
+        fx[d].push({ name:'Gran Premio '+city, host:city, country:t.country,
+                     terrain:TERRAINS[(Math.random()*TERRAINS.length)|0], division:d, oneday:true });
       }
     }); });
+    [1,2,3,4].forEach(d=>{ fx[d]=interleaveByCountry(fx[d]); });   // spread countries for varied draws
     return fx;
   }
 
@@ -1740,7 +1759,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0044 · 2026-06-30';
+const BUILD='v14 · build 0045 · 2026-06-30';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
