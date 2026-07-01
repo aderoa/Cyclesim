@@ -1526,7 +1526,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0035 · 2026-06-29';
+const BUILD='v14 · build 0036 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1823,8 +1823,8 @@ function renderHistory(){
       const pb=el('div','logphase');
       let h='<div class="logph">'+(p===1?'🌈 Championships':'Phase '+p)+'</div>';
       evs.forEach(e=>{
-        if(e.kind==='world') h+='<div class="logrow champ clk" data-race="World Championship">🌈 <b>World Champion</b> — '+flag(e.country)+rname(e.name)+' '+teamNameById(e.teamId)+'</div>';
-        else if(e.kind==='worldtt') h+='<div class="logrow champ clk" data-race="TT World Championship">⏱️ <b>TT World Champion</b> — '+flag(e.country)+rname(e.name)+' '+teamNameById(e.teamId)+'</div>';
+        if(e.kind==='world') h+='<div class="logrow champ clk" data-race="World Championship"><span class="lr-race">🌈 <b>World Champion</b></span><span class="lr-win">'+flag(e.country)+rname(e.name)+' '+teamNameById(e.teamId)+'</span></div>';
+        else if(e.kind==='worldtt') h+='<div class="logrow champ clk" data-race="TT World Championship"><span class="lr-race">⏱️ <b>TT World Champion</b></span><span class="lr-win">'+flag(e.country)+rname(e.name)+' '+teamNameById(e.teamId)+'</span></div>';
         else if(e.kind==='national'){
           h+='<div class="logrow mut">🏅 National Championships — '+(e.count||0)+' nations';
           if(hy && Array.isArray(hy.nationals) && hy.nationals.length){
