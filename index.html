@@ -379,19 +379,26 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   const CONTINENT_LABEL={ EUW:'Western Europe', EUE:'Eastern Europe', NA:'North America',
     SA:'Latin America', OCE:'Oceania', ASE:'East & SE Asia', ASW:'West & Central Asia', AFR:'Africa', OTH:'Other' };
   function continentOf(c){ return CONTINENT_LABEL[regionOf(c)]||'Other'; }
-  // nation ranking: points scored in races HELD in each country (rolling 33 phases),
-  // regardless of rider nationality — i.e. the country's racing calendar strength
-  function nationRanking(S){
-    const by={};
-    (S.countryLedger||[]).forEach(e=>{ if(S.abs-e.abs<33){
-      (by[e.country]||(by[e.country]={country:e.country, pts:0, races:0})); by[e.country].pts+=e.pts; by[e.country].races++; }});
-    return Object.values(by).filter(x=>x.pts>0).sort((a,b)=>b.pts-a.pts);
+  // credit a race's points to its HOST country's all-time (career) territory total
+  function creditCountry(S, country, pts){
+    if(!country || country==='—' || !(pts>0)) return;
+    const cc=(S.countryCareer||(S.countryCareer={}));
+    (cc[country]||(cc[country]={pts:0, races:0})); cc[country].pts+=pts; cc[country].races++;
   }
+  // nation ranking: ALL-TIME points scored in races HELD in each country, any nationality
+  function nationRanking(S){
+    return Object.entries(S.countryCareer||{})
+      .map(([country,v])=>({country, pts:v.pts, races:v.races}))
+      .filter(x=>x.pts>0).sort((a,b)=>b.pts-a.pts);
+  }
+  // continent ranking: all points from every race held on that continent
   function continentRanking(S){
     const by={};
-    (S.countryLedger||[]).forEach(e=>{ if(S.abs-e.abs<33){ const k=continentOf(e.country);
-      (by[k]||(by[k]={continent:k, pts:0, races:0, countries:new Set()})); by[k].pts+=e.pts; by[k].races++; by[k].countries.add(e.country); }});
-    return Object.values(by).filter(x=>x.pts>0).map(x=>({continent:x.continent, pts:x.pts, races:x.races, nations:x.countries.size}))
+    Object.entries(S.countryCareer||{}).forEach(([country,v])=>{ const k=continentOf(country);
+      (by[k]||(by[k]={continent:k, pts:0, races:0, countries:new Set()}));
+      by[k].pts+=v.pts; by[k].races+=v.races; by[k].countries.add(country); });
+    return Object.values(by).filter(x=>x.pts>0)
+      .map(x=>({continent:x.continent, pts:x.pts, races:x.races, nations:x.countries.size}))
       .sort((a,b)=>b.pts-a.pts);
   }
   function gdist(a,b){
@@ -1158,8 +1165,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
                  S.riderLedger.push({name:g.name, pts, abs:S.abs}); total+=pts; }
     });
     // territory ranking: all points scored in a race credit its host country (and continent)
-    if(total>0 && race.country && race.country!=='—')
-      (S.countryLedger||(S.countryLedger=[])).push({country:race.country, pts:total, abs:S.abs});
+    if(total>0 && race.country && race.country!=='—') creditCountry(S, race.country, total);
   }
 
   function processInjuries(S, race){
@@ -1266,7 +1272,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       field.slice(0,8).forEach((e,i)=>{ const p=pointsFor('NATIONAL',i);
         S.ledger.push({teamId:e.teamId, pts:p, abs:S.abs});
         S.riderLedger.push({name:e.r.name, pts:p, abs:S.abs}); natTotal+=p; });
-      if(natTotal>0) (S.countryLedger||(S.countryLedger=[])).push({country:nat, pts:natTotal, abs:S.abs});
+      if(natTotal>0) creditCountry(S, nat, natTotal);
     });
     // Worlds: top ~150 riders by avg, one race
     const all=[]; S.teams.forEach(t=>t.riders.forEach(r=>all.push({rider:r,teamId:t.id})));
@@ -1322,7 +1328,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       fixtures: buildFixtures(teams),
       calendar: buildCalendar(),
       year:0, phase:1, abs:0, commonCount:0,   // Year 0 boots straight into championships (phase 1)
-      ledger:[], riderLedger:[], countryLedger:[], riderTeam, riderCountry,
+      ledger:[], riderLedger:[], countryCareer:{}, riderTeam, riderCountry,
       palmares:{}, teamPalmares:{},
       injuries:{}, injuryDays:{}, phasesRidden:{}, gt:{},
       champions:{ world:null, worldTT:null, national:{} },
@@ -1352,7 +1358,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       teams:S.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity, country:t.country, division:t.division, avg:t.avg,
         phasesByDivision:t.phasesByDivision, riders:t.riders.map(rid) })),
       freeAgents:(S.freeAgents||[]).map(rid),
-      ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep), countryLedger:(S.countryLedger||[]).filter(keep),
+      ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep), countryCareer:S.countryCareer||{},
       palmares:S.palmares, teamPalmares:S.teamPalmares,
       injuries:S.injuries, injuryDays:S.injuryDays, phasesRidden:S.phasesRidden, gt:S.gt,
       champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketPool:S.marketPool, marketLog:S.marketLog, history:S.history, majorWins:(S.majorWins||[]).slice(-400), log:(S.log||[]).slice(-1500), form:S.form||{} };
@@ -1370,7 +1376,9 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     return { riders:[], teams, teamById, freeAgents:(obj.freeAgents||[]).map(r=>({...r})),
       fixtures:buildFixtures(teams), calendar:buildCalendar(),
       year:obj.year, phase, abs:obj.abs, commonCount:obj.commonCount||0,
-      ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], countryLedger:obj.countryLedger||[], riderTeam, riderCountry,
+      ledger:obj.ledger||[], riderLedger:obj.riderLedger||[],
+      countryCareer: obj.countryCareer || (Array.isArray(obj.countryLedger) ? obj.countryLedger.reduce((m,e)=>{ (m[e.country]||(m[e.country]={pts:0,races:0})); m[e.country].pts+=e.pts; m[e.country].races++; return m; }, {}) : {}),
+      riderTeam, riderCountry,
       palmares:obj.palmares||{}, teamPalmares:obj.teamPalmares||{},
       injuries:obj.injuries||{}, injuryDays:obj.injuryDays||{}, phasesRidden:obj.phasesRidden||{}, gt:obj.gt||{},
       champions:obj.champions||{world:null,worldTT:null,national:{}}, market:obj.market||[], marketTeams:obj.marketTeams||[], marketPool:obj.marketPool||[], marketLog:obj.marketLog||[], history:obj.history||[], majorWins:obj.majorWins||[], log:obj.log||[], form:obj.form||null,
@@ -1431,7 +1439,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0031 · 2026-06-29';
+const BUILD='v14 · build 0032 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -2000,7 +2008,7 @@ function renderRanking(){
 let nationsView='nations';
 function renderNations(){
   const v=$('view'); v.innerHTML='';
-  v.appendChild(el('div','phead','<b>Territory ranking</b> <span class="mut">— points scored in races held in each place (rolling 33 phases), any nationality</span>'));
+  v.appendChild(el('div','phead','<b>Territory ranking</b> <span class="mut">— all-time career points from races held in each place, any nationality</span>'));
   const bar=el('div','subtabs');
   [['nations','By country'],['continents','By continent']].forEach(x=>{ const b=el('button','subtab'+(x[0]===nationsView?' on':''),x[1]);
     b.onclick=()=>{ nationsView=x[0]; renderNations(); }; bar.appendChild(b); });
