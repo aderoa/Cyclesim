@@ -180,6 +180,13 @@ tr.rrow{cursor:pointer} tr.rrow:hover{background:var(--panel2)}
 .frace{font-weight:600}
 .ftier{font-family:var(--disp);font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);border:1px solid var(--line);border-radius:8px;padding:0 6px;margin-left:4px}
 .fwin{margin-top:2px;font-size:14px}
+.wldmark{font-size:.92em;vertical-align:middle;filter:drop-shadow(0 0 3px rgba(78,163,255,.7))}
+.natmark{display:inline-block;font-size:.82em;vertical-align:middle;padding:0 3px;border-radius:5px;border:1px solid #e0a53a;box-shadow:0 0 0 1px rgba(224,165,58,.25)}
+.feedrow.finj{border-left-color:#e0655a}
+.feedrow.ftrans{border-left-color:#4ea3ff}
+.ftag{display:inline-block;font-family:var(--disp);font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;margin-right:4px}
+.ftag.tinj{color:#e0655a;background:color-mix(in srgb,#e0655a 15%,transparent)}
+.ftag.ttr{color:#4ea3ff;background:color-mix(in srgb,#4ea3ff 15%,transparent)}
 .racelink:hover{text-decoration:underline;text-decoration-color:var(--mut)}
 .calrace.clk:hover,.logrow.clk:hover{background:var(--panel2)}
 .raceed{border-left:2px solid var(--line);padding:2px 0 6px 10px;margin:0 0 8px}
@@ -995,6 +1002,8 @@ const SPONSORS = {
     t.riders.push(rid); S.riderTeam[name]=toId; S.riderCountry[name]=rid.country;
     t.avg=mean(t.riders.map(x=>x.avg));
     (S.marketLog||(S.marketLog=[])).push({ name, country:rid.country, avg:rid.avg, fromId, toId });
+    if(fromId!==toId) (S.log||(S.log=[])).push({ y:S.year, p:S.phase, abs:S.abs, kind:'transfer',
+      name, country:rid.country, fromId, toId });
     S.market=S.marketPool.map(q=>q.name);
     rollMarketTeams(S);
     return true;
@@ -1271,7 +1280,10 @@ const SPONSORS = {
       else if(roll<0.40){ days=randInt(16,60); sev='moderate'; }
       else if(roll<0.50){ days=randInt(61,300); sev='severe'; }
       const missed=Math.floor(days/11);
-      if(missed>0){ S.injuries[a.name]=S.abs+missed; S.injuryDays[a.name]=days; }
+      if(missed>0){ S.injuries[a.name]=S.abs+missed; S.injuryDays[a.name]=days;
+        const dv=(S.teamById[a.teamId]||{}).division||9;
+        if(missed>=3 && dv<=2) (S.log||(S.log=[])).push({ y:S.year, p:S.phase, abs:S.abs, kind:'injury',
+          name:a.name, country:S.riderCountry[a.name]||a.country||'', teamId:a.teamId, missed, severity:sev }); }
       out.push({ name:a.name, teamId:a.teamId, days, missed, severity:sev });
     });
     return out;
@@ -1712,7 +1724,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0042 · 2026-06-30';
+const BUILD='v14 · build 0043 · 2026-06-30';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1724,12 +1736,24 @@ if(E.setCountryNames) E.setCountryNames(CODE2NAME);  // let the engine resolve c
 const flag=c=>{ const iso=isoFor(c);
   return iso?'<span class="flag fi fi-'+iso+'" title="'+cname(c)+'"></span>'
             :'<span class="ccbadge">'+(c||'??')+'</span>'; };
+let LEAD={world:null, nations:new Set()};
+function refreshLeaders(){
+  let world=null; const nations=new Set(), seen=new Set();
+  if(S&&S.riderLedger){ const wr=E.worldRankingRiders(S);
+    for(const e of wr){ if(!(e.pts>0)) continue; if(world===null) world=e.name;
+      const c=e.country||S.riderCountry[e.name]; if(c&&!seen.has(c)){ seen.add(c); nations.add(e.name); } } }
+  LEAD={world, nations};
+}
+function leaderBadge(n){ if(!n||!LEAD) return '';
+  if(LEAD.world===n) return ' <span class="wldmark" title="World ranking leader">🌍</span>';
+  if(LEAD.nations.has(n)) return ' <span class="natmark" title="National ranking leader">'+flag(rcountry(n))+'</span>';
+  return ''; }
 const champBadge=n=>{ if(!S||!S.champions||!n) return ''; let b='';
   if(S.champions.world===n) b+='<span class="chmp" title="World Champion">🌈</span>';
   if(S.champions.worldTT===n) b+='<span class="chmp" title="Time Trial World Champion">⏱️</span>';
   const c=S.riderCountry[n]; if(c&&S.champions.national[c]===n) b+='<span class="chmp" title="National Champion">🏅</span>';
   return b?(' '+b):''; };
-const rname=n=>'<span class="rl" data-r="'+(n||'').replace(/"/g,'&quot;')+'">'+(n||'')+'</span>'+champBadge(n);
+const rname=n=>'<span class="rl" data-r="'+(n||'').replace(/"/g,'&quot;')+'">'+(n||'')+'</span>'+champBadge(n)+leaderBadge(n);
 const JERSEY_PAL=[['#e6194b','#fff'],['#3cb44b','#fff'],['#4363d8','#fff'],['#f58231','#111'],['#911eb4','#fff'],['#1aa6c4','#111'],['#f032e6','#fff'],['#8bbf2a','#111'],['#469990','#fff'],['#9a6324','#fff'],['#e6c200','#111'],['#800000','#fff'],['#3fa37a','#fff'],['#808000','#fff'],['#d35400','#fff'],['#000075','#fff'],['#5d6d7e','#fff'],['#c0392b','#fff'],['#16a085','#fff'],['#7d3c98','#fff']];
 function teamColors(t){ const id=(t&&t.id!=null)?t.id:0; const a=JERSEY_PAL[id%JERSEY_PAL.length]; const b=JERSEY_PAL[(id*7+5)%JERSEY_PAL.length]; return {body:a[0], ink:a[1], accent:b[0]}; }
 function jersey(t,sz){ const c=teamColors(t); const w=sz||17, h=Math.round(w*0.92);
@@ -1883,6 +1907,7 @@ function palmaresBlock(entries){
   return h;
 }
 function openRider(name){
+  refreshLeaders();
   const {r,team}=findRider(name); const box=$('modalbody');
   if(!r){ box.innerHTML='<div class="pmtitle">'+name+'</div><div class="pmsub">Not on a current roster.</div>'+palmaresBlock(S.palmares[name]); $('modal').style.display='flex'; return; }
   const inj=S.injuries[name]; const out=(inj!=null&&inj>=S.abs);
@@ -1938,6 +1963,7 @@ syncButtons();
 // ---- master render ----
 function render(){
   if(!S){ return; }
+  refreshLeaders();
   const cal=S.calendar[S.phase-1];
   $('yp').textContent=dyear(S.year)+' · Phase '+S.phase+'/34';
   $('ptype').textContent = cal.type==='SPECIAL' ? ('SPECIAL — '+cal.special.name)
@@ -2006,7 +2032,8 @@ function renderHistory(){
     b.onclick=()=>{ histDiv=x[0]; renderHistory(); }; bar.appendChild(b); });
   v.appendChild(bar);
   // championship events always show; regular races obey the division filter
-  const items=log.filter(e=> e.kind!=='race' || histDiv==='all' || e.div===+histDiv);
+  // History = race archive only; injuries & transfers live in the Feed
+  const items=log.filter(e=>(e.kind==='race'||e.kind==='world'||e.kind==='worldtt'||e.kind==='national') && (e.kind!=='race' || histDiv==='all' || e.div===+histDiv));
   const years={}; items.forEach(e=>{ (years[e.y]||(years[e.y]={})); (years[e.y][e.p]||(years[e.y][e.p]=[])).push(e); });
   const tierRank=t=>({WORLDS:0,MONUMENT:1,TOUR:2,GT:2,NATIONAL:9}[t]||5);
   Object.keys(years).map(Number).sort((a,b)=>b-a).forEach(y=>{
@@ -2522,6 +2549,14 @@ function renderRecords(){
 // ---- Results feed ---------------------------------------------------------
 function feedRow(e){
   const when=dyear(e.y)+' · P'+e.p;
+  if(e.kind==='injury'){ const t=e.teamId!=null?S.teamById[e.teamId]:null;
+    return '<div class="feedrow finj"><div class="fwhen">'+when+'</div><div class="fmain">'+
+      '<span class="ftag tinj">🤕 Injury</span> '+flag(e.country)+rname(e.name)+(t?' <span class="mut">('+tname(t)+')</span>':'')+
+      ' <span class="mut">— out ~'+e.missed+' phase'+(e.missed>1?'s':'')+' · '+(e.severity||'')+'</span></div></div>'; }
+  if(e.kind==='transfer'){ const fr=e.fromId!=null?S.teamById[e.fromId]:null, to=e.toId!=null?S.teamById[e.toId]:null;
+    return '<div class="feedrow ftrans"><div class="fwhen">'+when+'</div><div class="fmain">'+
+      '<span class="ftag ttr">🔁 Transfer</span> '+flag(e.country)+rname(e.name)+
+      ' <span class="mut">'+(fr?tname(fr):'free agent')+' → '+(to?tname(to):'—')+'</span></div></div>'; }
   const tierLabel = e.kind==='world'?'World Championship':e.kind==='worldtt'?'TT World Championship':
     e.tier==='MONUMENT'?'Monument':(e.tier==='TOUR'||e.tier==='GT')?'Grand Tour':e.tier==='NATIONAL'?'National':e.tier==='WORLDS'?'Worlds':'';
   const cls = (e.kind==='world'||e.kind==='worldtt')?'fworld':e.tier==='MONUMENT'?'fmon':(e.tier==='TOUR'||e.tier==='GT')?'fgt':e.tier==='NATIONAL'?'fnat':'';
@@ -2543,11 +2578,13 @@ function renderFeed(){
   const log=(S.log||[]);
   if(!log.length){ v.appendChild(el('div','empty','No results yet — advance a phase and they\\u2019ll roll in here.')); return; }
   const bar=el('div','feedbar');
-  bar.innerHTML='<button class="ftog on" data-f="all">All results</button><button class="ftog" data-f="big">Big races only</button>';
+  bar.innerHTML='<button class="ftog on" data-f="all">All</button><button class="ftog" data-f="big">Big races</button><button class="ftog" data-f="moves">Transfers & injuries</button>';
   v.appendChild(bar);
   const list=el('div','feedlist'); v.appendChild(list);
   const isBig=e=>/MONUMENT|TOUR|GT|WORLDS|NATIONAL/.test(e.tier||'')||e.kind==='world'||e.kind==='worldtt';
-  const draw=mode=>{ const rows=log.slice().reverse().filter(e=>mode==='all'||isBig(e)).slice(0,120);
+  const isMove=e=>e.kind==='injury'||e.kind==='transfer';
+  const pass=(e,mode)=>mode==='all'?true:mode==='big'?isBig(e):isMove(e);
+  const draw=mode=>{ const rows=log.slice().reverse().filter(e=>pass(e,mode)).slice(0,120);
     list.innerHTML = rows.map(feedRow).join('') || '<div class="empty">Nothing here yet.</div>'; };
   bar.querySelectorAll('.ftog').forEach(b=>b.onclick=()=>{ bar.querySelectorAll('.ftog').forEach(x=>x.classList.remove('on')); b.classList.add('on'); draw(b.dataset.f); });
   draw('all');
