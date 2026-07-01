@@ -150,6 +150,8 @@ tr.rrow{cursor:pointer} tr.rrow:hover{background:var(--panel2)}
   color:#3a2e00;background:linear-gradient(90deg,#ffd75e,#f4b73d);border:1px solid #d99a1c;text-transform:uppercase;letter-spacing:.3px}
 .leadmark .flag{margin:0 2px;vertical-align:-1px}
 .calrace.clk,.logrow.clk{cursor:pointer}
+.racelink{cursor:pointer}
+.racelink:hover{text-decoration:underline;text-decoration-color:var(--mut)}
 .calrace.clk:hover,.logrow.clk:hover{background:var(--panel2)}
 .raceed{border-left:2px solid var(--line);padding:2px 0 6px 10px;margin:0 0 8px}
 .raceedh{font-family:var(--disp);font-size:13px;color:var(--mut)}
@@ -272,6 +274,63 @@ tr.mktactive td{background:rgba(63,179,107,.08)}
 <script>
 const CITY_NAMES={"France":["Paris","Lyon","Marseille","Bordeaux","Toulouse","Nantes","Strasbourg","Rennes","Grenoble","Montpellier","Nice","Rouen","Toulon","Lille","Reims","Saint-Étienne","Brest","Le Havre","Dijon","Amiens","Angers","Metz","Clermont-Ferrand","Nancy","Perpignan","Caen","Orléans","Tours","Limoges","Pau","Béziers","Bayonne","Ajaccio","Chambéry","Annecy","Colmar","Troyes","Mulhouse","Besançon","Calais","Dunkerque","Valence","Périgueux","Aurillac","Carcassonne","Albi","Rodez","Auxerre","Châlons","Charleville","Épinal","Laval","Chartres","Arras","Angoulême","Niort","Poitiers","Vannes","Lorient","Saint-Malo"],"Italy":["Roma","Milano","Torino","Napoli","Firenze","Bologna","Venezia","Palermo","Genova","Bari","Catania","Verona","Messina","Padova","Trieste","Taranto","Brescia","Parma","Reggio Calabria","Reggio Emilia","Modena","Prato","Livorno","Cagliari","Perugia","Foggia","Salerno","Rimini","Ferrara","Sassari","Siena","Bergamo","Trento","Udine","Ancona","Pescara","Mantova","Como","Pisa","Arezzo","Lucca","Piacenza","Lecce","Catanzaro","Andria","Novara","Ravenna","Vicenza","Terni","Bolzano","Monza","Forlì","Giugliano","La Spezia","Brindisi","Matera","Potenza","Cosenza","Agrigento","Ragusa"],"Spain":["Madrid","Barcelona","Valencia","Sevilla","Zaragoza","Málaga","Murcia","Palma","Las Palmas","Bilbao","Alicante","Córdoba","Valladolid","Vigo","Gijón","A Coruña","Vitoria","Granada","Elche","Oviedo","Badalona","Cartagena","Terrassa","Jerez","Sabadell","Móstoles","Santa Cruz","Pamplona","Almería","Fuenlabrada","Leganés","Santander","Castellón","Burgos","Albacete","Salamanca","Alcalá","Getafe","Hospitalet","Mataró","Alcorcón","Logroño","Badajoz","Huelva","León","Cádiz","Tarragona","Mérida","Lérida","Lugo","Ourense","Santiago","Cáceres","Melilla","Ceuta","Pontevedra","Alcoy","Ponferrada","Talavera","Úbeda"],"Belgium":["Bruxelles","Antwerpen","Gent","Charleroi","Liège","Brugge","Namur","Leuven","Mons","Aalst","Mechelen","La Louvière","Kortrijk","Hasselt","Ostende","Sint-Niklaas","Tournai","Genk","Seraing","Roeselare","Mouscron","Beveren","Dendermonde","Beringen","Turnhout","Lokeren","Maasmechelen","Wavre","Verviers","Arlon","Tongeren","Soignies","Huy","Sint-Truiden","Herentals","Tienen","Diest","Ieper","Veurne","Poperinge","Diksmuide","Nieuport","Bruges","Deinze","Ronse","Zottegem","Ninove","Asse","Vilvoorde","Hal","Aarschot","Heist-op-den-Berg","Bornem","Puurs","Boom","Kontich","Mortsel","Edegem","Niel","Rumst"],"Netherlands":["Amsterdam","Rotterdam","Den Haag","Utrecht","Eindhoven","Tilburg","Groningen","Almere","Breda","Nijmegen","Enschede","Haarlem","Arnhem","Zaanstad","Amersfoort","Apeldoorn","Den Bosch","Hoofddorp","Zoetermeer","Leiden","Maastricht","Dordrecht","Zwolle","Deventer","Delft","Alkmaar","Helmond","Heerlen","Ede","Purmerend","Leeuwarden","Venlo","Roosendaal","Sittard","Emmen","Vught","Gouda","Hoorn","Alphen","Vlaardingen","Schiedam","Spijkenisse","Lelystad","Nieuwegein","Zeist","Veenendaal","Hardenberg","Oss","Roermond","Bergen op Zoom","Middelburg","Terneuzen","Goes","Vlissingen","Venray","Weert","Vaals","Kerkrade","Brunssum","Landgraaf"],"Colombia":["Bogotá","Medellín","Cali","Barranquilla","Cartagena","Cúcuta","Bucaramanga","Pereira","Santa Marta","Ibagué","Pasto","Manizales","Neiva","Soledad","Armenia","Villavicencio","Soacha","Bello","Montería","Valledupar","Sincelejo","Popayán","Palmira","Floridablanca","Itagüí","Buenaventura","Barrancabermeja","Dos Quebradas","Riohacha","Girardot","Ocaña","Magangué","Mompós","Zipaquirá","Facatativá","Sogamoso","Duitama","Tunja","Chiquinquirá","Barbosa","Girón","Piedecuesta","Pamplona","Aguachica","Lorica","Corozal","Ciénaga","Maicao","Uribia","Arauca","Yopal","Granada","Acacías","Paz de Ariporo"],"Australia":["Sydney","Melbourne","Brisbane","Perth","Adelaide","Gold Coast","Canberra","Newcastle","Wollongong","Sunshine Coast","Hobart","Geelong","Townsville","Cairns","Darwin","Toowoomba","Ballarat","Bendigo","Albury","Mackay","Launceston","Rockhampton","Bunbury","Bundaberg","Mildura","Shepparton","Gladstone","Tamworth","Orange","Dubbo","Wagga Wagga","Broken Hill","Port Augusta","Whyalla","Alice Springs","Palmerston","Wodonga","Queanbeyan","Bathurst","Armidale","Lismore","Grafton","Coffs Harbour","Port Macquarie","Taree","Maitland","Cessnock","Singleton"],"United Kingdom":["London","Manchester","Birmingham","Leeds","Glasgow","Sheffield","Edinburgh","Liverpool","Bristol","Cardiff","Leicester","Coventry","Nottingham","Newcastle","Belfast","Southampton","Brighton","Plymouth","Hull","Wolverhampton","Derby","Stoke","Reading","Sunderland","Preston","Swansea","Newport","Aberdeen","Dundee","Inverness","Exeter","Oxford","Cambridge","Bath","Salisbury","Canterbury","Winchester","Norwich","Ipswich","Lincoln","Gloucester","Worcester","Hereford","Chester","York","Durham","Carlisle","Lancaster","Kendal","Shrewsbury","Telford","Walsall","Dudley","Sandwell","Solihull","Swindon","Slough","Guildford","Crawley","Eastbourne"],"China":["Beijing","Shanghai","Guangzhou","Shenzhen","Chengdu","Tianjin","Wuhan","Dongguan","Chongqing","Nanjing","Xi'an","Hangzhou","Shenyang","Harbin","Zhengzhou","Qingdao","Foshan","Dalian","Jinan","Changsha","Kunming","Changchun","Shijiazhuang","Fuzhou","Urumqi","Suzhou","Ningbo","Hefei","Nanchang","Guiyang","Taiyuan","Lanzhou","Xuzhou"],"Denmark":["København","Aarhus","Odense","Aalborg","Esbjerg","Randers","Kolding","Horsens","Vejle","Roskilde","Herning","Silkeborg","Helsingør","Næstved","Fredericia","Viborg","Holstebro","Slagelse","Hillerød","Sønderborg","Holbæk","Frederiksberg","Gentofte","Gladsaxe","Hvidovre","Ballerup","Rødovre","Albertslund","Brøndby","Frederikssund","Køge","Ringsted","Kalundborg","Nykøbing","Nakskov","Maribo","Vordingborg","Sorø","Haslev","Faxe","Stevns","Greve","Solrød","Vallensbaek"],"Germany":["Berlin","Hamburg","München","Köln","Frankfurt","Stuttgart","Düsseldorf","Leipzig","Dortmund","Essen","Bremen","Dresden","Hannover","Nürnberg","Duisburg","Bochum","Wuppertal","Bielefeld","Bonn","Mannheim","Karlsruhe","Augsburg","Wiesbaden","Mönchengladbach","Gelsenkirchen","Braunschweig","Kiel","Chemnitz","Aachen","Halle","Magdeburg","Freiburg","Krefeld","Lübeck","Erfurt","Rostock","Mainz","Kassel","Hagen","Hamm","Saarbrücken","Solingen","Osnabrück","Ludwigshafen","Leverkusen","Oldenburg","Neuss","Heidelberg","Darmstadt","Paderborn","Regensburg","Ingolstadt","Würzburg","Fürth","Wolfsburg","Ulm","Heilbronn","Pforzheim","Offenbach","Göttingen"],"Argentina":["Buenos Aires","Córdoba","Rosario","Mendoza","San Miguel","La Plata","Mar del Plata","Salta","Santa Fe","San Juan","Resistencia","Tucumán","Neuquén","Corrientes","Posadas","Bahía Blanca","Paraná","Formosa","San Luis","La Rioja","Catamarca","Jujuy","Río Gallegos","Ushuaia","Viedma","Rawson","Santa Rosa","Quilmes","Lomas de Zamora","Berazategui","Florencio Varela","Merlo","Moreno","Tigre","San Isidro","Vicente López","San Martín","Tres de Febrero","La Matanza","Avellaneda","Lanús","Banfield","Temperley","Adrogué","Monte Grande","Ezeiza","Cañuelas","Luján","Mercedes","Chivilcoy","Chacabuco","Junín","Pergamino","Ramallo","San Pedro","Zárate","Campana","Escobar","Pilar","Tandil"],"Norway":["Oslo","Bergen","Trondheim","Stavanger","Drammen","Fredrikstad","Porsgrunn","Kristiansand","Ålesund","Tønsberg","Moss","Bodø","Tromsø","Sandefjord","Larvik","Halden","Lillehammer","Hamar","Gjøvik","Molde","Steinkjer","Namsos","Harstad","Alta","Kongsberg","Skien","Notodden","Arendal","Farsund","Mandal","Flekkefjord","Egersund","Sandnes","Haugesund","Stord","Askøy","Kristiansund","Stjørdal","Narvik","Hammerfest","Vadsø","Vardø","Kirkenes"],"New Zealand":["Auckland","Wellington","Christchurch","Hamilton","Tauranga","Napier","Dunedin","Palmerston North","Nelson","Rotorua","Whangarei","Invercargill","Hastings","New Plymouth","Porirua","Queenstown","Timaru","Blenheim","Gisborne","Whanganui","Kapiti","Upper Hutt","Lower Hutt","Masterton","Greymouth","Oamaru","Ashburton","Westport","Hokitika","Alexandra","Cromwell","Rangiora","Kaikoura","Picton","Richmond","Motueka","Takaka","Murchison","Reefton","Ross","Hari Hari","Whataroa","Fox Glacier","Franz Josef","Haast","Wanaka","Arrowtown","Clyde","Lawrence","Milton","Balclutha","Gore","Winton","Riverton","Wyndham","Tokanui","Fortrose","Bluff","Te Anau","Milford"],"Japan":["Tokyo","Osaka","Nagoya","Sapporo","Fukuoka","Kobe","Kyoto","Kawasaki","Saitama","Hiroshima","Sendai","Chiba","Kitakyushu","Setagaya","Sakai","Niigata","Hamamatsu","Kumamoto","Sagamihara","Shizuoka","Okayama","Kagoshima","Funabashi","Hachioji","Higashiosaka","Matsuyama","Matsudo","Kanazawa","Utsunomiya","Oita","Toyama","Nagasaki"],"United States":["New York","Los Angeles","Chicago","Houston","Phoenix","Philadelphia","San Antonio","San Diego","Dallas","San Jose","Austin","Jacksonville","Fort Worth","Columbus","Charlotte","Indianapolis","San Francisco","Seattle","Denver","Nashville","Boston","El Paso","Portland","Las Vegas","Memphis","Louisville","Baltimore","Milwaukee","Albuquerque","Tucson","Fresno","Sacramento","Atlanta","Miami","Minneapolis"],"Portugal":["Lisboa","Porto","Amadora","Braga","Setúbal","Coimbra","Funchal","Almada","Agualva","Aveiro","Guimarães","Viseu","Faro","Évora","Viana do Castelo","Gondomar","Matosinhos","Leiria","Seixal","Odivelas","Cascais","Sintra","Loures","Amarante","Lamego","Chaves","Bragança","Mirandela","Macedo de Cavaleiros","Montalegre","Murça","Peso da Régua","Torre de Moncorvo","Mogadouro","Freixo","Miranda do Douro","Moncorvo","Mesão Frio","Baião","Marco","Penafiel","Paredes","Lousada","Felgueiras","Paços de Ferreira","Santo Tirso","Famalicão","Barcelos","Póvoa de Varzim","Vila do Conde","Espinho","Ovar"],"Venezuela":["Caracas","Maracaibo","Valencia","Barquisimeto","Maracay","Barcelona","Maturín","San Cristóbal","Ciudad Guayana","Cumana","Cabimas","Petare","Mérida","Barinas","Punto Fijo","Acarigua","Güiria","Porlamar","Los Teques"],"Czech Republic":["Praha","Brno","Ostrava","Plzeň","Liberec","Olomouc","Ústí nad Labem","Hradec Králové","České Budějovice","Pardubice","Zlín","Kladno","Most","Opava","Frýdek-Místek","Jihlava","Teplice"],"Poland":["Warszawa","Kraków","Łódź","Wrocław","Poznań","Gdańsk","Szczecin","Bydgoszcz","Lublin","Katowice","Białystok","Gdynia","Częstochowa","Radom","Sosnowiec","Toruń","Kielce","Rzeszów","Bytom","Gliwice","Zabrze","Olsztyn","Bielsko-Biała","Rybnik","Ruda Śląska","Tychy","Dąbrowa Górnicza","Płock","Elbląg","Opole","Wałbrzych","Zielona Góra","Włocławek","Tarnów","Chorzów","Koszalin","Legnica","Kalisz","Grudziądz","Słupsk","Piotrków","Jaworzno","Jastrzębie","Nowy Sącz","Jelenia Góra","Konin","Siedlce","Mysłowice"],"Switzerland":["Zürich","Genève","Basel","Bern","Lausanne","Winterthur","Luzern","St. Gallen","Lugano","Biel","Thun","Köniz","La Chaux-de-Fonds","Schaffhausen","Fribourg","Chur","Vernier","Neuchâtel","Aarau","Baden","Olten","Solothurn","Zug","Frauenfeld","Herisau","Sion","Sierre","Monthey","Martigny","Nyon","Morges","Yverdon","Delémont","Porrentruy","Liestal","Muttenz","Reinach","Arlesheim","Allschwil","Birsfelden","Binningen"],"Austria":["Wien","Graz","Linz","Salzburg","Innsbruck","Klagenfurt","Villach","Wels","Sankt Pölten","Dornbirn","Steyr","Wiener Neustadt","Feldkirch","Bregenz","Leonding","Klosterneuburg","Leoben","Kapfenberg","Bruck","Mürzzuschlag","Judenburg","Knittelfeld","Zeltweg","Voitsberg","Leibnitz","Deutschlandsberg","Radkersburg","Hartberg","Weiz","Gleisdorf","Feldbach","Bad Radkersburg","Fürstenfeld","Oberwart","Güssing","Eisenstadt","Mattersburg","Neusiedl"],"Russia":["Moskva","Sankt-Peterburg","Novosibirsk","Yekaterinburg","Kazan","Nizhny Novgorod","Chelyabinsk","Omsk","Samara","Ufa","Rostov-na-Donu","Krasnoyarsk","Perm","Voronezh","Volgograd","Krasnodar","Saratov","Tyumen","Tolyatti","Izhevsk"],"Malaysia":["Kuala Lumpur","George Town","Ipoh","Shah Alam","Johor Bahru","Petaling Jaya","Kota Kinabalu","Kuching","Subang Jaya","Klang","Ampang Jaya","Iskandar Puteri","Putrajaya","Seremban","Ampang","Kajang","Melaka","Muar","Batu Pahat","Kluang","Skudai","Kota Bharu","Kuala Terengganu","Alor Setar","Kangar","Sungai Petani","Butterworth","Taiping","Teluk Intan","Sibu","Miri","Bintulu","Kota Belud","Sandakan","Tawau","Keningau","Lahad Datu","Semporna","Beaufort","Cyberjaya","Rawang","Bangi","Nilai","Port Dickson","Bahau","Tampin","Rompin","Segamat","Yong Peng","Kulai","Pontian","Mersing","Endau","Kota Tinggi","Kulim","Pendang","Yan","Kuala Kedah","Langkawi","Jitra"],"Guatemala":["Guatemala City","Mixco","Villa Nueva","Quetzaltenango","San Juan Sacatepéquez","Escuintla","Huehuetenango","Cobán","Chiquimula","Zacapa","Totonicapán","Sololá","Antigua","Puerto Barrios"],"Turkey":["Istanbul","Ankara","Izmir","Bursa","Adana","Gaziantep","Konya","Antalya","Kayseri","Mersin","Eskişehir","Diyarbakır","Samsun","Denizli","Adapazarı","Malatya","Kahramanmaraş","Erzurum"],"Algeria":["Alger","Oran","Constantine","Annaba","Blida","Batna","Sétif","Tizi Ouzou","Djelfa","Béjaïa","Biskra","Tlemcen","Sidi Bel Abbès","Skikda"],"South Africa":["Johannesburg","Cape Town","Durban","Pretoria","Port Elizabeth","Bloemfontein","East London","Pietermaritzburg","Benoni","Boksburg","Tembisa","Soweto","Katlehong","Port Shepstone"],"Slovenia":["Ljubljana","Maribor","Celje","Kranj","Velenje","Koper","Novo Mesto","Ptuj","Murska Sobota","Nova Gorica","Domžale","Kamnik","Škofja Loka","Trbovlje","Izola","Piran","Slovenj Gradec","Jesenice","Radovljica","Medvode","Sežana","Postojna","Ajdovščina","Idrija","Tolmin","Litija","Ribnica","Kočevje","Metlika","Brežice","Krško","Sevnica","Laško","Žalec","Šentjur","Rogaška Slatina","Slovenska Bistrica","Ormož","Ljutomer","Lendava","Gornja Radgona","Radenci"],"Thailand":["Bangkok","Nonthaburi","Pak Kret","Hat Yai","Chiang Mai","Pattaya","Khon Kaen","Udon Thani","Nakhon Ratchasima","Chiang Rai","Ubon Ratchathani","Nakhon Si Thammarat","Surat Thani","Nakhon Sawan","Phitsanulok","Lampang","Rayong","Chonburi","Samut Prakan","Pathum Thani","Samut Sakhon","Nakhon Pathom","Ayutthaya","Ang Thong","Saraburi","Lop Buri","Sing Buri","Chai Nat","Suphanburi","Kanchanaburi","Ratchaburi","Phetchaburi","Prachuap Khiri Khan","Chumphon","Ranong","Phangnga","Phuket","Krabi","Trang","Satun","Songkhla","Pattani","Yala","Narathiwat","Buriram","Surin","Si Sa Ket","Roi Et","Kalasin","Mahasarakham","Yasothon","Mukdahan","Nakhon Phanom","Sakon Nakhon","Nong Khai","Loei","Nong Bua Lam Phu","Chaiyaphum","Phetchabun","Tak"],"Indonesia":["Jakarta","Surabaya","Bandung","Medan","Semarang","Palembang","Makassar","Depok","Tangerang","Bekasi","South Tangerang"],"Canada":["Toronto","Vancouver","Montréal","Calgary","Ottawa","Edmonton","Mississauga","Winnipeg","Quebec City","Hamilton","Kitchener","London","Halifax","Victoria"],"Costa Rica":["San José","Cartago","Heredia","Alajuela","Liberia","Limón","Puntarenas","Quesada","Nicoya","Turrialba"],"Kazakhstan":["Almaty","Nur-Sultan","Shymkent","Karaganda","Aktobe","Taraz","Oskemen","Semey","Petropavl","Atyrau","Kostanay","Kyzylorda","Uralsk","Temirtau","Pavlodar","Ekibastuz","Rudny","Zhezkazgan","Balkhash","Kentau","Arys","Turkistan","Sauran","Otrar","Zhetysay","Khromtau","Alga","Embi","Shalkar","Zhympity","Aksai","Zhanaozen","Aktau","Zhetibay","Shetpe","Beyneu","Saryozek","Taldykorgan","Kapshagay","Tekeli","Zharkent","Ushtobe","Lepsinsk","Kopalsk","Sarkand","Shonzhy","Charyn","Kegen","Shelek","Talgar","Issyk","Bakanas","Priozersk","Akshi","Moyynkum","Shu","Merke","Chu","Lugovoy","Sortobe"],"Philippines":["Manila","Quezon City","Davao","Cebu","Zamboanga","Taguig","Antipolo","Pasig","Cagayan de Oro","Parañaque"],"Ireland":["Dublin","Cork","Limerick","Galway","Waterford","Drogheda","Dundalk","Kilkenny","Sligo","Wexford","Tralee","Ennis","Carlow","Navan","Mullingar","Tullamore","Portlaoise","Athlone","Roscommon","Castlebar","Letterkenny","Monaghan","Cavan","Longford","Clonmel","Thurles","Nenagh","Tipperary","Cashel","Fermoy","Cobh","Midleton","Mallow","Bandon","Skibbereen","Clonakilty","Bantry","Kenmare","Killarney","Listowel","Ballina","Westport","Clifden","Tuam","Loughrea","Ballinasloe","Birr","Portumna","Roscrea","Templemore","Borrisokane","Killaloe","Shannon","Sixmilebridge","Newmarket-on-Fergus","Kilrush","Kilkee","Ennistymon","Lisdoonvarna","Ballyvaughan"],"Ecuador":["Quito","Guayaquil","Cuenca","Ambato","Manta","Portoviejo","Machala","Duran","Loja","Ibarra"],"United Arab Emirates":["Dubai","Abu Dhabi","Sharjah","Al Ain","Ajman","Ras al-Khaimah","Fujairah","Umm al-Quwain"],"Sweden":["Stockholm","Göteborg","Malmö","Uppsala","Västerås","Örebro","Linköping","Helsingborg","Jönköping","Norrköping","Umeå","Lund","Gävle","Borås"],"Chile":["Santiago","Valparaíso","Concepción","Antofagasta","La Serena","Arica","Temuco","Puerto Montt","Rancagua","Viña del Mar","Talca","Iquique","Copiapó"],"Morocco":["Casablanca","Rabat","Fès","Marrakech","Agadir","Tanger","Meknès","Oujda","Kénitra","Tétouan","Safi","El Jadida"],"Uruguay":["Montevideo","Salto","Paysandú","Las Piedras","Rivera","Maldonado","Tacuarembó","Melo","Mercedes","Artigas"],"Estonia":["Tallinn","Tartu","Narva","Pärnu","Kohtla-Järve","Viljandi","Rakvere","Maardu","Sillamäe","Kuressaare"],"Eritrea":["Asmara","Keren","Massawa","Assab","Mendefera","Adi Keyh","Barentu","Dekemhare"],"Brazil":["São Paulo","Rio de Janeiro","Brasília","Salvador","Fortaleza","Belo Horizonte","Manaus","Curitiba","Recife","Porto Alegre","Belém","Goiânia","Guarulhos"],"Mexico":["México City","Guadalajara","Monterrey","Puebla","Tijuana","León","Juárez","Mérida","Zapopan","Cancún","Acapulco","Querétaro","San Luis Potosí"],"Hungary":["Budapest","Debrecen","Miskolc","Szeged","Pécs","Győr","Nyíregyháza","Kecskemét","Székesfehérvár"],"Rwanda":["Kigali","Butare","Gisenyi","Ruhengeri","Cyangugu","Byumba","Kibungo"],"Hong Kong":["Kowloon","Central","Sha Tin","Tsuen Wan","Tuen Mun","Yuen Long","Tseung Kwan O"],"Burkina Faso":["Ouagadougou","Bobo-Dioulasso","Koudougou","Ouahigouya","Banfora","Kaya","Tenkodogo"],"Angola":["Luanda","Huambo","Lobito","Benguela","Lubango","Malanje","Cabinda","Soyo","Kuito","Menongue"],"Panama":["Panama City","Colón","David","La Chorrera","Santiago","Chitré","Almirante","Las Tablas"],"Slovakia":["Bratislava","Košice","Prešov","Žilina","Banská Bystrica","Nitra","Trnava","Martin"],"Taiwan":["Taipei","Kaohsiung","Taichung","Tainan","Hsinchu","Keelung","Chiayi","Taoyuan"],"Bolivia":["La Paz","Santa Cruz","Cochabamba","Sucre","Oruro","Potosí","Tarija","Trinidad"],"Luxembourg":["Luxembourg","Esch-sur-Alzette","Differdange","Dudelange","Pétange","Ettelbruck","Diekirch","Wiltz","Clervaux","Vianden","Echternach","Grevenmacher","Remich","Mondorf","Bettembourg","Rumelange","Kayl","Schifflange","Sanem","Belvaux","Oberkorn","Rodange","Bascharage","Garnich","Kehlen","Steinfort","Koerich","Capellen","Bertrange","Strassen","Mamer","Leudelange","Hesperange","Roeser","Bous","Mondercange","Frisange","Stadtbredimus","Schengen","Wellenstein","Wormeldange","Mertert","Wasserbillig","Troisvierges","Weiswampach","Wincrange","Kiischpelt","Goesdorf","Lac de la Haute-Sûre","Esch-sur-Sûre","Bourscheid","Bettendorf","Moestroff","Reisdorf","Beaufort","Larochette","Mersch","Steinsel","Walferdange","Lorentzweiler"],"South Korea":["Seoul","Busan","Incheon","Daegu","Daejeon","Gwangju","Suwon","Ulsan","Changwon"],"Romania":["București","Cluj-Napoca","Timișoara","Iași","Constanța","Craiova","Brașov","Galați","Ploiești"],"Mali":["Bamako","Sikasso","Mopti","Ségou","Kayes","Gao","Koutiala","Kati"],"Latvia":["Riga","Daugavpils","Jelgava","Liepāja","Jūrmala","Rēzekne","Valmiera"],"Israel":["Tel Aviv","Jerusalem","Haifa","Rishon LeZion","Petah Tikva","Ashdod","Beersheba","Netanya","Holon","Bnei Brak"],"Mauritius":["Port Louis","Vacoas","Beau Bassin","Curepipe","Quatre Bornes","Rose Hill","Mahébourg"],"Uzbekistan":["Tashkent","Samarkand","Namangan","Andijan","Bukhara","Nukus","Fergana","Kokand"],"Iran":["Tehran","Mashhad","Isfahan","Karaj","Tabriz","Shiraz","Ahvaz","Qom"],"India":["Mumbai","Delhi","Bengaluru","Hyderabad","Ahmedabad","Chennai","Kolkata","Pune","Jaipur"],"Mongolia":["Ulaanbaatar","Erdenet","Darkhan","Choibalsan","Ölgii"],"Namibia":["Windhoek","Rundu","Walvis Bay","Swakopmund","Oshakati","Rehoboth"],"Saudi Arabia":["Riyadh","Jeddah","Mecca","Medina","Dammam","Taif","Tabuk","Buraidah"],"Ethiopia":["Addis Abeba","Dire Dawa","Mekelle","Gondar","Hawassa","Bahir Dar","Jimma"],"Belize":["Belize City","San Ignacio","Orange Walk","Belmopan","Dangriga"],"Dominican Republic":["Santo Domingo","Santiago","La Romana","San Pedro de Macorís","La Vega","San Francisco de Macorís","San Cristóbal","Puerto Plata","Higüey","Barahona","Mao","Azua","Bonao","Cotuí","Nagua","Samaná","Sánchez","El Seibo","Hato Mayor","Miches","Sabana de la Mar","Montecristi","Dajabón","Luperón","Sosúa","Cabarete","Río San Juan","Gaspar Hernández","Salcedo","Tenares","Villa Tapia","Castillo","Pimentel","Villa Riva","Arenoso","Jarabacoa","Constanza","San José de las Matas","Moca","Esperanza","Licey al Medio","Tamboril","San José de Ocoa","Baní","Peravia","Cambita","Yayas de Viajama","Pedernales","Oviedo","Enriquillo","Paraíso","Juancho","Polo","Los Patos","Cabral","Duvergé","La Descubierta","Jimaní","Mella","Comendador"],"Singapore":["Singapore","Jurong","Woodlands","Tampines","Ang Mo Kio"],"Ukraine":["Kyiv","Kharkiv","Odessa","Dnipro","Donetsk","Zaporizhzhia","Lviv"],"Lithuania":["Vilnius","Kaunas","Klaipėda","Šiauliai","Panevėžys"],"Belarus":["Minsk","Gomel","Mogilev","Vitebsk","Grodno","Brest"],"Cameroon":["Yaoundé","Douala","Garoua","Bamenda","Maroua","Bafoussam"],"Cuba":["La Habana","Santiago de Cuba","Camagüey","Holguín","Santa Clara","Guantánamo"],"Benin":["Cotonou","Porto-Novo","Parakou","Abomey","Kandi","Lokossa"],"Serbia":["Beograd","Novi Sad","Niš","Kragujevac","Subotica","Zrenjanin"],"Finland":["Helsinki","Tampere","Turku","Oulu","Lahti","Kuopio","Espoo","Vantaa"],"Greece":["Athinai","Thessaloniki","Patras","Heraklion","Larissa","Volos","Ioannina","Chania"],"Peru":["Lima","Arequipa","Trujillo","Chiclayo","Piura","Iquitos","Cusco","Huancayo"],"Bulgaria":["Sofia","Plovdiv","Varna","Burgas","Ruse","Stara Zagora","Pleven","Sliven"],"Azerbaijan":["Baku","Ganja","Sumqayit","Mingachevir","Lankaran","Shirvan"],"Uganda":["Kampala","Gulu","Lira","Jinja","Mbale","Mbarara","Masaka"],"Oman":["Muscat","Salalah","Sohar","Nizwa","Sur","Ibri"],"Kyrgyzstan":["Bishkek","Osh","Jalal-Abad","Karakol","Tokmok"],"Croatia":["Zagreb","Split","Rijeka","Osijek","Zadar"],"Malta":["Valletta","Birkirkara","Qormi","Mosta","San Ġwann"],"Laos":["Vientiane","Pakse","Savannakhet","Luang Prabang"],"Bahrain":["Manama","Muharraq","Riffa","Hamad Town"],"Iraq":["Baghdad","Basra","Mosul","Erbil"],"Vietnam":["Hanoi","Ho Chi Minh City","Da Nang","Hai Phong"],"Albania":["Tirana","Durrës","Vlorë","Shkodër"],"Tunisia":["Tunis","Sfax","Sousse","Kairouan"],"DR Congo":["Kinshasa","Lubumbashi","Mbuji-Mayi","Kananga"],"Ghana":["Accra","Kumasi","Tamale","Sekondi-Takoradi"],"Zimbabwe":["Harare","Bulawayo","Chitungwiza","Mutare"],"Andorra":["Andorra la Vella","Escaldes-Engordany"],"Honduras":["Tegucigalpa","San Pedro Sula","Choloma","La Ceiba"],"Syria":["Damascus","Aleppo","Homs","Latakia"],"Paraguay":["Asunción","Ciudad del Este","San Lorenzo","Lambaré"],"Egypt":["Cairo","Alexandria","Giza","Shubra el-Kheima"],"Ivory Coast":["Abidjan","Bouaké","Daloa"],"Senegal":["Dakar","Thiès","Kaolack"],"Puerto Rico":["San Juan","Bayamón"],"Cyprus":["Nicosia","Limassol"],"Bermuda":["Hamilton","Saint George"],"Kosovo":["Pristina","Prizren"],"Lesotho":["Maseru","Teyateyaneng"],"Pakistan":["Karachi","Lahore"],"Nigeria":["Lagos","Kano","Ibadan","Abuja"],"Kenya":["Nairobi","Mombasa"],"Guam":["Hagåtña","Dededo"],"Monaco":["Monte-Carlo","Monaco-Ville"],"Grenada":["St. George's","Gouyave"],"Macau":["Macau","Taipa"],"Afghanistan":["Kabul","Kandahar"],"Iceland":["Reykjavik","Akureyri"],"Liechtenstein":["Vaduz","Schaan"],"Qatar":["Doha","Al Rayyan"],"Curaçao":["Willemstad","Barber"],"North Macedonia":["Skopje","Bitola","Kumanovo","Tetovo","Ohrid","Strumica"],"Guyana":["Georgetown","Linden","New Amsterdam","Anna Regina","Bartica"],"Trinidad and Tobago":["Port of Spain","San Fernando","Arima","Chaguanas","Scarborough"]};
 const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'nl','Colombia':'co','Australia':'au','United Kingdom':'gb','China':'cn','Denmark':'dk','Germany':'de','Argentina':'ar','Norway':'no','New Zealand':'nz','Japan':'jp','United States':'us','Portugal':'pt','Venezuela':'ve','Czech Republic':'cz','Poland':'pl','Switzerland':'ch','Austria':'at','Russia':'ru','Malaysia':'my','Guatemala':'gt','Turkey':'tr','Algeria':'dz','South Africa':'za','Slovenia':'si','Thailand':'th','Indonesia':'id','Canada':'ca','Costa Rica':'cr','Kazakhstan':'kz','Philippines':'ph','Ireland':'ie','Ecuador':'ec','United Arab Emirates':'ae','Sweden':'se','Chile':'cl','Morocco':'ma','Uruguay':'uy','Estonia':'ee','Eritrea':'er','Brazil':'br','Mexico':'mx','Hungary':'hu','Rwanda':'rw','Hong Kong':'hk','Burkina Faso':'bf','Angola':'ao','Panama':'pa','Slovakia':'sk','Taiwan':'tw','Bolivia':'bo','Luxembourg':'lu','South Korea':'kr','Romania':'ro','Mali':'ml','Latvia':'lv','Israel':'il','Mauritius':'mu','Uzbekistan':'uz','Iran':'ir','India':'in','Mongolia':'mn','Namibia':'na','Saudi Arabia':'sa','Ethiopia':'et','Belize':'bz','Dominican Republic':'do','Singapore':'sg','Ukraine':'ua','Lithuania':'lt','Belarus':'by','Cameroon':'cm','Cuba':'cu','Benin':'bj','Serbia':'rs','Finland':'fi','Greece':'gr','Peru':'pe','Bulgaria':'bg','Azerbaijan':'az','Uganda':'ug','Oman':'om','Kyrgyzstan':'kg','Croatia':'hr','Malta':'mt','Laos':'la','Bahrain':'bh','Iraq':'iq','Vietnam':'vn','Albania':'al','Tunisia':'tn','DR Congo':'cd','Ghana':'gh','Zimbabwe':'zw','Andorra':'ad','Honduras':'hn','Syria':'sy','Paraguay':'py','Egypt':'eg','Ivory Coast':'ci','Senegal':'sn','Puerto Rico':'pr','Cyprus':'cy','Bermuda':'bm','Kosovo':'xk','Lesotho':'ls','North Macedonia':'mk','Guyana':'gy','Trinidad and Tobago':'tt','Pakistan':'pk','Nigeria':'ng','Kenya':'ke','Guam':'gu','Monaco':'mc','Grenada':'gd','Macau':'mo','Afghanistan':'af','Iceland':'is','Liechtenstein':'li','Qatar':'qa','Curaçao':'cw'};
+/* CycleSim — team sponsors by country.
+   Real companies of the kind that back pro cycling teams. Edit freely:
+   add/remove names, reorder (teams take them top-down per country).
+   Countries with no entry fall back to the team's home city. */
+const SPONSORS = {
+  "France":["Groupama","Cofidis","Decathlon","Crédit Agricole","AG2R","TotalEnergies","Renault","Orange","Carrefour","BNP Paribas","Michelin","Française des Jeux"],
+  "Italy":["Lampre","Bardiani","Eolo","Enel","Eni","Pirelli","Lavazza","Barilla","Generali","UniCredit","Campagnolo","Intesa Sanpaolo"],
+  "Spain":["Movistar","Caja Rural","Kern Pharma","Repsol","BBVA","Santander","Iberdrola","Telefónica","Mapfre","Endesa","Inditex","Mahou"],
+  "Belgium":["Soudal","Colruyt","Lotto","Proximus","KBC","Belfius","Telenet","Bpost","Deceuninck","AB InBev","Etixx","Quick-Step"],
+  "Netherlands":["Jumbo","Rabobank","DSM","Philips","Heineken","ING","KPN","Ahold","Randstad","Gazelle","Shimano","Visma"],
+  "Germany":["Bora","Alpecin","Erdinger","Bayer","Adidas","Allianz","Siemens","Bosch","SAP","DHL","Continental","Telekom"],
+  "United Kingdom":["Ineos","Brother","Barclays","HSBC","Vodafone","Tesco","Jaguar","Rapha","BT","Sky","Halfords","Castrol"],
+  "United States":["Trek","Cannondale","Specialized","EF Education","Garmin","Nike","Coca-Cola","AT&T","Oracle","Ford","Gatorade","SRAM"],
+  "Australia":["Jayco","BikeExchange","Qantas","Telstra","Commonwealth Bank","BHP","Woolworths","Optus","Bendigo Bank","Canyon","Bianchi","Toyota AU"],
+  "Colombia":["Café de Colombia","Bancolombia","EPM","Ecopetrol","Avianca","Postobón","Juan Valdez","Claro","Nutresa","Grupo Éxito","Colanta","Une"],
+  "Denmark":["Uno-X","Novo Nordisk","Carlsberg","Maersk","Lego","Danske Bank","Vestas","Ørsted","Coop","Arla","Grundfos","Saxo Bank"],
+  "Norway":["Uno-X","Equinor","Telenor","DNB","Norsk Hydro","Kongsberg","Statkraft","Yara","Storebrand","Elkjøp","Orkla","Rema"],
+  "Switzerland":["Q36.5","Nestlé","Novartis","Roche","UBS","Rolex","Swatch","Swisscom","Zurich","Lindt","Migros","Scott"],
+  "Slovenia":["Adria Mobil","Krka","Petrol","Telekom Slovenije","NLB","Gorenje","Sava","Mercator","Elan","Pivovarna Laško","Triglav","Pošta"],
+  "Portugal":["Galp","EDP","Sonae","Millennium","NOS","Jerónimo Martins","TAP","Delta","Super Bock","Sporting","Continente","Vodafone PT"],
+  "Austria":["Red Bull","Raiffeisen","OMV","Erste Bank","Voestalpine","Swarovski","Wüstenrot","Spar","KTM","A1","Wien Energie","Gösser"],
+  "Poland":["CCC","Orlen","PKO","Tauron","Lotos","Żabka","LOT","Cyfrowy Polsat","PZU","InPost","Lech","Biedronka"],
+  "Kazakhstan":["Astana","KazMunayGas","Air Astana","Halyk Bank","Kaspi","Samruk","Kazakhtelecom","Kazatomprom","BI Group","Beeline KZ","Tengri","Altel"],
+  "Slovakia":["Tipos","Slovnaft","Tatra Banka","SPP","Orange SK","ESET","Doprastav","Slovenská Sporiteľňa","Rajo","Zlatý Bažant","Kia SK","VÚB"],
+  "Ireland":["An Post","AIB","Bank of Ireland","Ryanair","Kerry Group","Guinness","Eir","Aer Lingus","Smurfit","Glanbia","SuperValu","Three"],
+  "Canada":["Garneau","Bell","RBC","TD","Tim Hortons","Air Canada","Bombardier","Rogers","Sobeys","Canadian Tire","Scotiabank","Molson"],
+  "Japan":["Bridgestone","Shimano","Toyota","Panasonic","Honda","Sony","Rakuten","NTT","Asics","Kirin","Nippon","Yonex"],
+  "China":["Giant","Merida","Huawei","Alibaba","Tencent","Sinopec","China Mobile","Lenovo","Haier","BYD","Meituan","Vivo"],
+  "New Zealand":["Air New Zealand","Fonterra","ANZ","Spark","Zespri","Steinlager","Fisher & Paykel","Kathmandu","2degrees","Vodafone NZ","Icebreaker","Trustpower"],
+  "South Africa":["MTN","Vodacom","Standard Bank","Nedbank","Sasol","Woolworths SA","Discovery","Nando's","Castle","Pick n Pay","Dimension Data","Investec"],
+  "Ecuador":["Banco Pichincha","Claro EC","Cervecería Nacional","Supermaxi","La Favorita","Produbanco","Pronaca","Banco Guayaquil","Movistar EC","Nestlé EC","Marathon","Diners"],
+  "Costa Rica":["Banco Nacional","Dos Pinos","Florida Ice","Grupo ICE","BAC","Café Britt","Pozuelo","Purdy Motor","Coopeguanacaste","Kölbi","Musmanni","Numar"],
+  "Eritrea":["Asmara Brewery","Red Sea Trading","Eritel","Himbol","Bisha Mining","Hidri","Segen","ZaEr","Sabur","Africa Cycling","Nakfa","Massawa"],
+  "Brazil":["Petrobras","Itaú","Bradesco","Vale","Ambev","Natura","Embraer","Magazine Luiza","JBS","Havaianas","Caixa","Skol"],
+  "Mexico":["Cemex","Bimbo","Corona","Telcel","Banorte","Pemex","Femsa","Aeroméxico","Liverpool","Modelo","Oxxo","Banamex"],
+  "Turkey":["Turkish Airlines","Garanti","Arçelik","Turkcell","Koç","Sabancı","Ülker","Beko","Vestel","Efes","Ziraat","BİM"],
+  "Estonia":["Bolt","Swedbank EE","Telia EE","Tallink","Eesti Energia","LHV","A. Le Coq","Nortal","Fortumo","Ekspress","Selver","Elisa"],
+  "Latvia":["airBaltic","Swedbank LV","Rimi","Latvijas Balzams","Latvenergo","Citadele","Tet","Grindeks","Madara","Cēsu Alus","Maxima LV","Dienas"],
+  "Lithuania":["Maxima","Telia LT","Ignitis","Lietuvos Geležinkeliai","Švyturys","Girteka","Rimi LT","SEB LT","Vichy","Achema","Omniva","Kilo"],
+  "Russia":["Katusha","Gazprom","Lukoil","Sberbank","Rostec","Aeroflot","Rosneft","Magnit","Yandex","MTS","Tinkoff","Norilsk"],
+  "Czech Republic":["Škoda","ČEZ","Kooperativa","Pilsner","Komerční Banka","O2 CZ","Agrofert","Sazka","Budvar","Moneta","Alza","Kofola"],
+  "Hungary":["OTP","MOL","Richter","Magyar Telekom","Magyar Posta","Wizz Air","Dreher","Rossmann HU","Waberer's","Gedeon","Spar HU","4iG"],
+  "Israel":["Israel Premier Tech","Bank Hapoalim","El Al","Teva","Strauss","Elbit","Bezeq","Osem","Tnuva","Check Point","Leumi","Wix"],
+  "Ukraine":["Naftogaz","PrivatBank","Kyivstar","Metinvest","Roshen","Nova Poshta","ATB","Obolon","MHP","Ukrzaliznytsia","Silpo","Epicentr"],
+  "Guatemala":["Banco Industrial","Cementos Progreso","Pollo Campero","Gallo","Cervecería CA","Banrural","Tigo GT","Café Guatemala","Corporación BI","Pan American","Bantrab","Claro GT"],
+  "Bolivia":["Banco Mercantil","Paceña","YPFB","Entel","Boliviana de Aviación","Banco Unión","Tigo BO","SOBOCE","Banco BISA","Coca-Cola BO","Viva","BNB"],
+  "Sweden":["Volvo","Ericsson","IKEA","H&M","SEB","Spotify","Scania","Electrolux","Skanska","SAS","ICA","Telia SE"],
+  "Finland":["Nokia","Kone","Neste","Fortum","Fazer","Wärtsilä","Finnair","OP","Valio","Stora Enso","S-Group","Elisa FI"],
+  "Argentina":["YPF","Banco Nación","Quilmes","Aerolíneas","Arcor","Mercado Libre","Techint","Molinos","Personal","Banco Galicia","La Serenísima","Fravega"],
+  "Chile":["Codelco","LATAM","Banco de Chile","Falabella","Cencosud","Entel CL","CCU","Copec","BancoEstado","Watt's","Cristal","Sodimac"],
+  "Uruguay":["Antel","Conaprole","ANCAP","Banco República","Tienda Inglesa","Pilsen","Montes del Plata","UTE","Nuevo Banco","Salus","Ta-Ta","Abitab"],
+  "South Korea":["Samsung","Hyundai","LG","SK","Kia","Naver","Kakao","Lotte","POSCO","Asiana","Shinhan","CJ"],
+  "Rwanda":["Bank of Kigali","RwandAir","MTN Rwanda","Bralirwa","Crystal Ventures","Inyange","Airtel RW","BPR","Skol RW","Kigali Cement","Sonarwa","Radiant"],
+  "Ethiopia":["Ethiopian Airlines","CBE","Dashen","Awash Bank","Ethio Telecom","BGI","Habesha","Moha","Dangote ET","Nyala","Wegagen","Zemen"],
+  "Morocco":["OCP","Maroc Telecom","Royal Air Maroc","Attijariwafa","BMCE","Marjane","Cosumar","Managem","Lesieur","Centrale","Inwi","CIH"],
+  "Algeria":["Sonatrach","Air Algérie","Djezzy","Cevital","Mobilis","Naftal","Condor","BNA","Sonelgaz","Ooredoo DZ","Hamoud","Ifri"]
+};
 /* CycleSim v14 — engine (pure logic, no DOM)
    Implements the locked design: genesis draft, division seeding, 34-phase year,
    geographic assignment, rating-based race sim, division-tiered points,
@@ -362,6 +421,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
 
   // city/place names per nation (teams are named after a city; that city becomes a race)
   const CITIES = (typeof CITY_NAMES!=='undefined' && CITY_NAMES) ? CITY_NAMES : {};
+  const SPONS = (typeof SPONSORS!=='undefined' && SPONSORS) ? SPONSORS : {};
 
   // ---- country geography: name -> [lat, lng, region] --------------------
   const G = {
@@ -517,12 +577,32 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       for(const t of order){ if(pi<pool.length) t.riders.push(pool[pi++]); }
     }
     teams.forEach(t=>{ t.avg = mean(t.riders.map(r=>r.avg)); });
+    assignSponsors(teams);
     return { teams, freeAgents: pool.slice(pi) };
   }
   function cityFor(country, used){
     const list=CITIES[country]||[]; used[country]=used[country]||0;
     if(used[country]<list.length) return list[used[country]++];
     used[country]++; return country+' '+(used[country]-list.length); // fallback if cities exhausted
+  }
+  // pick a sponsor for a team from its country's pool; fall back to the home city
+  function sponsorFor(country, used, homeCity){
+    const list=SPONS[country]||[]; used[country]=used[country]||0;
+    if(used[country]<list.length) return list[used[country]++];
+    used[country]++;
+    if(list.length) return list[(used[country]-1)%list.length]+' '+Math.ceil((used[country])/list.length); // reuse w/ suffix
+    return homeCity||country; // no sponsor pool: keep the city
+  }
+  // give every team a sponsor name (idempotent: only teams not yet sponsored). Keeps homeCity as the host city.
+  function assignSponsors(teams){
+    const used={};
+    teams.forEach(t=>{
+      if(t.sponsored) { used[t.country]=(used[t.country]||0)+1; return; }
+      if(!t.homeCity) t.homeCity=t.name;                 // preserve the city as host
+      t.name=sponsorFor(t.country, used, t.homeCity);
+      t.sponsored=true;
+    });
+    return teams;
   }
   function coreAvg(t){ return mean(t.riders.map(r=>r.avg)); }
   function mean(a){ return a.length? a.reduce((s,x)=>s+x,0)/a.length : 0; }
@@ -574,7 +654,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
         const pool=S.fixtures[d]||[]; if(!pool.length) continue;
         const nR=racesPerDivision((dm[d]||[]).length, d);
         drawFixtures(pool, nR, cc*nR).forEach(f=>races.push({
-          name:f.name, host:f.host, country:f.country, division:d, oneday:f.oneday, tier:'COMMON' }));
+          name:f.name, host:f.host, country:f.country, division:d, oneday:f.oneday, natTour:f.natTour||false, tier:'COMMON' }));
       }
       return { phase:c.phase, type:'COMMON', races };
     });
@@ -948,6 +1028,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
         if(meta.gt) S.gt[r.name]=(S.gt[r.name]||0)+1; }); });
     let stages;
     if(meta.gt) stages=buildStages('gt');
+    else if(meta.natTour) stages=buildStages(randInt(5,10));      // national tours: 5–10 days
     else if(meta.oneday===false) stages=buildStages(randInt(3,7));
     else stages=buildStages('oneday', meta.terrain);
     const riders=entries.map(e=>{ const sf=(S.form&&S.form[e.rider.name])||1;
@@ -955,7 +1036,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
         return {name:e.rider.name, teamId:e.teamId, country:e.rider.country,
           rider:e.rider, gc:0, pts:0, kom:0, sprintPts:0, out:false, energy:100, time:0, formMul:sf*rf}; });
     return { division, name:meta.name, host:meta.host, country:meta.country||meta.host,
-      tier:tierFor(division,{special:meta.tier?meta:null}), gt:meta.gt||null,
+      tier:tierFor(division,{special:meta.tier?meta:null}), gt:meta.gt||null, natTour:meta.natTour||false,
       nStages:stages.length, teams:teams.map(t=>t.id),
       stages, riders, stageResults:[], cur:0, done:false, abandons:[] };
   }
@@ -1202,11 +1283,22 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
   // seeded into each division (a D1 city -> a D1 race, etc.). Fixed thereafter.
   function buildFixtures(teams){
     const fx={1:[],2:[],3:[],4:[]}; const dm=divisionMap(teams);
+    // one national tour per country (its first team), except FR/IT/ES which already have Grand Tours
+    const GT_NATIONS=new Set(['France','Italy','Spain']);
+    const flagship=new Set(); const seenC={};
+    teams.forEach(t=>{ if(!GT_NATIONS.has(t.country) && !seenC[t.country]){ seenC[t.country]=1; flagship.add(t.id); } });
     [1,2,3,4].forEach(d=>{ dm[d].forEach((t,i)=>{
-      const oneday=(i%2===0); const city=t.homeCity||t.name;
-      fx[d].push({ name:(oneday?'Gran Premio ':'Tour de ')+city, host:city,
-                   country:t.country, terrain:TERRAINS[(Math.random()*TERRAINS.length)|0],
-                   division:d, oneday });
+      const city=t.homeCity||t.name;
+      if(flagship.has(t.id)){
+        const cname=fullCountry(t.country);
+        fx[d].push({ name:'Tour of '+cname, host:cname, country:t.country,
+                     terrain:'MTN', division:d, oneday:false, natTour:true });
+      } else {
+        const oneday=(i%2===0);
+        fx[d].push({ name:(oneday?'Gran Premio ':'Tour de ')+city, host:city,
+                     country:t.country, terrain:TERRAINS[(Math.random()*TERRAINS.length)|0],
+                     division:d, oneday });
+      }
     }); });
     return fx;
   }
@@ -1450,7 +1542,7 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
     // prune ranking ledgers to the rolling window (+margin) to keep saves small
     const keep=e=> (S.abs - e.abs) < 45;
     return { v:2, year:S.year, phase:S.phase, abs:S.abs, commonCount:S.commonCount,
-      teams:S.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity, country:t.country, division:t.division, avg:t.avg,
+      teams:S.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity, country:t.country, division:t.division, avg:t.avg, sponsored:t.sponsored,
         phasesByDivision:t.phasesByDivision, riders:t.riders.map(rid) })),
       freeAgents:(S.freeAgents||[]).map(rid),
       ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep), territoryPts:pruneTerritory(S.territoryPts), raceHistory:S.raceHistory||{},
@@ -1459,8 +1551,9 @@ const CC={'France':'fr','Italy':'it','Spain':'es','Belgium':'be','Netherlands':'
       champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketPool:S.marketPool, marketLog:S.marketLog, history:S.history, majorWins:(S.majorWins||[]).slice(-400), log:(S.log||[]).slice(-1500), form:S.form||{} };
   }
   function deserialize(obj){
-    const teams=obj.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity||t.name, country:t.country, division:t.division, avg:t.avg,
+    const teams=obj.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity||t.name, country:t.country, division:t.division, avg:t.avg, sponsored:t.sponsored,
       phasesByDivision:t.phasesByDivision||{}, riders:t.riders.map(r=>({...r})) }));
+    assignSponsors(teams);   // give pre-sponsor saves a sponsor (keeps homeCity as host city)
     const teamById={}; teams.forEach(t=>teamById[t.id]=t);
     const riderTeam={}, riderCountry={};
     teams.forEach(t=>t.riders.forEach(r=>{ riderTeam[r.name]=t.id; riderCountry[r.name]=r.country; }));
@@ -1533,7 +1626,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0037 · 2026-06-29';
+const BUILD='v14 · build 0039 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1664,7 +1757,8 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 document.addEventListener('click', e=>{
   if(!S) return;
   const rl=e.target.closest('.rl'); if(rl){ openRider(rl.dataset.r); return; }
-  const tl=e.target.closest('.tl'); if(tl){ selTeamId=+tl.dataset.t; tab='team'; setTab(); render(); }
+  const tl=e.target.closest('.tl'); if(tl){ selTeamId=+tl.dataset.t; tab='team'; setTab(); render(); return; }
+  const rc=e.target.closest('[data-race]'); if(rc){ openRaceHistory(rc.dataset.race); return; }
 });
 function closeModal(){ $('modal').style.display='none'; }
 function findRider(name){ const tid=S.riderTeam[name]; const t=S.teamById[tid];
@@ -1690,10 +1784,10 @@ function palmaresBlock(entries){
   let h='';
   if(titles.length) h+='<ul class="palm">'+titles.map(palmaresLine).join('')+'</ul>';
   if(grouped.length){ h+='<div class="palmh">Race wins</div><ul class="palm">'+
-    grouped.slice(0,40).map(g=>'<li><span class="win">'+g.race+(g.ys.length>1?' <b>×'+g.ys.length+'</b>':'')+'</span> <span class="pwhen">'+g.ys.map(y=>dyear(y)).join(', ')+'</span></li>').join('')+'</ul>'; }
+    grouped.slice(0,40).map(g=>'<li><span class="win racelink" data-race="'+attrEsc(g.race)+'">'+g.race+(g.ys.length>1?' <b>×'+g.ys.length+'</b>':'')+'</span> <span class="pwhen">'+g.ys.map(y=>dyear(y)).join(', ')+'</span></li>').join('')+'</ul>'; }
   const stKeys=Object.keys(stBy);
   if(stKeys.length){ h+='<div class="palmh">Stage wins</div><ul class="palm">'+
-    stKeys.sort((a,b)=>stBy[b]-stBy[a]).slice(0,30).map(k=>'<li><span class="win">'+k+'</span> <span class="pwhen">'+stBy[k]+' stage'+(stBy[k]>1?'s':'')+'</span></li>').join('')+'</ul>'; }
+    stKeys.sort((a,b)=>stBy[b]-stBy[a]).slice(0,30).map(k=>'<li><span class="win racelink" data-race="'+attrEsc(k)+'">'+k+'</span> <span class="pwhen">'+stBy[k]+' stage'+(stBy[k]>1?'s':'')+'</span></li>').join('')+'</ul>'; }
   if(jerseys.length){ h+='<div class="palmh">Classification jerseys</div><ul class="palm">'+jerseys.slice(0,20).map(palmaresLine).join('')+'</ul>'; }
   const pod=entries.filter(e=>e.place==='2nd'||e.place==='3rd').length;
   const worlds=titles.filter(e=>e.place==='WC'||e.place==='WC-TT').length;
@@ -1800,14 +1894,13 @@ function renderCalendar(){
       else if(r.special){ const tb=tierBadge(r.tier); left='<span class="lr-race">'+flag(r.host)+'<b>'+r.name+'</b>'+(tb?' <span class="tierbadge">'+tb+'</span>':'')+'</span>';
         right='<span class="mut">D1 only · '+(E.TERRAIN_LABEL[r.terrain]||r.terrain)+(r.gt?' · 3 weeks':'')+'</span>'; }
       else { left='<span class="lr-race">'+divChip(r.division)+' '+flag(r.country)+r.name+'</span>';
-        right='<span class="mut">'+(r.oneday?'one-day':'stage race')+'</span>'; }
+        right='<span class="mut">'+(r.natTour?'national tour · 5–10 days':(r.oneday?'one-day':'stage race'))+'</span>'; }
       const clickable = r.name!=='National Championships';
       const dr = clickable ? ' data-race="'+attrEsc(r.name)+'"' : '';
       body.innerHTML+='<div class="calrace'+(clickable?' clk':'')+'"'+dr+'>'+left+right+'</div>';
     });
     det.appendChild(body); v.appendChild(det);
   });
-  v.querySelectorAll('.calrace[data-race]').forEach(elm=>elm.onclick=()=>openRaceHistory(elm.dataset.race));
 }
 
 function renderHistory(){
@@ -1851,7 +1944,6 @@ function renderHistory(){
     });
     v.appendChild(yb);
   });
-  v.querySelectorAll('.logrow[data-race]').forEach(elm=>elm.onclick=()=>openRaceHistory(elm.dataset.race));
 }
 // ---- guided race flow: day → preview → stage result → GC → recap → phase recap ----
 function renderFlow(){
@@ -2045,7 +2137,7 @@ function renderPhase(){
     const dbt=dbtArr.length?' <span class="debut">debut: '+dbtArr.map(t=>flag(t.country)+t.name).join(', ')+'</span>':'';
     const terr = r.nStages>1 ? (r.nStages+' stages') : (E.TERRAIN_LABEL[r.terrain]||r.terrain);
     card.appendChild(el('div','rhead',(r.division?divChip(r.division):'<span class="chip champ">WC</span>')+
-      ' '+flag(r.country)+'<b>'+r.name+'</b> <span class="mut">· '+terr+' · '+r.tier+'</span>'+dbt));
+      ' '+flag(r.country)+'<b class="racelink" data-race="'+attrEsc(r.name)+'">'+r.name+'</b> <span class="mut">· '+terr+' · '+r.tier+'</span>'+dbt));
     card.appendChild(el('ol','rtop',r.result.gc.slice(0,5).map((g,i)=>gline(g,i)).join('')));
     const foot=el('div','rfoot','<span class="mut">'+r.result.gc.length+' finishers · '+
       r.result.abandons.length+' abandons</span><button class="lnk">view full race →</button>');
@@ -2087,7 +2179,7 @@ function renderRaceScreen(){
   v.appendChild(back);
   const profile = r.nStages>1 ? r.nStages+' stages' : (E.TERRAIN_LABEL[r.terrain]||r.terrain);
   v.appendChild(el('div','phead',(r.division?divChip(r.division):'<span class="chip champ">WC</span>')+' '+flag(r.country)+
-    '<b>'+r.name+'</b> <span class="mut">· '+profile+' · '+r.tier+(r.done?'':' · in progress')+'</span>'));
+    '<b class="racelink" data-race="'+attrEsc(r.name)+'">'+r.name+'</b> <span class="mut">· '+profile+' · '+r.tier+(r.done?'':' · in progress')+'</span>'));
   const j=r.jersey||{}; const lead=r.done?'':' (leading)';
   const isStage = r.nStages>1 || r.isStage;
   const sprLdr=(r.sprintStand&&r.sprintStand[0])||null;
@@ -2237,8 +2329,8 @@ function renderTeam(){
 function renderTeamBody(id){
   const t=S.teamById[id]; const box=document.querySelector('.teambody'); if(!t||!box)return;
   const rp=rankPts();
-  let h='<div class="tmeta">'+divChip(t.division)+' '+flag(t.country)+'<b>'+t.name+'</b> <span class="mut">· '+cname(t.country)+
-    ' · avg '+t.avg.toFixed(1)+' · '+(rp[t.id]||0)+' ranking pts</span></div>';
+  let h='<div class="tmeta">'+divChip(t.division)+' '+flag(t.country)+'<b>'+t.name+'</b> <button class="lnk" id="renameTeam">✎ rename</button> <span class="mut">· '+cname(t.country)+
+    ' · '+(t.homeCity||'')+' · avg '+t.avg.toFixed(1)+' · '+(rp[t.id]||0)+' ranking pts</span></div>';
   h+='<div class="tmeta mut">Phases by division: '+[1,2,3,4].map(d=>'D'+d+' '+(t.phasesByDivision[d]||0)).join(' · ')+'</div>';
   h+='<div class="dsec">Roster</div>';
   h+='<table class="tbl"><thead><tr><th>Rider</th><th>Country</th><th class="r">Avg</th><th class="r">Phases</th><th class="r">GTs</th><th>Status</th></tr></thead><tbody>';
@@ -2252,6 +2344,8 @@ function renderTeamBody(id){
   h+='</tbody></table>';
   h+='<div class="dsec">Team palmarès</div>'+palmaresBlock(S.teamPalmares[id]);
   box.innerHTML=h;
+  const rb=box.querySelector('#renameTeam');
+  if(rb) rb.onclick=()=>{ const nn=prompt('Team sponsor / name:', t.name); if(nn && nn.trim()){ t.name=nn.trim(); saveGame(); render(); } };
 }
 
 function renderMarket(){
