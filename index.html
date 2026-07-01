@@ -156,6 +156,30 @@ tr.rrow{cursor:pointer} tr.rrow:hover{background:var(--panel2)}
 .fabtn{background:linear-gradient(90deg,#4ea3ff,#3b82f6);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer}
 .fabtn:disabled{opacity:.4;cursor:default}
 .facb{width:16px;height:16px;cursor:pointer}
+.rolechip{display:inline-block;font-family:var(--disp);font-size:10px;font-weight:700;letter-spacing:.03em;padding:1px 6px;border-radius:10px;color:var(--rc);border:1px solid color-mix(in srgb,var(--rc) 45%,transparent);background:color-mix(in srgb,var(--rc) 14%,transparent);vertical-align:middle}
+.recgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.recbox{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.rectitle{font-family:var(--disp);font-size:14px;font-weight:700;margin-bottom:6px}
+.recol{list-style:none;margin:0;padding:0;counter-reset:r}
+.recol li{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-top:1px solid var(--line);align-items:baseline}
+.recol li:first-child{border-top:none}
+.recol li::before{counter-increment:r;content:counter(r);width:18px;color:var(--mut);font-size:12px;flex:0 0 18px}
+.recname{flex:1}
+.reccount{font-family:var(--disp);font-weight:700}
+.feedbar{display:flex;gap:6px;margin:0 0 10px}
+.ftog{background:var(--panel2);border:1px solid var(--line);color:var(--mut);border-radius:20px;padding:4px 12px;cursor:pointer;font-size:13px}
+.ftog.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.feedlist{display:flex;flex-direction:column;gap:1px}
+.feedrow{display:flex;gap:12px;padding:8px 10px;background:var(--panel2);border-left:3px solid transparent;border-radius:4px}
+.feedrow.fworld{border-left-color:#4ea3ff;background:color-mix(in srgb,#4ea3ff 8%,var(--panel2))}
+.feedrow.fmon{border-left-color:#e0a53a;background:color-mix(in srgb,#e0a53a 8%,var(--panel2))}
+.feedrow.fgt{border-left-color:#f0655a;background:color-mix(in srgb,#f0655a 8%,var(--panel2))}
+.feedrow.fnat{border-left-color:#8aa0b8}
+.fwhen{flex:0 0 88px;color:var(--mut);font-size:12px;font-family:var(--disp);padding-top:2px}
+.fmain{flex:1}
+.frace{font-weight:600}
+.ftier{font-family:var(--disp);font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);border:1px solid var(--line);border-radius:8px;padding:0 6px;margin-left:4px}
+.fwin{margin-top:2px;font-size:14px}
 .racelink:hover{text-decoration:underline;text-decoration-color:var(--mut)}
 .calrace.clk:hover,.logrow.clk:hover{background:var(--panel2)}
 .raceed{border-left:2px solid var(--line);padding:2px 0 6px 10px;margin:0 0 8px}
@@ -266,10 +290,12 @@ tr.mktactive td{background:rgba(63,179,107,.08)}
 <nav class="tabs">
   <button data-tab="divisions" class="on">Divisions</button>
   <button data-tab="calendar">Calendar</button>
+  <button data-tab="feed">Feed</button>
   <button data-tab="phase">Last phase</button>
   <button data-tab="ranking">World ranking</button>
   <button data-tab="nations">Nations</button>
   <button data-tab="history">History</button>
+  <button data-tab="records">Records</button>
   <button data-tab="riders">Riders</button>
   <button data-tab="freeagents">Free agents</button>
   <button data-tab="team">Team</button>
@@ -1080,6 +1106,26 @@ const SPONSORS = {
   function gauss(std){ return std*randn(); }
   function terrainScore(a, terrain){ const w=TERRAIN_WEIGHTS[terrain]; if(!w) return (a.FLA+a.STA)/2;
     let s=0; for(const k in w) s+=(a[k]||65)*w[k]; return s; }
+
+  // Derive a rider's natural role from their attribute shape. Descriptive (drives the
+  // UI) and conceptually aligned with how the race engine picks per-terrain leaders.
+  function roleOf(a){
+    if(!a) return 'All-rounder';
+    const g=k=>a[k]||65;
+    const spr = g('SPR')*0.70 + g('FLA')*0.20 + g('ACC')*0.10;
+    const clm = g('MTN')*0.55 + g('MM')*0.30 + g('ATT')*0.15;
+    const tt  = g('TTR')*0.70 + g('PRL')*0.30;
+    const cls = g('HIL')*0.45 + g('COB')*0.30 + g('ACC')*0.15 + g('ATT')*0.10;
+    const all = ATTRS.reduce((s,k)=>s+g(k),0)/ATTRS.length;
+    const spec=[['Sprinter',spr],['Climber',clm],['Time-trialist',tt],['Classics',cls]].sort((x,y)=>y[1]-x[1]);
+    const top=spec[0];
+    // Grand-tour all-rounder: strong at BOTH climbing and time-trialling
+    if(Math.min(clm,tt) > all+2 && all >= 68) return 'GC';
+    if(top[1]-all >= 4) return top[0];       // a clear specialty
+    if(all >= 72) return 'GC';               // elite but balanced → contender
+    return 'Domestique';                     // no standout → support rider
+  }
+  const ROLE_ABBR={Sprinter:'SPR',Climber:'CLM','Time-trialist':'TT',Classics:'CLA',GC:'GC',Domestique:'DOM','All-rounder':'AR'};
   function stepRaceStage(rs){
     if(rs.done) return null;
     const st=rs.stages[rs.cur], terrain=st.terrain;
@@ -1092,10 +1138,14 @@ const SPONSORS = {
     const fell=[];
     rs.riders.forEach(r=>{ if(!r.out && Math.random()<(stageRace?0.012:0.04)){ r.out=true; rs.abandons.push(r); fell.push(r);} });
     const active=rs.riders.filter(r=>!r.out);
-    // team leaders + headcount, for tactical support
+    // team leaders + headcount, for tactical support. The leader for a stage is the
+    // rider who best fits THIS terrain (sprinter on flats, climber in the mountains),
+    // not merely the highest-rated rider — so teams ride for the right specialist and
+    // domestiques lead them out / pace them.
     const leaderByTeam={}, matesByTeam={};
+    const fitOf=r=>{ const a=r.rider.a; const base=(terrain==='FLA')?(a.SPR*0.65+a.ACC*0.20+a.STA*0.15):terrainScore(a,terrain); return base*(r.formMul||1); };
     active.forEach(r=>{ matesByTeam[r.teamId]=(matesByTeam[r.teamId]||0)+1;
-      const b=leaderByTeam[r.teamId]; if(!b||r.rider.avg>b.rider.avg) leaderByTeam[r.teamId]=r; });
+      const b=leaderByTeam[r.teamId]; if(!b||fitOf(r)>fitOf(b)) leaderByTeam[r.teamId]=r; });
     // skill score for this terrain: a flat finish is decided mainly by SPR (sprint),
     // a mountain stage by climbing, etc.  Fatigue and team support modulate it.
     function score(r){ const a=r.rider.a; if(r.energy==null) r.energy=100;
@@ -1610,7 +1660,7 @@ const SPONSORS = {
 
   const API={ ATTRS, parseCSV, genesisDraft, seedDivisions, divisionMap, racesPerDivision,
               buildCalendar, runPhase, setupPhase, stepPhase, nextUnit, finishPhase, phaseRaceSnapshot,
-              worldRanking, worldRankingRiders, rankIndex, newGame, openMarket, rollMarketTeams, transferRider, signFromPool, finishMarket, formTeam,
+              worldRanking, worldRankingRiders, rankIndex, newGame, openMarket, rollMarketTeams, transferRider, signFromPool, finishMarket, formTeam, roleOf, ROLE_ABBR,
               importUpdate, staleRiders,
               serialize, deserialize,
               regionOf, gdist, tierFor, pointsFor, simulateRace, SPECIALS, TERRAIN_LABEL,
@@ -1662,7 +1712,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0041 · 2026-06-29';
+const BUILD='v14 · build 0042 · 2026-06-30';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1843,7 +1893,7 @@ function openRider(name){
     : '<span class="mut">→ steady</span>';
   box.innerHTML='<div class="pmtitle">'+flag(r.country)+name+(r.retired?' <span class="dn" style="font-size:.6em">RETIRED</span>':'')+'</div>'+
     '<div class="pmsub">'+cname(r.country)+' · '+(team?(divChip(team.division)+' '+tname(team)):'free agent')+
-    ' · avg '+r.avg.toFixed(1)+' · '+(S.phasesRidden[name]||0)+' phases · '+(S.gt[name]||0)+' GTs · '+formTag+
+    ' · <b style="color:'+(ROLE_COLOR[roleName(r.a)]||'#889')+'">'+roleName(r.a)+'</b> · avg '+r.avg.toFixed(1)+' · '+(S.phasesRidden[name]||0)+' phases · '+(S.gt[name]||0)+' GTs · '+formTag+
     (out?' · <span class="dn">OUT '+(inj-S.abs+1)+'p</span>':'')+(r.lastSeen?' · last seen '+r.lastSeen:'')+'</div>'+
     '<div class="attrgrid">'+attrs+'</div>'+
     '<div style="margin:2px 0 12px"><button class="lnk" id="retireBtn">'+(r.retired?'↩ Un-retire rider':'⛔ Mark as retired')+'</button></div>'+
@@ -1853,6 +1903,10 @@ function openRider(name){
 }
 
 function attrEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+const ROLE_COLOR={Sprinter:'#22c55e',Climber:'#f0655a','Time-trialist':'#b07cf0',Classics:'#e0a53a',GC:'#4ea3ff',Domestique:'#8aa0b8','All-rounder':'#7d93a8'};
+function roleChip(a){ if(!a) return ''; const r=E.roleOf(a); return '<span class="rolechip" style="--rc:'+(ROLE_COLOR[r]||'#889')+'">'+(E.ROLE_ABBR[r]||r)+'</span>'; }
+function roleName(a){ return a?E.roleOf(a):''; }
+function roleChipByName(name){ const f=findRider(name); return (f&&f.r)?roleChip(f.r.a):''; }
 function openRaceHistory(name){
   const box=$('modalbody'); const H=(S.raceHistory||{})[name]||[];
   let h='<div class="pmtitle">'+name+'</div>';
@@ -1900,6 +1954,8 @@ function render(){
   else if(tab==='history') renderHistory();
   else if(tab==='riders') renderRiders();
   else if(tab==='freeagents') renderFreeAgency();
+  else if(tab==='feed') renderFeed();
+  else if(tab==='records') renderRecords();
   else if(tab==='team') renderTeam();
   else if(tab==='market') renderMarket();
   // if a race flow is mid-way and we've wandered off to browse, offer a way back
@@ -2032,7 +2088,7 @@ function flowPreview(v){
     order.forEach(tid=>{ const t=S.teamById[tid];
       const mem=byTeam[tid].slice().sort((a,b)=>b.rating-a.rating);
       h+='<div class="slteam"><div class="slname">'+(t?flag(t.country)+tname(t):tid)+'</div>'+
-        mem.map(s=>'<div class="slr">'+flag(s.country)+rname(s.name)+'<span class="srat">'+s.rating.toFixed(0)+'</span></div>').join('')+'</div>'; });
+        mem.map(s=>'<div class="slr">'+flag(s.country)+rname(s.name)+' '+roleChipByName(s.name)+'<span class="srat">'+s.rating.toFixed(0)+'</span></div>').join('')+'</div>'; });
     h+='</div>'; const d=el('div'); d.innerHTML=h; v.appendChild(d);
   } else if(u.gc){
     const d=el('div'); d.innerHTML='<div class="dsec">General classification — going into stage '+u.stageNo+'</div><ol class="fullgc">'+
@@ -2370,11 +2426,11 @@ function renderTeamBody(id){
     ' · '+(t.homeCity||'')+' · avg '+t.avg.toFixed(1)+' · '+(rp[t.id]||0)+' ranking pts</span></div>';
   h+='<div class="tmeta mut">Phases by division: '+[1,2,3,4].map(d=>'D'+d+' '+(t.phasesByDivision[d]||0)).join(' · ')+'</div>';
   h+='<div class="dsec">Roster</div>';
-  h+='<table class="tbl"><thead><tr><th>Rider</th><th>Country</th><th class="r">Avg</th><th class="r">Phases</th><th class="r">GTs</th><th>Status</th></tr></thead><tbody>';
+  h+='<table class="tbl"><thead><tr><th>Rider</th><th>Role</th><th>Country</th><th class="r">Avg</th><th class="r">Phases</th><th class="r">GTs</th><th>Status</th></tr></thead><tbody>';
   t.riders.slice().sort((a,b)=>b.avg-a.avg).forEach(r=>{
     const inj=S.injuries[r.name]; const out=(inj!=null&&inj>=S.abs);
     const status=out?('<span class="dn">OUT '+(inj-S.abs+1)+'p</span>'):'<span class="ok">fit</span>';
-    h+='<tr><td class="tn">'+rname(r.name)+'</td><td class="mut">'+flag(r.country)+cname(r.country)+'</td><td class="r mono">'+r.avg.toFixed(1)+
+    h+='<tr><td class="tn">'+rname(r.name)+'</td><td>'+roleChip(r.a)+'</td><td class="mut">'+flag(r.country)+cname(r.country)+'</td><td class="r mono">'+r.avg.toFixed(1)+
       '</td><td class="r mono">'+(S.phasesRidden[r.name]||0)+'</td><td class="r mono">'+(S.gt[r.name]||0)+
       '</td><td>'+status+'</td></tr>';
   });
@@ -2428,6 +2484,73 @@ function faCreate(){
   if(team){ saveGame(); msg('created '+team.name+' ('+cname(team.country)+') — enters Division 4 next phase');
     selTeamId=team.id; tab='team'; setTab(); render(); }
   else render();
+}
+
+// ---- All-time records -----------------------------------------------------
+function renderRecords(){
+  const v=$('view'); v.innerHTML='';
+  v.appendChild(el('div','phead','<b>All-time records</b> <span class="mut">— career leaders across every season played.</span>'));
+  const P=S.palmares||{}, MW=S.majorWins||[], TP=S.teamPalmares||{};
+  const winCnt={}, stageCnt={}, wcCnt={}, wcttCnt={}, natCnt={}, monCnt={}, gtCnt={}, teamWin={};
+  Object.entries(P).forEach(([n,arr])=>arr.forEach(e=>{
+    if(e.place==='win'){ winCnt[n]=(winCnt[n]||0)+1; if(/National Championship$/.test(e.race)) natCnt[n]=(natCnt[n]||0)+1; }
+    else if(e.place==='stage') stageCnt[n]=(stageCnt[n]||0)+1;
+    else if(e.place==='WC') wcCnt[n]=(wcCnt[n]||0)+1;
+    else if(e.place==='WC-TT') wcttCnt[n]=(wcttCnt[n]||0)+1;
+  }));
+  MW.forEach(w=>{ if(w.tier==='MONUMENT') monCnt[w.name]=(monCnt[w.name]||0)+1;
+    else if(w.tier==='TOUR'||w.tier==='GT') gtCnt[w.name]=(gtCnt[w.name]||0)+1; });
+  Object.entries(TP).forEach(([tid,arr])=>{ const c=arr.filter(e=>e.place==='win').length; if(c) teamWin[tid]=c; });
+  const board=(title,cnt,isTeam)=>{
+    const rows=Object.entries(cnt).filter(([,c])=>c>0).sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(b[0])).slice(0,10);
+    if(!rows.length) return '';
+    return '<div class="recbox"><div class="rectitle">'+title+'</div><ol class="recol">'+
+      rows.map(([k,c])=>{ let label;
+        if(isTeam){ const t=S.teamById[k]; label=t?flag(t.country)+tname(t):k; }
+        else label=flag(S.riderCountry[k]||'')+rname(k);
+        return '<li><span class="recname">'+label+'</span><span class="reccount">'+c+'</span></li>'; }).join('')+
+      '</ol></div>';
+  };
+  const html = board('🏆 Most wins',winCnt)+board('🇺🇳 National titles',natCnt)+
+    board('🗻 Grand Tours',gtCnt)+board('🪨 Monuments',monCnt)+
+    board('🌈 World titles',wcCnt)+board('⏱ TT World titles',wcttCnt)+
+    board('🏁 Stage wins',stageCnt)+board('👥 Team — most wins',teamWin,true);
+  if(!html){ v.appendChild(el('div','empty','No records yet — play a few seasons and the career leaders will fill in here.')); return; }
+  const grid=el('div','recgrid'); grid.innerHTML=html; v.appendChild(grid);
+}
+
+// ---- Results feed ---------------------------------------------------------
+function feedRow(e){
+  const when=dyear(e.y)+' · P'+e.p;
+  const tierLabel = e.kind==='world'?'World Championship':e.kind==='worldtt'?'TT World Championship':
+    e.tier==='MONUMENT'?'Monument':(e.tier==='TOUR'||e.tier==='GT')?'Grand Tour':e.tier==='NATIONAL'?'National':e.tier==='WORLDS'?'Worlds':'';
+  const cls = (e.kind==='world'||e.kind==='worldtt')?'fworld':e.tier==='MONUMENT'?'fmon':(e.tier==='TOUR'||e.tier==='GT')?'fgt':e.tier==='NATIONAL'?'fnat':'';
+  let extra='';
+  if(tierLabel && tierLabel!=='National'){
+    const H=(S.raceHistory||{})[e.race];
+    if(H&&H.length){ const ru=H[H.length-1].podium && H[H.length-1].podium[1]; if(ru) extra=' <span class="mut">· 2nd '+flag(ru.country)+rname(ru.name)+'</span>'; }
+  }
+  const team=e.teamId!=null?S.teamById[e.teamId]:null;
+  return '<div class="feedrow '+cls+'"><div class="fwhen">'+when+'</div><div class="fmain">'+
+    '<span class="racelink frace" data-race="'+attrEsc(e.race)+'">'+((e.host&&e.host!=='—')?flag(e.host):'')+e.race+'</span>'+
+    (tierLabel?' <span class="ftier">'+tierLabel+'</span>':'')+
+    '<div class="fwin">'+flag(e.country)+rname(e.name)+(team?' <span class="mut">— '+tname(team)+'</span>':'')+extra+'</div>'+
+    '</div></div>';
+}
+function renderFeed(){
+  const v=$('view'); v.innerHTML='';
+  v.appendChild(el('div','phead','<b>Results feed</b> <span class="mut">— every result as it lands, newest first.</span>'));
+  const log=(S.log||[]);
+  if(!log.length){ v.appendChild(el('div','empty','No results yet — advance a phase and they\\u2019ll roll in here.')); return; }
+  const bar=el('div','feedbar');
+  bar.innerHTML='<button class="ftog on" data-f="all">All results</button><button class="ftog" data-f="big">Big races only</button>';
+  v.appendChild(bar);
+  const list=el('div','feedlist'); v.appendChild(list);
+  const isBig=e=>/MONUMENT|TOUR|GT|WORLDS|NATIONAL/.test(e.tier||'')||e.kind==='world'||e.kind==='worldtt';
+  const draw=mode=>{ const rows=log.slice().reverse().filter(e=>mode==='all'||isBig(e)).slice(0,120);
+    list.innerHTML = rows.map(feedRow).join('') || '<div class="empty">Nothing here yet.</div>'; };
+  bar.querySelectorAll('.ftog').forEach(b=>b.onclick=()=>{ bar.querySelectorAll('.ftog').forEach(x=>x.classList.remove('on')); b.classList.add('on'); draw(b.dataset.f); });
+  draw('all');
 }
 
 function renderMarket(){
