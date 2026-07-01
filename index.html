@@ -151,6 +151,11 @@ tr.rrow{cursor:pointer} tr.rrow:hover{background:var(--panel2)}
 .leadmark .flag{margin:0 2px;vertical-align:-1px}
 .calrace.clk,.logrow.clk{cursor:pointer}
 .racelink{cursor:pointer}
+.fabar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;margin:0 0 8px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+.facount{font-family:var(--disp);font-size:15px}
+.fabtn{background:linear-gradient(90deg,#4ea3ff,#3b82f6);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-weight:700;cursor:pointer}
+.fabtn:disabled{opacity:.4;cursor:default}
+.facb{width:16px;height:16px;cursor:pointer}
 .racelink:hover{text-decoration:underline;text-decoration-color:var(--mut)}
 .calrace.clk:hover,.logrow.clk:hover{background:var(--panel2)}
 .raceed{border-left:2px solid var(--line);padding:2px 0 6px 10px;margin:0 0 8px}
@@ -266,6 +271,7 @@ tr.mktactive td{background:rgba(63,179,107,.08)}
   <button data-tab="nations">Nations</button>
   <button data-tab="history">History</button>
   <button data-tab="riders">Riders</button>
+  <button data-tab="freeagents">Free agents</button>
   <button data-tab="team">Team</button>
   <button data-tab="market">Market</button>
 </nav>
@@ -977,6 +983,26 @@ const SPONSORS = {
     });
     S.market=[]; S.marketTeams=[];
   }
+  // Build a brand-new team from selected free agents. Enters Division 4 and joins the
+  // calendar from the NEXT phase (the current phase is already set up). Country = the
+  // most-represented nationality; a unique sponsor name is auto-assigned.
+  function formTeam(S, riderNames){
+    const picked=[];
+    (riderNames||[]).forEach(nm=>{ const i=(S.freeAgents||[]).findIndex(r=>r.name===nm); if(i>=0) picked.push(S.freeAgents.splice(i,1)[0]); });
+    if(!picked.length) return null;
+    const cnt={}; picked.forEach(r=>cnt[r.country]=(cnt[r.country]||0)+1);
+    const country=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||String(a).localeCompare(b))[0];
+    const id=S.teams.reduce((m,t)=>Math.max(m,t.id),-1)+1;
+    const used={}; S.teams.forEach(t=>{ used[t.country]=(used[t.country]||0)+1; });
+    const homeCity=cityFor(country, used);
+    const team={ id, name:homeCity, homeCity, country, riders:picked, avg:mean(picked.map(r=>r.avg)),
+                 division:4, phasesByDivision:{}, debutDivision:null, sponsored:false };
+    S.teams.push(team); S.teamById[id]=team;
+    picked.forEach(r=>{ S.riderTeam[r.name]=id; S.riderCountry[r.name]=r.country; });
+    assignSponsors(S.teams);              // unique auto sponsor name
+    S.fixtures=buildFixtures(S.teams);    // its home race joins the pool for next phase
+    return team;
+  }
   function transferRider(S, name, toTeamId){
     const fromId=S.riderTeam[name]; if(fromId===toTeamId) return false;
     const from=S.teamById[fromId], to=S.teamById[toTeamId]; if(!to) return false;
@@ -1584,7 +1610,7 @@ const SPONSORS = {
 
   const API={ ATTRS, parseCSV, genesisDraft, seedDivisions, divisionMap, racesPerDivision,
               buildCalendar, runPhase, setupPhase, stepPhase, nextUnit, finishPhase, phaseRaceSnapshot,
-              worldRanking, worldRankingRiders, rankIndex, newGame, openMarket, rollMarketTeams, transferRider, signFromPool, finishMarket,
+              worldRanking, worldRankingRiders, rankIndex, newGame, openMarket, rollMarketTeams, transferRider, signFromPool, finishMarket, formTeam,
               importUpdate, staleRiders,
               serialize, deserialize,
               regionOf, gdist, tierFor, pointsFor, simulateRace, SPECIALS, TERRAIN_LABEL,
@@ -1636,7 +1662,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0040 · 2026-06-29';
+const BUILD='v14 · build 0041 · 2026-06-29';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -1873,6 +1899,7 @@ function render(){
   else if(tab==='nations') renderNations();
   else if(tab==='history') renderHistory();
   else if(tab==='riders') renderRiders();
+  else if(tab==='freeagents') renderFreeAgency();
   else if(tab==='team') renderTeam();
   else if(tab==='market') renderMarket();
   // if a race flow is mid-way and we've wandered off to browse, offer a way back
@@ -2356,6 +2383,51 @@ function renderTeamBody(id){
   box.innerHTML=h;
   const rb=box.querySelector('#renameTeam');
   if(rb) rb.onclick=()=>{ const nn=prompt('Team sponsor / name:', t.name); if(nn && nn.trim()){ t.name=nn.trim(); saveGame(); render(); } };
+}
+
+let faSel=new Set();
+function renderFreeAgency(){
+  const v=$('view'); v.innerHTML='';
+  v.appendChild(el('div','phead','<b>Free agency</b> <span class="mut">— group unsigned riders into new teams. A team holds up to 15; it enters Division 4 and races from next phase.</span>'));
+  const fa=(S.freeAgents||[]).slice().sort((a,b)=>b.avg-a.avg);
+  const faNames=new Set(fa.map(r=>r.name)); [...faSel].forEach(n=>{ if(!faNames.has(n)) faSel.delete(n); });
+  if(!fa.length){ v.appendChild(el('div','empty','No free agents right now. Riders appear here as draft leftovers and whenever you import new ones into the database.')); return; }
+
+  const bar=el('div','fabar'); v.appendChild(bar);
+  const updateBar=()=>{
+    const n=faSel.size;
+    const cnt={}; faSel.forEach(nm=>{ const r=fa.find(x=>x.name===nm); if(r) cnt[r.country]=(cnt[r.country]||0)+1; });
+    const country=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];
+    bar.innerHTML='<span class="facount"><b>'+n+'</b> / 15 selected</span>'+
+      (country?' <span class="mut">· nationality '+flag(country)+cname(country)+'</span>':'')+
+      ' <button class="fabtn" id="faCreate"'+(n<1?' disabled':'')+'>Create team</button>'+
+      (n?' <button class="lnk" id="faClear">clear</button>':'');
+    const cb=$('faCreate'); if(cb) cb.onclick=faCreate;
+    const cl=$('faClear'); if(cl) cl.onclick=()=>{ faSel.clear(); renderFreeAgency(); };
+  };
+
+  const tbl=el('table','tbl'); const tb=el('tbody');
+  tbl.innerHTML='<thead><tr><th></th><th>Rider</th><th>Country</th><th class="r">Avg</th></tr></thead>';
+  fa.forEach(r=>{ const tr=el('tr');
+    tr.innerHTML='<td><input type="checkbox" class="facb" data-n="'+attrEsc(r.name)+'"'+(faSel.has(r.name)?' checked':'')+'></td>'+
+      '<td class="tn">'+flag(r.country)+rname(r.name)+'</td>'+
+      '<td class="mut">'+cname(r.country)+'</td><td class="r mono">'+r.avg.toFixed(1)+'</td>';
+    tb.appendChild(tr); });
+  tbl.appendChild(tb); v.appendChild(tbl);
+  v.querySelectorAll('.facb').forEach(cb=>{ cb.onchange=()=>{
+    const nm=cb.dataset.n;
+    if(cb.checked){ if(faSel.size>=15){ cb.checked=false; msg('a team holds at most 15 riders'); return; } faSel.add(nm); }
+    else faSel.delete(nm);
+    updateBar();
+  }; });
+  updateBar();
+}
+function faCreate(){
+  if(!faSel.size) return;
+  const team=E.formTeam(S, [...faSel]); faSel.clear();
+  if(team){ saveGame(); msg('created '+team.name+' ('+cname(team.country)+') — enters Division 4 next phase');
+    selTeamId=team.id; tab='team'; setTab(); render(); }
+  else render();
 }
 
 function renderMarket(){
