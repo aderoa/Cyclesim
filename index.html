@@ -1035,7 +1035,7 @@ const SPONSORS = {
   // most-represented nationality; a unique sponsor name is auto-assigned.
   function formTeam(S, riderNames){
     const picked=[];
-    (riderNames||[]).forEach(nm=>{ const i=(S.freeAgents||[]).findIndex(r=>r.name===nm); if(i>=0) picked.push(S.freeAgents.splice(i,1)[0]); });
+    (riderNames||[]).forEach(nm=>{ if(S.riderTeam[nm]!=null) return; const i=(S.freeAgents||[]).findIndex(r=>r.name===nm); if(i>=0) picked.push(S.freeAgents.splice(i,1)[0]); });
     if(!picked.length) return null;
     const cnt={}; picked.forEach(r=>cnt[r.country]=(cnt[r.country]||0)+1);
     const country=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||String(a).localeCompare(b))[0];
@@ -1065,7 +1065,7 @@ const SPONSORS = {
   // ---- import pipeline: overwrite stats from a re-imported database --------
   function normName(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
   function importUpdate(S, incoming){
-    const existing=[]; S.teams.forEach(t=>t.riders.forEach(r=>existing.push(r))); (S.freeAgents||[]).forEach(r=>existing.push(r));
+    const existing=[]; S.teams.forEach(t=>t.riders.forEach(r=>existing.push(r))); (S.freeAgents||[]).forEach(r=>existing.push(r)); (S.marketPool||[]).forEach(r=>existing.push(r));
     const byId={}, byNorm={};
     existing.forEach(r=>{ if(r.id) byId[r.id]=r; const n=normName(r.name); (byNorm[n]||(byNorm[n]=[])).push(r); });
     const seen=new Set();
@@ -1692,9 +1692,13 @@ const SPONSORS = {
     teams.forEach(t=>t.riders.forEach(r=>{ riderTeam[r.name]=t.id; riderCountry[r.name]=r.country; }));
     (obj.freeAgents||[]).forEach(r=>{ riderCountry[r.name]=r.country; });
     (obj.marketPool||[]).forEach(p=>{ riderCountry[p.name]=p.country; });
+    const _mktNames=new Set((obj.marketPool||[]).map(p=>p.name));
+    // free agents are riders who have never been on a team: drop any that are now rostered
+    // or sitting in the trade market (legacy saves could carry these as duplicates)
+    const cleanFA=(obj.freeAgents||[]).filter(r=> riderTeam[r.name]==null && !_mktNames.has(r.name));
     // migration: championships used to be the last phase; they now open the year at phase 1
     let phase=obj.phase; if((obj.v||1)<2 && phase>=34) phase=1;
-    return { riders:[], teams, teamById, freeAgents:(obj.freeAgents||[]).map(r=>({...r})),
+    return { riders:[], teams, teamById, freeAgents:cleanFA.map(r=>({...r})),
       fixtures:buildFixtures(teams), calendar:buildCalendar(),
       year:obj.year, phase, abs:obj.abs, commonCount:obj.commonCount||0,
       ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], territoryPts:obj.territoryPts||{}, raceHistory:obj.raceHistory||{},
@@ -1759,7 +1763,7 @@ let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
-const BUILD='v14 · build 0045 · 2026-06-30';
+const BUILD='v14 · build 0046 · 2026-06-30';
 // 2-letter ISO codes that appear in the data as the country value
 const CODE2NAME={BA:'Bosnia & Herzegovina',GE:'Georgia',AM:'Armenia',XK:'Kosovo',MK:'North Macedonia',
   RS:'Serbia',ME:'Montenegro',MD:'Moldova',AZ:'Azerbaijan',KZ:'Kazakhstan',SV:'El Salvador'};
@@ -2517,7 +2521,9 @@ let faSel=new Set();
 function renderFreeAgency(){
   const v=$('view'); v.innerHTML='';
   v.appendChild(el('div','phead','<b>Free agency</b> <span class="mut">— group unsigned riders into new teams. A team holds up to 15; it enters Division 4 and races from next phase.</span>'));
-  const fa=(S.freeAgents||[]).slice().sort((a,b)=>b.avg-a.avg);
+  const rostered=new Set(); S.teams.forEach(t=>t.riders.forEach(r=>rostered.add(r.name)));
+  const inMarket=new Set((S.marketPool||[]).map(p=>p.name));
+  const fa=(S.freeAgents||[]).filter(r=> !rostered.has(r.name) && !inMarket.has(r.name)).sort((a,b)=>b.avg-a.avg);
   const faNames=new Set(fa.map(r=>r.name)); [...faSel].forEach(n=>{ if(!faNames.has(n)) faSel.delete(n); });
   if(!fa.length){ v.appendChild(el('div','empty','No free agents right now. Riders appear here as draft leftovers and whenever you import new ones into the database.')); return; }
 
