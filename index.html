@@ -555,22 +555,42 @@ const SPONSORS = {
   // ---- CSV parse --------------------------------------------------------
   // Accepts the locked schema, with OPTIONAL trailing id + lastSeen columns.
   // Rating,Team,RIDER,Country,<14 attrs>[,id][,lastSeen]
+  //
+  // Header-aware: if the first row's column names are recognizable, columns
+  // are looked up BY NAME, not by fixed position -- a source export that ever
+  // reorders its columns previously scrambled ratings into the wrong fields
+  // silently (a plausible-looking wrong rider, not an error). The rider's own
+  // "id" column is the stable anchor importUpdate() already keys off of for
+  // cross-import matching; this just makes the INITIAL parse equally robust,
+  // rather than only the re-import path.
+  // Falls back to the original fixed positions when the header doesn't match
+  // (older exports, or files with no header row at all) -- no regression.
   function parseCSV(text){
     const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+    if(!lines.length) return [];
+    const head = lines[0].split(',').map(h=>h.trim().toUpperCase());
+    const hasHeader = head.includes('RATING') && head.includes('RIDER');
+    let idx = null;
+    if(hasHeader){ idx={}; head.forEach((h,i)=>{ if(idx[h]==null) idx[h]=i; }); }
+    const at = (cells, name, fallbackPos) =>
+      (idx && idx[name]!=null) ? cells[idx[name]] : cells[fallbackPos];
+    const start = hasHeader ? 1 : 0;
     const out=[];
-    for(let i=0;i<lines.length;i++){
+    for(let i=start;i<lines.length;i++){
       const c = lines[i].split(',');
       if(c.length<18) continue;
-      if(c[2]==='RIDER' || c[2]===undefined) continue;          // header
-      const avg = parseFloat(c[0]); if(isNaN(avg)) continue;     // header/garbage
-      const a={}; for(let k=0;k<14;k++) a[ATTRS[k]] = parseInt(c[4+k],10)||0;
+      const nameCell = at(c,'RIDER',2);
+      if(nameCell==='RIDER' || nameCell===undefined) continue;          // stray header/garbage row
+      const avg = parseFloat(at(c,'RATING',0)); if(isNaN(avg)) continue; // header/garbage
+      const a={}; for(let k=0;k<14;k++) a[ATTRS[k]] = parseInt(at(c,ATTRS[k],4+k),10)||0;
+      const idCell = at(c,'ID',18), lastSeenCell = at(c,'LASTSEEN',19);
       out.push({
-        id: (c[18]!=null && c[18].trim()) ? c[18].trim() : null,
-        name: c[2].trim(),
-        country: c[3].trim(),
+        id: (idCell!=null && String(idCell).trim()) ? String(idCell).trim() : null,
+        name: String(nameCell).trim(),
+        country: String(at(c,'COUNTRY',3)).trim(),
         avg: avg,
         a: a,
-        lastSeen: (c[19]!=null && c[19].trim()) ? c[19].trim() : null
+        lastSeen: (lastSeenCell!=null && String(lastSeenCell).trim()) ? String(lastSeenCell).trim() : null
       });
     }
     return out;
@@ -863,6 +883,18 @@ const SPONSORS = {
             country:S.riderCountry[n]})).sort((a,b)=>b.pts-a.pts);
   }
   function rankIndex(S){ const r=worldRanking(S); const idx={}; r.forEach((o,i)=>idx[o.team.id]=i); return idx; }
+  // Keep the ranking ledgers bounded to the rolling window IN MEMORY, not just
+  // in the saved copy. worldRanking()/worldRankingRiders() do a full scan of
+  // these arrays every phase; without this they grew unboundedly across a
+  // whole session (serialize()'s own prune only ever touched the object
+  // written to storage, never S.ledger/S.riderLedger themselves), so a long
+  // "Advance year" run got slower every single phase. Same 45-phase margin
+  // serialize() already uses, so nothing changes about what a save contains.
+  function pruneLedgers(S){
+    const keep=e=>(S.abs-e.abs)<45;
+    if(S.ledger) S.ledger=S.ledger.filter(keep);
+    if(S.riderLedger) S.riderLedger=S.riderLedger.filter(keep);
+  }
 
   // ---- phase execution: setup -> step each stage -> finish -------------
   // setupPhase builds the races (selecting riders + stages) without simulating;
@@ -972,10 +1004,15 @@ const SPONSORS = {
   }
   // transfer market: ~0.8% of the whole pool is listed each phase; signing is manual (UI)
   const ROSTER_SIZE=15;
+  // Retired riders stay in t.riders (their palmares/history lives there) but no
+  // longer occupy a competitive slot -- every roster-fullness check must count
+  // ACTIVE riders only, or retiring someone permanently freezes that team at
+  // one rider short with no way to ever fill the gap again.
+  function activeRiders(t){ return t.riders.filter(r=>!r.retired); }
   // a rider may only move within one division of where they currently are
   function riderPoolDiv(S, p){ const ft=p&&S.teamById[p.fromId]; return ft?ft.division:null; }
   function eligibleMarketTeams(S, division){
-    return S.teams.filter(t=>t.riders.length<ROSTER_SIZE && (division==null || Math.abs(t.division-division)<=1));
+    return S.teams.filter(t=>activeRiders(t).length<ROSTER_SIZE && (division==null || Math.abs(t.division-division)<=1));
   }
   // up to three random teams that still need riders, within ±1 division of the rider on the block
   function rollMarketTeams(S){
@@ -1006,7 +1043,7 @@ const SPONSORS = {
   // sign the named pool rider to a team that still has an open slot (<15)
   function signFromPool(S, name, toId){
     const i=(S.marketPool||[]).findIndex(p=>p.name===name); if(i<0) return false;
-    const t=S.teamById[toId]; if(!t || t.riders.length>=ROSTER_SIZE) return false;
+    const t=S.teamById[toId]; if(!t || activeRiders(t).length>=ROSTER_SIZE) return false;
     // division gate: only sign within ±1 division, unless no in-range team exists at all
     const div=riderPoolDiv(S, S.marketPool[i]);
     if(div!=null && Math.abs(t.division-div)>1 && eligibleMarketTeams(S, div).length>0) return false;
@@ -1024,7 +1061,7 @@ const SPONSORS = {
   function finishMarket(S){
     (S.marketPool||[]).slice().forEach(p=>{
       const ft=S.teamById[p.fromId], div=ft?ft.division:null;
-      let to=(ft && ft.riders.length<ROSTER_SIZE) ? p.fromId : null;     // former team first (always in range)
+      let to=(ft && activeRiders(ft).length<ROSTER_SIZE) ? p.fromId : null;     // former team first (always in range)
       if(to==null){ let e=eligibleMarketTeams(S, div); if(!e.length) e=eligibleMarketTeams(S,null); to=e.length?e[0].id:null; }
       if(to!=null) signFromPool(S, p.name, to);
     });
@@ -1050,6 +1087,20 @@ const SPONSORS = {
     S.fixtures=buildFixtures(S.teams);    // its home race joins the pool for next phase
     return team;
   }
+  // Sign one free agent directly to a team that has an open ACTIVE slot --
+  // the retirement fix: retiring a rider frees a slot but nothing else moves
+  // a replacement in automatically, so this lets the team pull one from the
+  // free-agent pool on demand. No division gate (this is roster upkeep, not
+  // a competitive transfer): matches formTeam's own lack of a gate.
+  function signFreeAgentTo(S, name, teamId){
+    const t=S.teamById[teamId]; if(!t) return false;
+    if(activeRiders(t).length>=ROSTER_SIZE) return false;
+    const i=(S.freeAgents||[]).findIndex(r=>r.name===name); if(i<0) return false;
+    const r=S.freeAgents.splice(i,1)[0];
+    t.riders.push(r); S.riderTeam[name]=teamId; S.riderCountry[name]=r.country;
+    t.avg=mean(t.riders.map(x=>x.avg));
+    return true;
+  }
   function transferRider(S, name, toTeamId){
     const fromId=S.riderTeam[name]; if(fromId===toTeamId) return false;
     const from=S.teamById[fromId], to=S.teamById[toTeamId]; if(!to) return false;
@@ -1060,7 +1111,7 @@ const SPONSORS = {
     from.avg=mean(from.riders.map(r=>r.avg)); to.avg=mean(to.riders.map(r=>r.avg));
     return true;
   }
-  function advanceCounters(S){ S.abs++; if(S.phase>=34){ S.year++; S.phase=1; refreshForm(S); } else { S.phase++; } }
+  function advanceCounters(S){ S.abs++; pruneLedgers(S); if(S.phase>=34){ S.year++; S.phase=1; refreshForm(S); } else { S.phase++; } }
 
   // ---- import pipeline: overwrite stats from a re-imported database --------
   function normName(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
@@ -1712,6 +1763,7 @@ const SPONSORS = {
   const API={ ATTRS, parseCSV, genesisDraft, seedDivisions, divisionMap, racesPerDivision,
               buildCalendar, runPhase, setupPhase, stepPhase, nextUnit, finishPhase, phaseRaceSnapshot,
               worldRanking, worldRankingRiders, rankIndex, newGame, openMarket, rollMarketTeams, transferRider, signFromPool, finishMarket, formTeam, roleOf, ROLE_ABBR,
+              activeRiders, signFreeAgentTo, ROSTER_SIZE,
               importUpdate, staleRiders,
               serialize, deserialize,
               regionOf, gdist, tierFor, pointsFor, simulateRace, SPECIALS, TERRAIN_LABEL,
@@ -2511,8 +2563,23 @@ function renderTeamBody(id){
       '</td><td>'+status+'</td></tr>';
   });
   h+='</tbody></table>';
+  const openSlots = (E.ROSTER_SIZE||15) - t.riders.filter(r=>!r.retired).length;
+  if(openSlots>0){
+    h+='<div class="dsec">Open roster slot'+(openSlots>1?'s':'')+' ('+openSlots+') &mdash; sign a free agent</div>';
+    const fa=(S.freeAgents||[]).slice().sort((a,b)=>b.avg-a.avg).slice(0,20);
+    if(!fa.length){ h+='<div class="empty">No free agents available right now.</div>'; }
+    else {
+      h+='<table class="tbl"><thead><tr><th>Rider</th><th>Country</th><th class="r">Avg</th><th></th></tr></thead><tbody>';
+      fa.forEach(r=>{ h+='<tr><td class="tn">'+rname(r.name)+'</td><td class="mut">'+flag(r.country)+cname(r.country)+
+          '</td><td class="r mono">'+r.avg.toFixed(1)+'</td><td><button class="lnk fasign" data-n="'+attrEsc(r.name)+'">sign</button></td></tr>'; });
+      h+='</tbody></table>';
+    }
+  }
   h+='<div class="dsec">Team palmarès</div>'+palmaresBlock(S.teamPalmares[id]);
   box.innerHTML=h;
+  box.querySelectorAll('.fasign').forEach(b=>b.onclick=()=>{
+    if(E.signFreeAgentTo(S, b.dataset.n, id)){ msg(b.dataset.n+' signed to '+t.name); saveGame(); renderTeamBody(id); }
+  });
   const rb=box.querySelector('#renameTeam');
   if(rb) rb.onclick=()=>{ const nn=prompt('Team sponsor / name:', t.name); if(nn && nn.trim()){ t.name=nn.trim(); saveGame(); render(); } };
 }
