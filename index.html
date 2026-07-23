@@ -113,6 +113,11 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13px}
   background:none;border:none;color:var(--d1);padding:0 0 0 10px;cursor:pointer}
 .rdetail{margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
 .dsec{font-family:var(--disp);font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:10px 0 6px}
+.promogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:14px}
+.promobox{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.promohead{font-family:var(--disp);font-size:14px;margin-bottom:6px}
+.promorow{font-size:12px;margin-top:6px;font-weight:600}
+.promoteams{font-size:13px;font-weight:400;color:var(--fg);margin:3px 0 0 14px}
 .jerseys{display:flex;gap:8px;flex-wrap:wrap;font-size:12px}
 .jw{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:3px 10px}
 .jw.pts{color:var(--up)} .jw.kom{color:var(--dn)} .jw.spr{color:#4ea3ff}
@@ -1699,9 +1704,15 @@ const SPONSORS = {
   function specialPromoRelegate(S, race, dm){
     const moves=[];
     const down=bottomNonExempt(race,2);
+    const downSet=new Set(down);
     down.forEach(tid=>{ S.teamById[tid].division=2; moves.push({tid,from:1,to:2,kind:'relegate'}); });
     const ranking=worldRanking(S);
-    const up=ranking.filter(o=>o.team.division===2).slice(0,2).map(o=>o.team.id);
+    // exclude teams JUST relegated above -- their rolling world ranking is
+    // still D1-caliber the instant after the move (they were in D1 up until
+    // this exact race), so without this exclusion they almost always rank
+    // as the top "division 2" team and get immediately promoted right back,
+    // making the whole relegation a no-op disguised as movement.
+    const up=ranking.filter(o=>o.team.division===2 && !downSet.has(o.team.id)).slice(0,2).map(o=>o.team.id);
     up.forEach(tid=>{ S.teamById[tid].division=1; moves.push({tid,from:2,to:1,kind:'promote'}); });
     return moves;
   }
@@ -2490,6 +2501,27 @@ function renderPhase(){
   v.appendChild(head);
   if((S.market||[]).length){
     v.appendChild(el('div','flowsub','🔁 <b>Transfer market open</b> — '+S.market.length+' rider'+(S.market.length===1?'':'s')+' released. Open the <b>Market</b> tab to re-sign them; every team finishes at 15.'));
+  }
+  if(lastLog.moves && lastLog.moves.length){
+    const boundaries={};
+    lastLog.moves.forEach(m=>{
+      const key=Math.min(m.from,m.to)+'-'+Math.max(m.from,m.to);
+      const b=boundaries[key]||(boundaries[key]={up:[],down:[],hi:Math.min(m.from,m.to),lo:Math.max(m.from,m.to)});
+      (m.kind==='promote'?b.up:b.down).push(m.tid);
+    });
+    const teamLbl=tid=>{ const t=S.teamById[tid]; return t?(flag(t.country)+tname(t)):('#'+tid); };
+    let h='<div class="dsec">Promotions &amp; relegations <span class="mut">· '+lastLog.moves.length+' team'+(lastLog.moves.length===1?'':'s')+' moved</span></div><div class="promogrid">';
+    Object.keys(boundaries).sort().forEach(k=>{
+      const b=boundaries[k];
+      h+='<div class="promobox"><div class="promohead">D'+b.hi+' <span class="mut">\u2194</span> D'+b.lo+'</div>';
+      if(b.up.length) h+='<div class="promorow up">\u25b2 promoted to D'+b.hi+' <span class="mut">('+b.up.length+')</span><div class="promoteams">'+
+        b.up.map(teamLbl).join('</div><div class="promoteams">')+'</div></div>';
+      if(b.down.length) h+='<div class="promorow dn">\u25bc relegated to D'+b.lo+' <span class="mut">('+b.down.length+')</span><div class="promoteams">'+
+        b.down.map(teamLbl).join('</div><div class="promoteams">')+'</div></div>';
+      h+='</div>';
+    });
+    h+='</div>';
+    const mv=el('div'); mv.innerHTML=h; v.appendChild(mv);
   }
   lastLog.races.forEach(r=>{
     const card=el('div','race');
