@@ -273,6 +273,9 @@ tr.mktactive td{background:rgba(63,179,107,.08)}
 .pmsub{color:var(--muted);font-size:13px;margin-bottom:12px}
 .attrgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:10px 0 14px}
 .attr{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:4px;text-align:center}
+.attr.t1{border-color:#2f8fc4;background:rgba(56,189,248,.08)} .attr.t1 b{color:#38bdf8}
+.attr.t2{border-color:#c49a2f;background:rgba(240,185,62,.10)} .attr.t2 b{color:#f0b93e}
+.attr.t3{border-color:#9B7BD4;background:rgba(155,123,212,.14)} .attr.t3 b{color:var(--champ)}
 .attr b{display:block;font-family:var(--mono);font-size:13px}
 .attr span{font-size:9px;color:var(--muted);letter-spacing:.04em}
 .palm{list-style:none;margin:0;padding:0;font-size:13px}
@@ -809,6 +812,15 @@ const SPONSORS = {
     return pick;
   }
 
+  // Bunch sprints and cobbled finishes are famously chaotic in real cycling
+  // (crashes, lead-out quality, who gets boxed in) -- far less determined by
+  // raw ability alone than a mountain or TT gap. At the original flat noise
+  // (4) a genuine standout sprinter won ~98.6% of flat stages against a
+  // realistic field (measured), which reads as "always the same winner."
+  // 9 brings that down to ~66-77% for a true outlier and ~40% for a merely
+  // very good one -- still clearly favoring talent, no longer a near-lock.
+  const STAGE_NOISE = { FLA:9, COB:9 };
+  function stageNoise(terrain){ return STAGE_NOISE[terrain] || 4; }
   // ---- race simulation: stage race (one-day = single stage) ------------
   function simulateRace(entries, stages){
     if(typeof stages==='string') stages=[{name:'One-day',terrain:stages}]; // back-compat
@@ -821,7 +833,7 @@ const SPONSORS = {
       riders.forEach(r=>{ if(!r.out && Math.random()<dnfChance){ r.out=true; abandons.push(r); } });
       const racing=riders.filter(r=>!r.out);
       racing.forEach(r=>{ const spec=(r.rider.a[wa[0]]+r.rider.a[wa[1]])/2;
-        r._p = 0.5*r.rider.avg + 0.5*spec + 4*randn(); });
+        r._p = 0.5*r.rider.avg + 0.5*spec + stageNoise(st.terrain)*randn(); });
       const order=racing.slice().sort((a,b)=>b._p-a._p);
       order.forEach((r,i)=>{ r.gc += r._p;
         if(FLATISH.has(st.terrain)) r.pts += Math.max(0,15-i)*(r.rider.a.SPR/100);
@@ -911,7 +923,17 @@ const SPONSORS = {
     S.rankPrevRider={}; worldRankingRiders(S).forEach((e,i)=>{ S.rankPrevRider[e.name]=i+1; });
     const cal=S.calendar[S.phase-1];
     S.phaseCtx={ type:cal.type, races:[], log:{year:S.year,phase:S.phase,type:cal.type,races:[],moves:[]}, stage:0, maxStages:0 };
-    if(cal.type==='CHAMPS'){ S.phaseCtx.champs=true; return phaseDescriptor(S); }
+    if(cal.type==='CHAMPS'){
+      S.phaseCtx.champs=true;
+      S.phaseCtx.races=buildChampsRaces(S);
+      // same east-to-west resolve order as common races (Worlds' host country
+      // is '—', which falls through to a harmless default sort position)
+      S.phaseCtx.races.sort((a,b)=> geo(b.country)[1] - geo(a.country)[1]);
+      S.phaseCtx.maxStages=1;           // every championship race is one-day
+      S.phaseCtx.units=S.phaseCtx.races.map((rs,ri)=>ri);
+      S.phaseCtx.uptr=0;
+      return phaseDescriptor(S);
+    }
     const dm=divisionMap(S.teams);
     if(cal.type==='SPECIAL'){
       reshapeEliteD1(S, dm);
@@ -946,7 +968,7 @@ const SPONSORS = {
         startlist: rs.riders.map(r=>({name:r.name,teamId:r.teamId})) })) };
   }
   function stepPhase(S){
-    const ctx=S.phaseCtx; if(!ctx||ctx.champs) return null;
+    const ctx=S.phaseCtx; if(!ctx) return null;
     if(ctx.uptr>=ctx.units.length) return { allDone:true, stage:null, unit:ctx.uptr, total:ctx.units.length };
     const ri=ctx.units[ctx.uptr++]; const rs=ctx.races[ri];
     const sr=stepRaceStage(rs);
@@ -967,23 +989,39 @@ const SPONSORS = {
   }
   // peek the next race-stage WITHOUT simulating (for the preview page)
   function nextUnit(S){
-    const ctx=S.phaseCtx; if(!ctx||ctx.champs||ctx.uptr>=ctx.units.length) return null;
+    const ctx=S.phaseCtx; if(!ctx||ctx.uptr>=ctx.units.length) return null;
     const ri=ctx.units[ctx.uptr]; const rs=ctx.races[ri]; const st=rs.stages[rs.cur];
     const gcNow=rs.riders.filter(r=>!r.out).sort((a,b)=>(a.time||0)-(b.time||0)||b.gc-a.gc);
     const lead=gcNow.length?(gcNow[0].time||0):0;
     // favourites for THIS stage's terrain (same weighting the race engine uses)
-    const favorites=gcNow.map(r=>{ const a=r.rider.a;
-        const s=(st.terrain==='FLA')?(a.SPR*0.65+a.ACC*0.20+a.STA*0.15):terrainScore(a,st.terrain);
+    const stageScore=(a,terrain)=>(terrain==='FLA')?(a.SPR*0.65+a.ACC*0.20+a.STA*0.15):terrainScore(a,terrain);
+    const favorites=gcNow.map(r=>{ const s=stageScore(r.rider.a,st.terrain);
         return {name:r.name,teamId:r.teamId,country:r.country,score:s}; })
       .sort((x,y)=>y.score-x.score).slice(0,6)
       .map((f,i)=>({rank:i+1,name:f.name,teamId:f.teamId,country:f.country}));
-    // teams making their first-ever appearance in this division
-    const seenT=new Set(); const debutTeams=[];
-    rs.riders.forEach(r=>{ if(seenT.has(r.teamId)) return; seenT.add(r.teamId);
-      const t=S.teamById[r.teamId];
-      if(t && !((t.phasesByDivision||{})[rs.division])) debutTeams.push({teamId:r.teamId, name:t.name, country:t.country}); });
+    // race favourites (the whole race, not just this stage) -- only meaningful
+    // on the first stage, since that's the only point a "who's going to win
+    // this race overall" pick makes sense. Averages each rider's terrain-fit
+    // across EVERY stage in the race, so a mountain-heavy GT correctly favours
+    // climbers/GC riders even though stage 1 itself might be a flat opener.
+    let raceFavorites=null, debutTeams=[];
+    if(rs.cur===0 && !rs.isChamps){
+      raceFavorites=gcNow.map(r=>{
+          const s=rs.stages.reduce((sum,stg)=>sum+stageScore(r.rider.a,stg.terrain),0)/rs.stages.length;
+          return {name:r.name,teamId:r.teamId,country:r.country,score:s}; })
+        .sort((x,y)=>y.score-x.score).slice(0,6)
+        .map((f,i)=>({rank:i+1,name:f.name,teamId:f.teamId,country:f.country}));
+      // teams making their first-ever appearance in this division -- only
+      // relevant once, at the race's actual first stage; used to always be
+      // recomputed (and shown) on every stage of a multi-stage race since
+      // phasesByDivision isn't updated mid-race.
+      const seenT=new Set();
+      rs.riders.forEach(r=>{ if(seenT.has(r.teamId)) return; seenT.add(r.teamId);
+        const t=S.teamById[r.teamId];
+        if(t && !((t.phasesByDivision||{})[rs.division])) debutTeams.push({teamId:r.teamId, name:t.name, country:t.country}); });
+    }
     return { raceIndex:ri, name:rs.name, division:rs.division, country:rs.country, host:rs.host,
-      tier:rs.tier, gt:rs.gt, nStages:rs.nStages, stageNo:rs.cur+1, terrain:st.terrain, favorites, debutTeams,
+      tier:rs.tier, gt:rs.gt, nStages:rs.nStages, stageNo:rs.cur+1, terrain:st.terrain, favorites, raceFavorites, debutTeams,
       isRaceStart: rs.cur===0, isRaceEnd: rs.cur+1>=rs.nStages,
       unit:ctx.uptr+1, total:ctx.units.length,
       startlist: rs.cur===0 ? rs.riders.map(r=>({name:r.name,teamId:r.teamId,country:r.country,rating:r.rider.avg})) : null,
@@ -992,14 +1030,30 @@ const SPONSORS = {
   function finishPhase(S){
     const ctx=S.phaseCtx; const log=ctx.log;
     if(S.log && S.log.length>3000) S.log=S.log.slice(-2000);   // keep memory bounded
-    if(ctx.champs){ runChamps(S, log); openMarket(S); advanceCounters(S); S.phaseCtx=null; return log; }
     const dr={};
+    // for a championship phase: accumulate one combined S.history entry for
+    // the year (nationals + both Worlds), same shape runChamps used to build
+    const champsHist = ctx.champs ? {year:S.year, world:null, worldTT:null, nationals:[]} : null;
     ctx.races.forEach(rs=>{ const race=finalizeRace(rs,S); log.races.push(race);
       if(!rs._pointsAwarded){ awardPoints(S,race,rs.division); rs._pointsAwarded=true; }
-      trackPhases(S,race,rs.division);
-      (dr[rs.division]||(dr[rs.division]=[])).push(race); });
+      if(rs.isChamps){
+        recordChampsHonour(S, rs, race);
+        if(champsHist && race.result.winner){
+          const w=race.result.winner;
+          if(rs.tier==='NATIONAL') champsHist.nationals.push({country:rs.host, name:w.name, teamId:w.teamId});
+          else if(rs.name==='World Championship') champsHist.world={name:w.name, country:w.rider.country, teamId:w.teamId};
+          else if(rs.name==='TT World Championship') champsHist.worldTT={name:w.name, country:w.rider.country, teamId:w.teamId};
+        }
+      } else {
+        trackPhases(S,race,rs.division);
+        (dr[rs.division]||(dr[rs.division]=[])).push(race);
+      }
+    });
     S._divRaces=dr;
-    if(ctx.special){ log.moves=specialPromoRelegate(S, log.races[0], divisionMap(S.teams)); }
+    // no promotion/relegation from championships -- they sit outside the
+    // division ladder entirely (division:0), same as before
+    if(ctx.champs){ if(champsHist) (S.history||(S.history=[])).push(champsHist); }
+    else if(ctx.special){ log.moves=specialPromoRelegate(S, log.races[0], divisionMap(S.teams)); }
     else { commonPromoRelegate(S, ctx.dmBefore, log); S.commonCount++; }
     S._divRaces={};
     openMarket(S);
@@ -1296,10 +1350,20 @@ const SPONSORS = {
       } else {
         splitGroups(active,0).forEach(({gap,riders})=>riders.forEach(r=>raw.push({r,gap:Math.min(maxGap,gap)})));
       }
-      // within each equal-time group, the sprint (SPR) decides the order
+      // within each equal-time group, the sprint (SPR) decides the order -- this
+      // used to be a PURE raw-SPR sort with zero randomness, meaning whoever had
+      // the single highest SPR in the race won 100% of every bunch finish, every
+      // time (barring an escaped breakaway). Real bunch sprints are famously
+      // chaotic (lead-out quality, positioning, who gets boxed in) -- adding
+      // terrain-scaled noise here, not just at the group-forming stage above,
+      // is what actually fixes "the same sprinter always wins."
+      const SPRINT_NOISE={FLA:9,COB:9,HIL:7,MM:6,MTN:6};
       raw.sort((a,b)=>a.gap-b.gap);
       [...new Set(raw.map(x=>x.gap))].sort((a,b)=>a-b).forEach(g=>{
-        raw.filter(x=>x.gap===g).sort((a,b)=>b.r.rider.a.SPR-a.r.rider.a.SPR).forEach(x=>order.push({r:x.r,gap:g}));
+        raw.filter(x=>x.gap===g)
+          .map(x=>({x, s:x.r.rider.a.SPR+gauss(SPRINT_NOISE[terrain]||7)}))
+          .sort((a,b)=>b.s-a.s)
+          .forEach(o=>order.push({r:o.x.r,gap:g}));
       });
       note = breakawayWon ? ('Breakaway survived · '+escapees.length+' rider'+(escapees.length>1?'s':''))
            : flat ? 'Bunch sprint' : (terrain==='HIL'? (hilBunch?'Reduced bunch sprint':'Punchy finish') : 'Summit showdown');
@@ -1396,10 +1460,19 @@ const SPONSORS = {
     const y=S.year, p=S.phase, rn=rs.name, dv=rs.division;
     const addR=(name,place)=>{ (S.palmares[name]||(S.palmares[name]=[])).push({y,p,race:rn,div:dv,place}); };
     const addT=(tid,place)=>{ (S.teamPalmares[tid]||(S.teamPalmares[tid]=[])).push({y,p,race:rn,div:dv,place}); };
-    if(fin[0]){ addR(fin[0].name,'win'); addT(fin[0].teamId,'win');
+    // World Championships keep their own palmares "place" (WC/WC-TT, not a
+    // plain win) and log "kind" (world/worldtt, not race) -- the records page
+    // and feed key off these exact values for the rainbow jersey and to count
+    // Worlds medals separately from ordinary race wins. National championships
+    // need no override: the original code already used a plain 'win'/'race'
+    // for those, identified elsewhere by the race NAME ending in "National
+    // Championship", not by a special tag.
+    const winPlace = rn==='World Championship' ? 'WC' : rn==='TT World Championship' ? 'WC-TT' : 'win';
+    const logKind  = rn==='World Championship' ? 'world' : rn==='TT World Championship' ? 'worldtt' : 'race';
+    if(fin[0]){ addR(fin[0].name,winPlace); addT(fin[0].teamId,winPlace);
       (S.log||(S.log=[])).push({ y, p, abs:S.abs, div:dv, race:rn, host:rs.country,
         name:fin[0].name, country:fin[0].country, teamId:fin[0].teamId,
-        tier:rs.tier||'', nStages:rs.nStages||1, kind:'race' });
+        tier:rs.tier||'', nStages:rs.nStages||1, kind:logKind });
     }
     if(fin[0] && /MONUMENT|TOUR|GT/.test(rs.tier||'')){
       (S.majorWins||(S.majorWins=[])).push({y, race:rn, name:fin[0].name, teamId:fin[0].teamId, country:fin[0].country, tier:rs.tier});
@@ -1608,77 +1681,54 @@ const SPONSORS = {
     return moves;
   }
 
-  // ---- championships (phase 34) ----------------------------------------
-  function runChamps(S, log){
-    // National championships: best home rider per nation wins the title + points
-    // to their team. Then Worlds: a single elite field.
-    const byNat={}; S.teams.forEach(t=>t.riders.forEach(r=>{ (byNat[r.country]||(byNat[r.country]=[])).push({r,teamId:t.id}); }));
-    const champs={}; const nationals=[];
+  // ---- championships (phase 34) ------------------------------------------
+  // Each nation's championship and both Worlds races are now built as full
+  // race objects -- shaped exactly like prepareRace()'s output -- so they
+  // flow through stepRaceStage/finalizeRace/recordRacePalmares/awardPoints
+  // the SAME way a common race does: race-by-race, stage previews, results.
+  // Previously this was one function that resolved everything in a single
+  // instant call with no stepping and a much simpler (avg + noise, no
+  // terrain/team dynamics) formula for nationals.
+  function mkChampsRace(name, host, country, tier, pool, terrain, S){
+    const riders=pool.map(e=>{ const sf=(S.form&&S.form[e.rider.name])||1;
+      const rf=Math.max(0.94, Math.min(1.06, 1+randn()*0.028));
+      return {name:e.rider.name, teamId:e.teamId, country:e.rider.country, rider:e.rider,
+        gc:0, pts:0, kom:0, sprintPts:0, out:false, energy:100, time:0, formMul:sf*rf}; });
+    return { division:0, name, host, country, tier, gt:null, natTour:false, nStages:1,
+      teams:[...new Set(pool.map(e=>e.teamId))], stages:buildStages('oneday',terrain),
+      riders, stageResults:[], cur:0, done:false, abandons:[], isChamps:true };
+  }
+  function buildChampsRaces(S){
+    const races=[];
+    // National championships: every nation's eligible riders, best-60 cap (a
+    // real federation selects a squad, not literally every citizen who races).
+    const byNat={};
+    S.teams.forEach(t=>t.riders.forEach(r=>{
+      if(r.retired) return; const inj=S.injuries[r.name]; if(inj!=null && inj>=S.abs) return;
+      (byNat[r.country]||(byNat[r.country]=[])).push({rider:r, teamId:t.id}); }));
     Object.keys(byNat).sort().forEach(nat=>{
-      const field=byNat[nat].map(e=>({...e, perf:e.r.avg+3*randn()})).sort((a,b)=>b.perf-a.perf);
-      const w=field[0]; if(!w) return; champs[nat]=w.r.name; nationals.push({country:nat, name:w.r.name, teamId:w.teamId});
-      S.champions.national[nat]=w.r.name;
-      const rn=fullCountry(nat)+' National Championship';
-      // treated exactly like a normal race: a win in the rider's & team's palmarès
-      (S.palmares[w.r.name]||(S.palmares[w.r.name]=[])).push({y:S.year,p:1,race:rn,div:0,place:'win'});
-      (S.teamPalmares[w.teamId]||(S.teamPalmares[w.teamId]=[])).push({y:S.year,p:1,race:rn,div:0,place:'win'});
-      let natTotal=0;
-      field.slice(0,8).forEach((e,i)=>{ const p=pointsFor('NATIONAL',i);
-        S.ledger.push({teamId:e.teamId, pts:p, abs:S.abs});
-        S.riderLedger.push({name:e.r.name, pts:p, abs:S.abs}); natTotal+=p;
-        addTerritory(S, nat, e.r.name, p); });
-      // clickable race history (podium)
-      recordRaceHistory(S, rn, { y:S.year, p:1, host:nat, country:nat, div:0, tier:'NATIONAL', nStages:1,
-        podium: field.slice(0,3).map(e=>({name:e.r.name, teamId:e.teamId, country:e.r.country, gap:0})),
-        points:null, sprints:null, mountain:null, team:null });
-      // one log line each
-      (S.log||(S.log=[])).push({ y:S.year, p:1, abs:S.abs, div:0, race:rn, host:nat,
-        name:w.r.name, country:w.r.country, teamId:w.teamId, tier:'NATIONAL', nStages:1, kind:'race' });
+      const pool=byNat[nat].sort((a,b)=>b.rider.avg-a.rider.avg).slice(0,60);
+      if(!pool.length) return;
+      races.push(mkChampsRace(fullCountry(nat)+' National Championship', nat, nat, 'NATIONAL', pool, 'HIL', S));
     });
-    // Worlds: top ~150 riders by avg, one race
-    const all=[]; S.teams.forEach(t=>t.riders.forEach(r=>all.push({rider:r,teamId:t.id})));
-    all.sort((a,b)=>b.rider.avg-a.rider.avg);
-    const field=all.slice(0,180);
-    const res=simulateRace(field, buildStages('oneday','HIL'));
-    res.gc.slice(0,16).forEach(g=>{ const p=pointsFor('WORLDS',g.pos);
-      S.ledger.push({teamId:g.teamId, pts:p, abs:S.abs});
-      S.riderLedger.push({name:g.name, pts:p, abs:S.abs}); });
-    if(res.winner){
-      S.champions.world=res.winner.name;
-      (S.palmares[res.winner.name]||(S.palmares[res.winner.name]=[])).push({y:S.year,p:34,race:'World Championship',div:0,place:'WC'});
-      (S.teamPalmares[res.winner.teamId]||(S.teamPalmares[res.winner.teamId]=[])).push({y:S.year,p:34,race:'World Championship',div:0,place:'WC'});
-    }
-    // Time Trial World Championship — field by TT ability, raced on a TT course
-    const ttField=all.slice().sort((a,b)=>b.rider.a.TTR-a.rider.a.TTR).slice(0,120);
-    const ttRes=simulateRace(ttField, buildStages('oneday','TTR'));
-    ttRes.gc.slice(0,16).forEach(g=>{ const p=pointsFor('WORLDS',g.pos);
-      S.ledger.push({teamId:g.teamId, pts:p, abs:S.abs});
-      S.riderLedger.push({name:g.name, pts:p, abs:S.abs}); });
-    if(ttRes.winner){
-      S.champions.worldTT=ttRes.winner.name;
-      (S.palmares[ttRes.winner.name]||(S.palmares[ttRes.winner.name]=[])).push({y:S.year,p:34,race:'TT World Championship',div:0,place:'WC-TT'});
-      (S.teamPalmares[ttRes.winner.teamId]||(S.teamPalmares[ttRes.winner.teamId]=[])).push({y:S.year,p:34,race:'TT World Championship',div:0,place:'WC-TT'});
-    }
-    log.champs={ nationals, worldChampion: res.winner?{name:res.winner.name,teamId:res.winner.teamId,country:res.winner.rider.country}:null,
-      ttWorldChampion: ttRes.winner?{name:ttRes.winner.name,teamId:ttRes.winner.teamId,country:ttRes.winner.rider.country}:null };
-    const champEd=(rr,tier)=>({ y:S.year, p:1, host:'—', country:'—', div:0, tier, nStages:1,
-      podium: rr.gc.slice(0,3).map(g=>({name:g.name, teamId:g.teamId, country:g.rider.country, gap:0})),
-      points: rr.jersey?rr.jersey.points:null, sprints:null, mountain: rr.jersey?rr.jersey.kom:null,
-      team: rr.teamClass && rr.teamClass[0]?{teamId:rr.teamClass[0].teamId}:null });
-    recordRaceHistory(S, 'World Championship', champEd(res,'WORLDS'));
-    recordRaceHistory(S, 'TT World Championship', champEd(ttRes,'WORLDS'));
-    (S.history||(S.history=[])).push({ year:S.year,
-      world: res.winner?{name:res.winner.name, country:res.winner.rider.country, teamId:res.winner.teamId}:null,
-      worldTT: ttRes.winner?{name:ttRes.winner.name, country:ttRes.winner.rider.country, teamId:ttRes.winner.teamId}:null,
-      nationals: nationals.map(n=>({country:n.country, name:n.name, teamId:n.teamId})) });
-    // event log entries for the championship phase
-    const lg=(S.log||(S.log=[]));
-    if(res.winner) lg.push({ y:S.year, p:1, abs:S.abs, div:0, race:'World Championship', host:'—',
-      name:res.winner.name, country:res.winner.rider.country, teamId:res.winner.teamId, tier:'WORLDS', nStages:1, kind:'world' });
-    if(ttRes.winner) lg.push({ y:S.year, p:1, abs:S.abs, div:0, race:'TT World Championship', host:'—',
-      name:ttRes.winner.name, country:ttRes.winner.rider.country, teamId:ttRes.winner.teamId, tier:'WORLDS', nStages:1, kind:'worldtt' });
-    log.races.push({division:0,name:'World Championship',host:'—',country:'—',terrain:'HIL',nStages:1,tier:'WORLDS',gt:null,teams:[],result:res});
-    log.races.push({division:0,name:'TT World Championship',host:'—',country:'—',terrain:'TTR',nStages:1,tier:'WORLDS',gt:null,teams:[],result:ttRes});
+    // Worlds: Road (top 180 by overall ability) and TT (top 120 by TTR)
+    const all=[]; S.teams.forEach(t=>t.riders.forEach(r=>{
+      if(r.retired) return; const inj=S.injuries[r.name]; if(inj!=null && inj>=S.abs) return;
+      all.push({rider:r, teamId:t.id}); }));
+    const wrPool=all.slice().sort((a,b)=>b.rider.avg-a.rider.avg).slice(0,180);
+    races.push(mkChampsRace('World Championship', '—', '—', 'WORLDS', wrPool, 'HIL', S));
+    const ttPool=all.slice().sort((a,b)=>b.rider.a.TTR-a.rider.a.TTR).slice(0,120);
+    races.push(mkChampsRace('TT World Championship', '—', '—', 'WORLDS', ttPool, 'TTR', S));
+    return races;
+  }
+  // top-level "reigning champion" pointers, updated once each race finalizes.
+  // Same fields runChamps used to set, just driven off the generic race
+  // result instead of a bespoke resolver.
+  function recordChampsHonour(S, rs, race){
+    const w=race.result.winner; if(!w) return;
+    if(rs.tier==='NATIONAL') S.champions.national[rs.host]=w.name;
+    else if(rs.name==='World Championship') S.champions.world=w.name;
+    else if(rs.name==='TT World Championship') S.champions.worldTT=w.name;
   }
 
   // ---- new game ---------------------------------------------------------
@@ -2037,7 +2087,8 @@ function openRider(name){
   const {r,team}=findRider(name); const box=$('modalbody');
   if(!r){ box.innerHTML='<div class="pmtitle">'+name+'</div><div class="pmsub">Not on a current roster.</div>'+palmaresBlock(S.palmares[name]); $('modal').style.display='flex'; return; }
   const inj=S.injuries[name]; const out=(inj!=null&&inj>=S.abs);
-  const attrs=E.ATTRS.map(a=>'<div class="attr"><b>'+r.a[a]+'</b><span>'+a+'</span></div>').join('');
+  const attrTier=v=> v>75?'t3' : v>70?'t2' : v>65?'t1' : '';
+  const attrs=E.ATTRS.map(a=>'<div class="attr '+attrTier(r.a[a])+'"><b>'+r.a[a]+'</b><span>'+a+'</span></div>').join('');
   const fm=(S.form&&S.form[name])||1;
   const formTag = fm>=1.035?'<span class="up" title="on a strong season">▲ in form</span>'
     : fm<=0.965?'<span class="dn" title="off-form season">▼ off form</span>'
@@ -2251,6 +2302,12 @@ function flowPreview(v){
     (u.nStages>1?' · stage '+u.stageNo+'/'+u.nStages:'')+'</span>'));
   v.appendChild(el('div','flowsub',(u.isRaceStart?(u.nStages>1?'Grand départ':'Race preview'):'Stage preview')+
     ' — <b>'+(E.TERRAIN_LABEL[u.terrain]||u.terrain)+'</b>'+(u.nStages>1?' stage':' parcours')+'. Press <b>'+(u.nStages>1?'Ride stage':'Ride race')+'</b>.'));
+  if(u.raceFavorites && u.raceFavorites.length && u.nStages>1){
+    const medal=['🥇','🥈','🥉'];
+    let h='<div class="dsec">Race favourites <span class="mut">· overall, across all '+u.nStages+' stages</span></div><div class="favrow">';
+    h+=u.raceFavorites.map((f,i)=>'<span class="favchip">'+(medal[i]||'<b class="favn">'+(i+1)+'</b>')+' '+flag(rcountry(f.name))+rname(f.name)+'</span>').join('');
+    h+='</div>'; const fd=el('div'); fd.innerHTML=h; v.appendChild(fd);
+  }
   if(u.favorites && u.favorites.length){
     const medal=['🥇','🥈','🥉'];
     let h='<div class="dsec">Favourites <span class="mut">· for this '+(E.TERRAIN_LABEL[u.terrain]||u.terrain)+' '+(u.nStages>1?'stage':'parcours')+'</span></div><div class="favrow">';
@@ -2387,21 +2444,6 @@ function renderPhase(){
   const head=el('div','phead','<b>'+dyear(lastLog.year)+' · Phase '+lastLog.phase+'</b> — '+lastLog.type+
     (lastLog.type==='SPECIAL'?' ('+lastLog.races[0].name+')':''));
   v.appendChild(head);
-  if(lastLog.champs){
-    const c=lastLog.champs;
-    const box=el('div','champbox');
-    let h='<div class="dsec" style="margin-top:0">Championship phase — national titles, then the World Championship</div>';
-    const wc=c.worldChampion, tt=c.ttWorldChampion;
-    h+='<div style="font-family:var(--disp);font-size:18px;margin:4px 0 4px">🌈 World Champion: '+
-      (wc?flag(wc.country)+rname(wc.name)+' <span class="mut">'+teamNameById(wc.teamId)+'</span>':'—')+'</div>';
-    h+='<div style="font-family:var(--disp);font-size:16px;margin:0 0 10px">⏱ TT World Champion: '+
-      (tt?flag(tt.country)+rname(tt.name)+' <span class="mut">'+teamNameById(tt.teamId)+'</span>':'—')+'</div>';
-    h+='<div class="dsec">National champions ('+c.nationals.length+')</div><div class="slgrid">';
-    c.nationals.forEach(n=>{ h+='<div class="slteam"><div class="slname">'+flag(n.country)+cname(n.country)+'</div>'+
-      '<div class="slr">'+rname(n.name)+'</div></div>'; });
-    h+='</div>';
-    box.innerHTML=h; v.appendChild(box);
-  }
   if((S.market||[]).length){
     v.appendChild(el('div','flowsub','🔁 <b>Transfer market open</b> — '+S.market.length+' rider'+(S.market.length===1?'':'s')+' released. Open the <b>Market</b> tab to re-sign them; every team finishes at 15.'));
   }
@@ -2410,7 +2452,8 @@ function renderPhase(){
     const dbtArr=(r.result.debutTeams||[]).map(tid=>S.teamById[tid]).filter(Boolean);
     const dbt=dbtArr.length?' <span class="debut">debut: '+dbtArr.map(t=>flag(t.country)+t.name).join(', ')+'</span>':'';
     const terr = r.nStages>1 ? (r.nStages+' stages') : (E.TERRAIN_LABEL[r.terrain]||r.terrain);
-    card.appendChild(el('div','rhead',(r.division?divChip(r.division):'<span class="chip champ">WC</span>')+
+    card.appendChild(el('div','rhead',(r.division?divChip(r.division):
+        r.tier==='NATIONAL'?'<span class="chip">NC</span>':'<span class="chip champ">WC</span>')+
       ' '+flag(r.country)+'<b class="racelink" data-race="'+attrEsc(r.name)+'">'+r.name+'</b> <span class="mut">· '+terr+' · '+r.tier+'</span>'+dbt));
     card.appendChild(el('ol','rtop',r.result.gc.slice(0,5).map((g,i)=>gline(g,i)).join('')));
     const foot=el('div','rfoot','<span class="mut">'+r.result.gc.length+' finishers · '+
@@ -2452,7 +2495,8 @@ function renderRaceScreen(){
   back.onclick=()=>{ tab=raceBackTab; setTab(); render(); };
   v.appendChild(back);
   const profile = r.nStages>1 ? r.nStages+' stages' : (E.TERRAIN_LABEL[r.terrain]||r.terrain);
-  v.appendChild(el('div','phead',(r.division?divChip(r.division):'<span class="chip champ">WC</span>')+' '+flag(r.country)+
+  v.appendChild(el('div','phead',(r.division?divChip(r.division):
+      r.tier==='NATIONAL'?'<span class="chip">NC</span>':'<span class="chip champ">WC</span>')+' '+flag(r.country)+
     '<b class="racelink" data-race="'+attrEsc(r.name)+'">'+r.name+'</b> <span class="mut">· '+profile+' · '+r.tier+(r.done?'':' · in progress')+'</span>'));
   const j=r.jersey||{}; const lead=r.done?'':' (leading)';
   const isStage = r.nStages>1 || r.isStage;
