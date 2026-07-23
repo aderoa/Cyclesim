@@ -642,16 +642,27 @@ const SPONSORS = {
     });
     teams.forEach(t=>t.avg=coreAvg(t));
 
-    // straight draft: fixed team order (best core first), best remaining rider each round
-    pool.sort((a,b)=>b.avg-a.avg);
+    // Who gets left out of the draft shouldn't be a foregone conclusion (the
+    // literal worst players in the pool, every single time) -- compute how
+    // many riders the draft can actually absorb (nRounds * teamCount), then
+    // RANDOMLY choose that many to set aside as free agents BEFORE sorting
+    // by rating. The straight draft (best-to-worst, team order) then runs
+    // only on whoever's left, same as before -- so free agency can now
+    // genuinely include a good player who missed out, not just the dregs.
+    const nRounds=7;
+    const picksAvailable=Math.min(pool.length, nRounds*teams.length);
+    const leftOutCount=pool.length-picksAvailable;
+    shuffle(pool);
+    const setAside=pool.slice(0,leftOutCount);
+    const draftPool=pool.slice(leftOutCount).sort((a,b)=>b.avg-a.avg);
     const order=teams.slice().sort((a,b)=>b.avg-a.avg);
     let pi=0;
-    for(let round=0; round<7; round++){
-      for(const t of order){ if(pi<pool.length) t.riders.push(pool[pi++]); }
+    for(let round=0; round<nRounds; round++){
+      for(const t of order){ if(pi<draftPool.length) t.riders.push(draftPool[pi++]); }
     }
     teams.forEach(t=>{ t.avg = mean(t.riders.map(r=>r.avg)); });
     assignSponsors(teams);
-    return { teams, freeAgents: pool.slice(pi) };
+    return { teams, freeAgents: setAside };
   }
   function cityFor(country, used){
     const list=CITIES[country]||[]; used[country]=used[country]||0;
