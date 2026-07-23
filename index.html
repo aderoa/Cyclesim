@@ -869,6 +869,13 @@ const SPONSORS = {
     return out;
   }
   function computeZones(S, division, gc, teamClass, jpTid, jkTid){
+    // championships (division:0) sit entirely outside the division ladder --
+    // no promotion, no relegation, ever. Without this guard, division=0 fell
+    // through to the generic math below and computed a fake relegation zone
+    // of 4 and promotion zone of 1 for every national/Worlds race, which is
+    // what showed up as misleading "promotion" markers in the result screen
+    // even though no team's division ever actually changed.
+    if(division===0) return { relZone:[], promoZone:[] };
     const ctx=S.phaseCtx, special=!!(ctx&&ctx.special);
     // how many go down from this race (D4 is the everlasting floor → none)
     const relN = division===4 ? 0 : ((special && division===1) ? 2 : 4);
