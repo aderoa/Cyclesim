@@ -1815,7 +1815,10 @@ let S=null, riders=null, lastLog=null, selDiv=1, tab='divisions';
 let flow=null, cur=null, pdesc=null;          // guided race flow: day→preview→result→gc→recap→phaserecap
 let raceView=null, raceBackTab='phase', raceTab='gc', flowTab='gc'; // race screen + classification tabs
 let riderSort={key:'rating',dir:-1};           // riders table sort
-let faSort={key:'avg',dir:-1};                 // free agency table sort
+let faSort={key:null,dir:1};                  // free agency table sort -- null = random (default)
+let faRnd={};                                  // stable per-rider random key, so the random
+                                                // order doesn't reshuffle on every incidental render
+function faRndFor(name){ if(!(name in faRnd)) faRnd[name]=Math.random(); return faRnd[name]; }
 let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
@@ -2653,18 +2656,26 @@ function renderFreeAgency(){
     bar.innerHTML='<span class="facount"><b>'+n+'</b> / 15 selected</span>'+
       (country?' <span class="mut">· nationality '+flag(country)+cname(country)+'</span>':'')+
       ' <button class="fabtn" id="faCreate"'+(n<1?' disabled':'')+'>Create team</button>'+
-      (n?' <button class="lnk" id="faClear">clear</button>':'');
+      (n?' <button class="lnk" id="faClear">clear</button>':'')+
+      ' <button class="lnk" id="faShuffle">🔀 shuffle</button>';
     const cb=$('faCreate'); if(cb) cb.onclick=faCreate;
     const cl=$('faClear'); if(cl) cl.onclick=()=>{ faSel.clear(); renderFreeAgency(); };
+    const sh=$('faShuffle'); if(sh) sh.onclick=()=>{ faRnd={}; faSort={key:null,dir:1}; renderFreeAgency(); };
   };
 
   const tbl=el('table','tbl'); const tb=el('tbody');
   const rows=fa.map(r=>({r, cn:cname(r.country), reg:E.continentOf(r.country)}));
+  // country/region ties broken RANDOMLY, not alphabetically by name -- browsing
+  // a country/region group used to always show the same A-to-Z order every
+  // time, which made team-building repetitive. faRndFor() is stable per
+  // rider within a session, so the shuffled order doesn't jump around on
+  // every incidental re-render, only on an explicit "shuffle" click.
   const cmp={ name:(a,b)=>a.r.name.localeCompare(b.r.name),
-    country:(a,b)=>a.cn.localeCompare(b.cn)||a.r.name.localeCompare(b.r.name),
-    region:(a,b)=>a.reg.localeCompare(b.reg)||a.cn.localeCompare(b.cn)||a.r.name.localeCompare(b.r.name),
+    country:(a,b)=>a.cn.localeCompare(b.cn)||(faRndFor(a.r.name)-faRndFor(b.r.name)),
+    region:(a,b)=>a.reg.localeCompare(b.reg)||a.cn.localeCompare(b.cn)||(faRndFor(a.r.name)-faRndFor(b.r.name)),
     avg:(a,b)=>a.r.avg-b.r.avg };
-  rows.sort((a,b)=>cmp[faSort.key](a,b)*faSort.dir);
+  if(faSort.key===null) rows.sort((a,b)=>faRndFor(a.r.name)-faRndFor(b.r.name));
+  else rows.sort((a,b)=>cmp[faSort.key](a,b)*faSort.dir);
   const cols=[['name','Rider',1],['country','Country',1],['region','Region',1],['avg','Avg',-1]];
   const ar=k=> faSort.key===k ? ('<span class="ar">'+(faSort.dir>0?'▲':'▼')+'</span>') : '';
   tbl.innerHTML='<thead><tr><th></th>'+cols.map(c=>'<th class="sort'+(c[0]==='avg'?' r':'')+'" data-k="'+c[0]+'" data-d="'+c[2]+'">'+c[1]+' '+ar(c[0])+'</th>').join('')+'</tr></thead>';
