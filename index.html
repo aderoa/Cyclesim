@@ -1815,6 +1815,7 @@ let S=null, riders=null, lastLog=null, selDiv=1, tab='divisions';
 let flow=null, cur=null, pdesc=null;          // guided race flow: day→preview→result→gc→recap→phaserecap
 let raceView=null, raceBackTab='phase', raceTab='gc', flowTab='gc'; // race screen + classification tabs
 let riderSort={key:'rating',dir:-1};           // riders table sort
+let faSort={key:'avg',dir:-1};                 // free agency table sort
 let marketSort={key:'avg',dir:-1};             // market table sort
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
@@ -2658,13 +2659,26 @@ function renderFreeAgency(){
   };
 
   const tbl=el('table','tbl'); const tb=el('tbody');
-  tbl.innerHTML='<thead><tr><th></th><th>Rider</th><th>Country</th><th class="r">Avg</th></tr></thead>';
-  fa.forEach(r=>{ const tr=el('tr');
+  const rows=fa.map(r=>({r, cn:cname(r.country), reg:E.continentOf(r.country)}));
+  const cmp={ name:(a,b)=>a.r.name.localeCompare(b.r.name),
+    country:(a,b)=>a.cn.localeCompare(b.cn)||a.r.name.localeCompare(b.r.name),
+    region:(a,b)=>a.reg.localeCompare(b.reg)||a.cn.localeCompare(b.cn)||a.r.name.localeCompare(b.r.name),
+    avg:(a,b)=>a.r.avg-b.r.avg };
+  rows.sort((a,b)=>cmp[faSort.key](a,b)*faSort.dir);
+  const cols=[['name','Rider',1],['country','Country',1],['region','Region',1],['avg','Avg',-1]];
+  const ar=k=> faSort.key===k ? ('<span class="ar">'+(faSort.dir>0?'▲':'▼')+'</span>') : '';
+  tbl.innerHTML='<thead><tr><th></th>'+cols.map(c=>'<th class="sort'+(c[0]==='avg'?' r':'')+'" data-k="'+c[0]+'" data-d="'+c[2]+'">'+c[1]+' '+ar(c[0])+'</th>').join('')+'</tr></thead>';
+  rows.forEach(({r,cn,reg})=>{ const tr=el('tr');
     tr.innerHTML='<td><input type="checkbox" class="facb" data-n="'+attrEsc(r.name)+'"'+(faSel.has(r.name)?' checked':'')+'></td>'+
       '<td class="tn">'+flag(r.country)+rname(r.name)+'</td>'+
-      '<td class="mut">'+cname(r.country)+'</td><td class="r mono">'+r.avg.toFixed(1)+'</td>';
+      '<td class="mut">'+cn+'</td><td class="mut">'+reg+'</td><td class="r mono">'+r.avg.toFixed(1)+'</td>';
     tb.appendChild(tr); });
   tbl.appendChild(tb); v.appendChild(tbl);
+  tbl.querySelectorAll('th.sort').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k, d=+th.dataset.d;
+    faSort = (faSort.key===k) ? {key:k,dir:-faSort.dir} : {key:k,dir:d};
+    renderFreeAgency();
+  });
   v.querySelectorAll('.facb').forEach(cb=>{ cb.onchange=()=>{
     const nm=cb.dataset.n;
     if(cb.checked){ if(faSel.size>=15){ cb.checked=false; msg('a team holds at most 15 riders'); return; } faSel.add(nm); }
