@@ -1565,7 +1565,13 @@ const SPONSORS = {
   }
 
   function assignTeams(teams, hosts){
-    const cap=25, buckets=hosts.map(h=>({fixture:h, country:h.country, teams:[]}));
+    // balanced target size, not a flat 25 -- racesPerDivision already decided
+    // how many races (hosts.length) are needed for this many teams; a flat
+    // 25-per-bucket cap combined with greedy proximity-first filling let one
+    // race fill to the cap while the rest of the teams got dumped into
+    // whatever was left (40 teams / 2 races -> 25+15, not a balanced 20+20).
+    const cap=Math.max(1, Math.ceil(teams.length/hosts.length));
+    const buckets=hosts.map(h=>({fixture:h, country:h.country, teams:[]}));
     const ordered = teams.map(t=>{
       const ds=buckets.map((b,i)=>({i,d:gdist(t.country,b.country)+Math.random()*0.4}));
       ds.sort((a,b)=>a.d-b.d);
@@ -1709,7 +1715,11 @@ const SPONSORS = {
     Object.keys(byNat).sort().forEach(nat=>{
       const pool=byNat[nat].sort((a,b)=>b.rider.avg-a.rider.avg).slice(0,60);
       if(!pool.length) return;
-      races.push(mkChampsRace(fullCountry(nat)+' National Championship', nat, nat, 'NATIONAL', pool, 'HIL', S));
+      // varied terrain per nation, same as regular one-day races -- a national
+      // championship parcours isn't always a medium-mountain route in reality
+      const NC_TERRAINS=['FLA','HIL','MM','MTN','COB'];
+      const terrain=NC_TERRAINS[Math.floor(Math.random()*NC_TERRAINS.length)];
+      races.push(mkChampsRace(fullCountry(nat)+' National Championship', nat, nat, 'NATIONAL', pool, terrain, S));
     });
     // Worlds: Road (top 180 by overall ability) and TT (top 120 by TTR)
     const all=[]; S.teams.forEach(t=>t.riders.forEach(r=>{
@@ -1963,8 +1973,7 @@ const hasMore=()=>!!E.nextUnit(S);
 $('btnPhase').onclick=()=>{ if(!S) return;
   if(flow===null){
     pdesc=E.setupPhase(S);
-    if(pdesc.champs){ lastLog=E.finishPhase(S); flow='phaserecap'; }
-    else { flow='day'; }
+    flow='day';
     tab='flow'; render(); syncButtons(); return;
   }
   if(flow==='day'){ cur=E.nextUnit(S); flow='preview'; flowTab='gc'; tab='flow'; render(); syncButtons(); return; }
@@ -2291,14 +2300,14 @@ function flowDay(v){
   v.appendChild(el('div','flowsub','Race day — events resolve east to west'+(first?', '+flag(first.country)+cname(first.country)+' first':'')+'. Press <b>Begin</b>.'));
   pdesc.races.forEach((r,i)=>{
     const profile = r.nStages>1 ? r.nStages+' stages' : 'one-day';
-    const c=el('div','daycard',('<span class="dnum">'+(i+1)+'</span>')+divChip(r.division)+' '+flag(r.country)+
+    const c=el('div','daycard',('<span class="dnum">'+(i+1)+'</span>')+divOrChampChip(r.division,r.tier)+' '+flag(r.country)+
       '<b>'+r.name+'</b> <span class="mut">· '+profile+' · '+r.tier+'</span>');
     v.appendChild(c);
   });
 }
 function flowPreview(v){
   const u=cur; if(!u){ v.appendChild(el('div','empty','—')); return; }
-  v.appendChild(el('div','phead',divChip(u.division)+' '+flag(u.country)+'<b>'+u.name+'</b> <span class="mut">· '+u.tier+
+  v.appendChild(el('div','phead',divOrChampChip(u.division,u.tier)+' '+flag(u.country)+'<b>'+u.name+'</b> <span class="mut">· '+u.tier+
     (u.nStages>1?' · stage '+u.stageNo+'/'+u.nStages:'')+'</span>'));
   v.appendChild(el('div','flowsub',(u.isRaceStart?(u.nStages>1?'Grand départ':'Race preview'):'Stage preview')+
     ' — <b>'+(E.TERRAIN_LABEL[u.terrain]||u.terrain)+'</b>'+(u.nStages>1?' stage':' parcours')+'. Press <b>'+(u.nStages>1?'Ride stage':'Ride race')+'</b>.'));
@@ -2336,7 +2345,7 @@ function flowPreview(v){
 }
 function flowResult(v){
   const t=cur, sr=t.stage, r=t.race;
-  v.appendChild(el('div','phead',divChip(r.division)+' '+flag(r.country)+'<b>'+r.name+'</b> <span class="mut">· '+
+  v.appendChild(el('div','phead',divOrChampChip(r.division,r.tier)+' '+flag(r.country)+'<b>'+r.name+'</b> <span class="mut">· '+
     (r.nStages>1?'stage '+r.cur+'/'+r.nStages+' · ':'')+(E.TERRAIN_LABEL[sr.terrain]||sr.terrain)+'</span>'));
   v.appendChild(el('div','flowsub','🏁 '+(r.nStages>1?'Stage':'Race')+' winner: '+
     (sr.winner?flag(rcountry(sr.winner.name))+rname(sr.winner.name)+' '+teamNameById(sr.winner.teamId):'—')+
@@ -2415,6 +2424,11 @@ function renderTicker(){
 function rankPts(){ const m={}; E.worldRanking(S).forEach(o=>m[o.team.id]=o.pts); return m; }
 
 function divChip(d){ return '<span class="chip '+DIVCOL[d]+'">D'+d+'</span>'; }
+// championship races share division:0 -- show a tier-based chip (NC/WC)
+// instead of a division chip, which would otherwise render the meaningless "D0".
+function divOrChampChip(division, tier){
+  return division ? divChip(division) : (tier==='NATIONAL' ? '<span class="chip">NC</span>' : '<span class="chip champ">WC</span>');
+}
 
 function renderDivisions(){
   const v=$('view'); v.innerHTML='';
@@ -2452,8 +2466,7 @@ function renderPhase(){
     const dbtArr=(r.result.debutTeams||[]).map(tid=>S.teamById[tid]).filter(Boolean);
     const dbt=dbtArr.length?' <span class="debut">debut: '+dbtArr.map(t=>flag(t.country)+t.name).join(', ')+'</span>':'';
     const terr = r.nStages>1 ? (r.nStages+' stages') : (E.TERRAIN_LABEL[r.terrain]||r.terrain);
-    card.appendChild(el('div','rhead',(r.division?divChip(r.division):
-        r.tier==='NATIONAL'?'<span class="chip">NC</span>':'<span class="chip champ">WC</span>')+
+    card.appendChild(el('div','rhead',divOrChampChip(r.division,r.tier)+
       ' '+flag(r.country)+'<b class="racelink" data-race="'+attrEsc(r.name)+'">'+r.name+'</b> <span class="mut">· '+terr+' · '+r.tier+'</span>'+dbt));
     card.appendChild(el('ol','rtop',r.result.gc.slice(0,5).map((g,i)=>gline(g,i)).join('')));
     const foot=el('div','rfoot','<span class="mut">'+r.result.gc.length+' finishers · '+
@@ -2495,8 +2508,7 @@ function renderRaceScreen(){
   back.onclick=()=>{ tab=raceBackTab; setTab(); render(); };
   v.appendChild(back);
   const profile = r.nStages>1 ? r.nStages+' stages' : (E.TERRAIN_LABEL[r.terrain]||r.terrain);
-  v.appendChild(el('div','phead',(r.division?divChip(r.division):
-      r.tier==='NATIONAL'?'<span class="chip">NC</span>':'<span class="chip champ">WC</span>')+' '+flag(r.country)+
+  v.appendChild(el('div','phead',divOrChampChip(r.division,r.tier)+' '+flag(r.country)+
     '<b class="racelink" data-race="'+attrEsc(r.name)+'">'+r.name+'</b> <span class="mut">· '+profile+' · '+r.tier+(r.done?'':' · in progress')+'</span>'));
   const j=r.jersey||{}; const lead=r.done?'':' (leading)';
   const isStage = r.nStages>1 || r.isStage;
