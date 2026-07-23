@@ -1441,9 +1441,10 @@ const SPONSORS = {
     const finishers=rs.riders.filter(r=>!r.out).sort((a,b)=>(a.time||0)-(b.time||0)||b.gc-a.gc);
     const lead=finishers.length?(finishers[0].time||0):0;
     const gc=finishers.map((r,i)=>({pos:i,name:r.name,teamId:r.teamId,rider:r.rider,gap:(r.time||0)-lead}));
-    const byTeam={}; gc.forEach(g=>{ (byTeam[g.teamId]||(byTeam[g.teamId]=[])).push(g.pos); });
-    const teamClass=Object.keys(byTeam).map(tid=>{ const ps=byTeam[tid].sort((a,b)=>a-b).slice(0,3);
-      return { teamId:+tid, score:ps.reduce((s,x)=>s+x,0)+(3-ps.length)*999 }; }).sort((a,b)=>a.score-b.score);
+    const groupByNation = rs.tier==='WORLDS';
+    const byTeam={}; gc.forEach(g=>{ const key=groupByNation?g.rider.country:g.teamId; (byTeam[key]||(byTeam[key]=[])).push(g.pos); });
+    const teamClass=Object.keys(byTeam).map(key=>{ const ps=byTeam[key].sort((a,b)=>a-b).slice(0,3);
+      return { teamId:groupByNation?key:+key, score:ps.reduce((s,x)=>s+x,0)+(3-ps.length)*999 }; }).sort((a,b)=>a.score-b.score);
     const jp=best(finishers,r=>r.pts), jk=best(finishers,r=>r.kom);
     const pointsStand=finishers.slice().sort((a,b)=>b.pts-a.pts).filter(r=>r.pts>0).slice(0,30)
       .map((r,i)=>({pos:i,name:r.name,teamId:r.teamId,val:Math.round(r.pts),rider:r.rider}));
@@ -1452,7 +1453,7 @@ const SPONSORS = {
     const sprintStand=finishers.slice().sort((a,b)=>b.sprintPts-a.sprintPts).filter(r=>r.sprintPts>0).slice(0,30)
       .map((r,i)=>({pos:i,name:r.name,teamId:r.teamId,val:Math.round(r.sprintPts),rider:r.rider}));
     const result={ gc, abandons:rs.abandons.map(a=>({name:a.name,teamId:a.teamId,rider:a.rider})), teamClass,
-      injuries: rs.injuries||[], pointsStand, komStand, sprintStand, isStage: rs.nStages>1,
+      injuries: rs.injuries||[], pointsStand, komStand, sprintStand, isStage: rs.nStages>1, teamsByNation: groupByNation,
       ...computeZones(S, rs.division, gc, teamClass, jp?jp.teamId:null, jk?jk.teamId:null),
       jersey:{ points:jp?{name:jp.name,teamId:jp.teamId,rider:jp.rider}:null, kom:jk?{name:jk.name,teamId:jk.teamId,rider:jk.rider}:null },
       winner:gc[0]||null, stages:rs.stageResults };
@@ -2356,12 +2357,14 @@ function flowPreview(v){
     v.appendChild(d);
   }
   if(u.isRaceStart && u.startlist){
-    const byTeam={}; u.startlist.forEach(s=>{(byTeam[s.teamId]||(byTeam[s.teamId]=[])).push(s);});
-    const order=Object.keys(byTeam).sort((a,b)=>Math.max.apply(null,byTeam[b].map(s=>s.rating))-Math.max.apply(null,byTeam[a].map(s=>s.rating)));
-    let h='<div class="dsec">Start list · '+order.length+' teams · '+u.startlist.length+' riders <span class="mut">(strongest leader first)</span></div><div class="slgrid">';
-    order.forEach(tid=>{ const t=S.teamById[tid];
-      const mem=byTeam[tid].slice().sort((a,b)=>b.rating-a.rating);
-      h+='<div class="slteam"><div class="slname">'+(t?flag(t.country)+tname(t):tid)+'</div>'+
+    const byNation = u.tier==='WORLDS';
+    const groups={}; u.startlist.forEach(s=>{ const k=byNation?s.country:s.teamId; (groups[k]||(groups[k]=[])).push(s); });
+    const order=Object.keys(groups).sort((a,b)=>Math.max.apply(null,groups[b].map(s=>s.rating))-Math.max.apply(null,groups[a].map(s=>s.rating)));
+    let h='<div class="dsec">Start list · '+order.length+' '+(byNation?'nations':'teams')+' · '+u.startlist.length+' riders <span class="mut">(strongest leader first)</span></div><div class="slgrid">';
+    order.forEach(key=>{
+      const mem=groups[key].slice().sort((a,b)=>b.rating-a.rating);
+      const label = byNation ? (flag(key)+cname(key)) : (S.teamById[key]?flag(S.teamById[key].country)+tname(S.teamById[key]):key);
+      h+='<div class="slteam"><div class="slname">'+label+'</div>'+
         mem.map(s=>'<div class="slr">'+flag(s.country)+rname(s.name)+' '+roleChipByName(s.name)+'<span class="srat">'+s.rating.toFixed(0)+'</span></div>').join('')+'</div>'; });
     h+='</div>'; const d=el('div'); d.innerHTML=h; v.appendChild(d);
   } else if(u.gc){
@@ -2508,10 +2511,12 @@ function teamNameById(id){ const t=S.teamById[id]; return t?('<span class="mut">
 function gline(g,i,gap){ return '<li><span class="pos">'+(i+1)+'</span> '+flag((g.rider&&g.rider.country)||rcountry(g.name))+rname(g.name)+' '+
   teamNameById(g.teamId)+(gap!==undefined?'<span class="gap">'+(typeof gap==='number'?gtime(gap):gap)+'</span>':'')+'</li>'; }
 function teamClassList(r){ const rel=new Set(r.relZone||[]), pro=new Set(r.promoZone||[]);
-  return '<ol class="fullgc tall">'+r.teamClass.slice(0,25).map((t,i)=>{ const tm=S.teamById[t.teamId];
+  return '<ol class="fullgc tall">'+r.teamClass.slice(0,25).map((t,i)=>{
     const mark = pro.has(t.teamId) ? '<span class="up" title="promotion">▲</span> '
                : rel.has(t.teamId) ? '<span class="dn" title="relegation">▼</span> ' : '';
-    return '<li><span class="pos">'+(i+1)+'</span> '+mark+(tm?flag(tm.country)+tname(tm):t.teamId)+'</li>'; }).join('')+'</ol>'; }
+    const label = r.teamsByNation ? (flag(t.teamId)+cname(t.teamId))
+      : (S.teamById[t.teamId]?flag(S.teamById[t.teamId].country)+tname(S.teamById[t.teamId]):t.teamId);
+    return '<li><span class="pos">'+(i+1)+'</span> '+mark+label+'</li>'; }).join('')+'</ol>'; }
 function classRows(data, which){
   if(which==='spr') return '<ol class="fullgc tall">'+(data.sprintStand||[]).map((g,i)=>gline(g,i,g.val+' pts')).join('')+'</ol>';
   if(which==='pts') return '<ol class="fullgc tall">'+(data.pointsStand||[]).map((g,i)=>gline(g,i,g.val+' pts')).join('')+'</ol>';
