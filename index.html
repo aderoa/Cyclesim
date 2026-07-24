@@ -266,6 +266,11 @@ tr.mktactive td{background:rgba(63,179,107,.08)}
   vertical-align:-1px;margin-right:5px;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
 .ccbadge{font-family:var(--mono);font-size:9px;background:rgba(120,128,160,.2);color:var(--muted);
   border-radius:3px;padding:1px 4px;margin-right:5px;vertical-align:1px}
+.rsearch{margin:0 0 10px}
+.rsearch input{background:var(--panel);border:1px solid var(--line);border-radius:6px;color:var(--ink);
+  font-family:var(--body);font-size:14px;padding:8px 12px;width:min(320px,100%);outline:none}
+.rsearch input:focus{border-color:var(--d1)}
+.rsearch .lnk{margin-left:8px}
 .rl,.tl{cursor:pointer;border-bottom:1px dotted transparent}
 .rl:hover,.tl:hover{border-bottom-color:var(--d1);color:var(--d1)}
 #build{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.12em;margin-left:8px}
@@ -1922,6 +1927,7 @@ let S=null, riders=null, lastLog=null, selDiv=1, tab='divisions';
 let flow=null, cur=null, pdesc=null;          // guided race flow: day→preview→result→gc→recap→phaserecap
 let raceView=null, raceBackTab='phase', raceTab='gc', flowTab='gc'; // race screen + classification tabs
 let riderSort={key:'rating',dir:-1};           // riders table sort
+let riderSearch='';                             // riders table name filter
 let faSort={key:null,dir:1};                  // free agency table sort -- null = random (default)
 let faRnd={};                                  // stable per-rider random key, so the random
                                                 // order doesn't reshuffle on every incidental render
@@ -2213,6 +2219,10 @@ function render(){
   const sameTab = tab===_lastRenderedTab;
   const scrollY = sameTab ? window.scrollY : 0;
   const hadFocusInView = view.contains(document.activeElement);
+  const priorActive = document.activeElement;
+  const priorId = (priorActive && priorActive.id) || null;
+  const priorSel = (priorActive && priorActive.selectionStart!=null)
+    ? [priorActive.selectionStart, priorActive.selectionEnd] : null;
   if(tab==='racescreen') renderRaceScreen();
   else if(tab==='flow') renderFlow();
   else if(tab==='divisions') renderDivisions();
@@ -2238,8 +2248,18 @@ function render(){
   // if focus was somewhere inside the old view and the rebuild destroyed that
   // element, land it on the view region instead of silently falling back to
   // <body> -- a keyboard user shouldn't have to find their place from scratch
-  // after every click.
-  if(hadFocusInView && !view.contains(document.activeElement)) view.focus();
+  // after every click. For a text input specifically (e.g. typing in a
+  // search box, which triggers a full render() per keystroke), refocus the
+  // new element with the SAME id and restore the cursor position instead --
+  // otherwise every keystroke would bounce focus out to the generic view
+  // container and make continuous typing unusable.
+  if(priorId){
+    const again=document.getElementById(priorId);
+    if(again && (again.tagName==='INPUT'||again.tagName==='TEXTAREA')){
+      again.focus();
+      if(priorSel){ try{ again.setSelectionRange(priorSel[0], priorSel[1]); }catch(e){} }
+    } else if(hadFocusInView && !view.contains(document.activeElement)) view.focus();
+  } else if(hadFocusInView && !view.contains(document.activeElement)) view.focus();
   _lastRenderedTab=tab;
 }
 // every data table gets an overflow-x:auto wrapper, regardless of which render
@@ -2683,13 +2703,22 @@ function renderRiders(){
   (S.freeAgents||[]).forEach(r=>{ const inj=S.injuries[r.name]; const out=(inj!=null&&inj>=S.abs)?(inj-S.abs+1):0;
     rows.push({name:r.name, country:r.country, cn:cname(r.country), teamId:null, teamName:'', division:9,
       rating:r.avg, phases:S.phasesRidden[r.name]||0, out, pts:rankPts[r.name]||0, retired:!!r.retired}); });
-  v.appendChild(el('div','phead','<b>Riders</b> <span class="mut">— '+rows.length.toLocaleString()+' riders · click a column to sort</span>'));
+
+  const head=el('div','phead','<b>Riders</b> <span class="mut">— '+rows.length.toLocaleString()+' riders · click a column to sort</span>');
+  v.appendChild(head);
+  const searchWrap=el('div','rsearch');
+  searchWrap.innerHTML='<input type="text" id="riderSearchBox" placeholder="Search rider name\u2026" autocomplete="off" value="'+attrEsc(riderSearch)+'">'+
+    (riderSearch?' <button class="lnk" id="riderSearchClear">clear</button>':'');
+  v.appendChild(searchWrap);
+
+  const q=riderSearch.trim().toLowerCase();
+  const filtered=q ? rows.filter(o=>o.name.toLowerCase().includes(q)) : rows;
 
   const cmp={ name:(a,b)=>a.name.localeCompare(b.name), country:(a,b)=>a.cn.localeCompare(b.cn)||a.name.localeCompare(b.name),
     team:(a,b)=>(a.division-b.division)||a.teamName.localeCompare(b.teamName)||b.rating-a.rating,
     division:(a,b)=>a.division-b.division||b.rating-a.rating, rating:(a,b)=>a.rating-b.rating,
     phases:(a,b)=>a.phases-b.phases, health:(a,b)=>a.out-b.out||b.rating-a.rating, points:(a,b)=>a.pts-b.pts };
-  rows.sort((a,b)=>cmp[riderSort.key](a,b)*riderSort.dir);
+  filtered.sort((a,b)=>cmp[riderSort.key](a,b)*riderSort.dir);
 
   const cols=[['name','Rider',1],['country','Country',1],['team','Team',1],['division','Div',1],
     ['rating','Rating',-1],['phases','Phases',-1],['health','Health',1],['points','Points',-1]];
@@ -2697,7 +2726,12 @@ function renderRiders(){
   const ar=k=> riderSort.key===k ? ('<span class="ar">'+(riderSort.dir>0?'▲':'▼')+'</span>') : '';
   tbl.innerHTML='<thead><tr><th>#</th>'+cols.map(c=>'<th class="sort'+(c[0]==='rating'||c[0]==='phases'||c[0]==='points'?' r':'')+'" data-k="'+c[0]+'" data-d="'+c[2]+'">'+c[1]+' '+ar(c[0])+'</th>').join('')+'</tr></thead>';
   const tb=el('tbody');
-  rows.slice(0,400).forEach((o,i)=>{ const t=o.teamId!=null?S.teamById[o.teamId]:null;
+  if(!filtered.length){
+    v.appendChild(tbl);
+    tbl.appendChild(tb);
+    v.appendChild(el('div','empty','No rider matches "'+attrEsc(riderSearch)+'".'));
+  } else {
+  filtered.slice(0,400).forEach((o,i)=>{ const t=o.teamId!=null?S.teamById[o.teamId]:null;
     const health=o.retired?'<span class="dn">retired</span>':o.out>0?'<span class="dn">out '+o.out+'p</span>':'<span class="up">fit</span>';
     const tr=el('tr');
     tr.innerHTML='<td class="mut">'+(i+1)+'</td><td class="tn">'+rname(o.name)+'</td>'+
@@ -2708,12 +2742,18 @@ function renderRiders(){
       '<td>'+health+'</td><td class="r mono">'+o.pts+(RIDERRANK[o.name]?' <span class="mvsm">'+moveChip((S.rankPrevRider||{})[o.name],RIDERRANK[o.name])+'</span>':'')+'</td>';
     tb.appendChild(tr); });
   tbl.appendChild(tb); v.appendChild(tbl);
-  if(rows.length>400) v.appendChild(el('div','palmsum','Showing top 400 of '+rows.length.toLocaleString()+' by current sort.'));
+  if(filtered.length>400) v.appendChild(el('div','palmsum','Showing top 400 of '+filtered.length.toLocaleString()+
+    (q?' matching':'')+' by current sort.'));
+  else if(q) v.appendChild(el('div','palmsum',filtered.length.toLocaleString()+' rider'+(filtered.length===1?'':'s')+' match "'+attrEsc(riderSearch)+'".'));
+  }
   tbl.querySelectorAll('th.sort').forEach(th=>th.onclick=()=>{
     const k=th.dataset.k, d=+th.dataset.d;
     riderSort = (riderSort.key===k) ? {key:k,dir:-riderSort.dir} : {key:k,dir:d};
     render();
   });
+  const box=$('riderSearchBox');
+  box.oninput=()=>{ riderSearch=box.value; render(); };
+  const clearBtn=$('riderSearchClear'); if(clearBtn) clearBtn.onclick=()=>{ riderSearch=''; render(); };
 }
 
 function renderTeam(){
