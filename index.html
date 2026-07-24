@@ -2777,7 +2777,7 @@ function renderTeamBody(id){
   h+='<div class="tmeta mut">Phases by division: '+[1,2,3,4].map(d=>'D'+d+' '+(t.phasesByDivision[d]||0)).join(' · ')+'</div>';
   h+='<div class="dsec">Roster</div>';
   h+='<table class="tbl"><thead><tr><th>Rider</th><th>Role</th><th>Country</th><th class="r">Avg</th><th class="r">Phases</th><th class="r">GTs</th><th>Status</th></tr></thead><tbody>';
-  t.riders.slice().sort((a,b)=>b.avg-a.avg).forEach(r=>{
+  t.riders.filter(r=>!r.retired).slice().sort((a,b)=>b.avg-a.avg).forEach(r=>{
     const inj=S.injuries[r.name]; const out=(inj!=null&&inj>=S.abs);
     const status=out?('<span class="dn">OUT '+(inj-S.abs+1)+'p</span>'):'<span class="ok">fit</span>';
     h+='<tr><td class="tn">'+rname(r.name)+'</td><td>'+roleChip(r.a)+'</td><td class="mut">'+flag(r.country)+cname(r.country)+'</td><td class="r mono">'+r.avg.toFixed(1)+
