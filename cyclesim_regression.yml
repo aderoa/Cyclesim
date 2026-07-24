@@ -1,0 +1,26 @@
+name: CycleSim regression tests
+
+# Runs cyclesim_tests.js automatically whenever index.html or the test
+# suite itself changes, and on every pull request. Fails the check (red X
+# on the commit/PR) if any regression check fails -- catches the exact
+# class of bug this suite was built for before it ships, not after.
+on:
+  push:
+    paths:
+      - "index.html"
+      - "cyclesim_tests.js"
+  pull_request:
+    paths:
+      - "index.html"
+      - "cyclesim_tests.js"
+  workflow_dispatch: {}        # manual "Run workflow" button too
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Run regression suite
+        run: node cyclesim_tests.js index.html
