@@ -1678,25 +1678,37 @@ const SPONSORS = {
     }
     return out;
   }
+  // Round-robin merge of multiple simultaneous races in a division, by rank
+  // position -- race1's #1, race2's #1, race3's #1, ..., race1's #2, ... --
+  // so winning YOUR parallel race carries the same weight as winning any
+  // other, rather than one race's order dominating the merged sequence.
+  function mergeRaceRanks(races, key){
+    const lists = races.map(r => (r.result[key]||[]).map(x=>x.teamId));
+    const out = [];
+    const maxLen = lists.reduce((m,l)=>Math.max(m,l.length), 0);
+    for(let i=0;i<maxLen;i++){ for(const l of lists){ if(i<l.length) out.push(l[i]); } }
+    return out;
+  }
   function commonPromoRelegate(S, dmBefore, log){
     const dr=S._divRaces||{};
-    const ranking=rankIndex(S);
     const moves=[];
     // relegations (down) per race: bottom-4 non-exempt
     const relegate={1:[],2:[],3:[]};
     [1,2,3].forEach(d=>{ (dr[d]||[]).forEach(race=>{ relegate[d].push(...bottomNonExempt(race,4)); }); });
     const relegateSet=new Set(); [1,2,3].forEach(d=>relegate[d].forEach(id=>relegateSet.add(id)));
-    // promotions (up): promote(D) = 4 * races(divisionAbove); never a team already relegated
+    // promotions (up): promote(D) = 4 * races(divisionAbove); never a team already relegated.
+    // WHO gets promoted is now this phase's actual race results in division D
+    // itself (gc = who finished where, teamClass = team classification) --
+    // NOT the rolling world ranking, which only correlates with "won this
+    // race" and can easily diverge from it (a team can win the race and
+    // still miss promotion if their rolling standing elsewhere was weak).
     const promoteCount={2:4*(dr[1]?dr[1].length:0), 3:4*(dr[2]?dr[2].length:0), 4:4*(dr[3]?dr[3].length:0)};
     const promote={2:[],3:[],4:[]};
-    const riderRank=worldRankingRiders(S);   // riders best→worst (rolling world ranking)
     [2,3,4].forEach(d=>{
       const need=promoteCount[d]; if(!need) return;
-      // rider sequence: teams of the best individual riders in this division, in rank order
-      const riderSeq=riderRank.map(r=>S.riderTeam[r.name])
-        .filter(tid=>tid!=null && S.teamById[tid] && S.teamById[tid].division===d);
-      // team sequence: this division's teams by team world ranking
-      const teamSeq=(dmBefore[d]||[]).map(t=>t.id).sort((a,b)=>(ranking[a]??1e9)-(ranking[b]??1e9));
+      const races=dr[d]||[];
+      const riderSeq=mergeRaceRanks(races,'gc');
+      const teamSeq=mergeRaceRanks(races,'teamClass');
       // 1st rider, 1st team, 2nd rider, 2nd team, … skipping relegated teams and repeats
       promote[d]=interleavePromote(riderSeq, teamSeq, need, relegateSet);
     });
