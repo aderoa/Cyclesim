@@ -1164,22 +1164,22 @@ const SPONSORS = {
   // Build a brand-new team from selected free agents. Enters Division 4 and joins the
   // calendar from the NEXT phase (the current phase is already set up). Country = the
   // most-represented nationality; a unique sponsor name is auto-assigned.
-  // A new team from formTeam() only ever joins D4. Calling buildFixtures()
-  // again here used to regenerate EVERY division's ENTIRE fixture pool from
-  // scratch -- since drawFixtures()'s rolling window depends on the pool
-  // staying a fixed size/order, that silently invalidated every already-
-  // played phase's calendar history (measured: 6 of 7 already-raced phases
-  // showed the WRONG race name after forming just one new team -- the
-  // calendar would claim a race hadn't happened yet, or show a different
-  // name than what actually raced). Appending one fixture to D4 ONLY, never
-  // touching D1/D2/D3 (whose team composition never changed) or reordering
-  // D4's existing entries, keeps every already-passed phase exactly correct
-  // for as long as the season hasn't done a full lap through D4's pool yet.
+  // A new team from formTeam() only ever joins D4. Appending straight into
+  // S.fixtures[4] mid-season used to be safe for ALREADY-PLAYED phases (their
+  // offset is always below the pool's old size, so the modulo math is
+  // unaffected) but could still shift phases LATER in the same season that
+  // hadn't been played yet, once the pool's growth pushed their offset past
+  // a wrap point (measured: 3 of 26 not-yet-played phases changed after one
+  // new team joined). The calendar's own UI text promises "hosts are set"
+  // for the whole season, not just what's already happened -- so instead,
+  // queue it and only fold it into the real pool at the next year boundary
+  // (advanceCounters), after which its first edition can land on any phase,
+  // possibly earlier in the calendar than the phase it was formed on.
   function appendD4Fixture(S, team){
     const city = team.homeCity || team.name;
-    const pool4 = S.fixtures[4] || (S.fixtures[4] = []);
-    pool4.push({ name:'Gran Premio '+city, host:city, country:team.country,
-      terrain:TERRAINS[(Math.random()*TERRAINS.length)|0], division:4, oneday:true });
+    (S.pendingFixtures || (S.pendingFixtures = [])).push(
+      { name:'Gran Premio '+city, host:city, country:team.country,
+        terrain:TERRAINS[(Math.random()*TERRAINS.length)|0], division:4, oneday:true });
   }
   function formTeam(S, riderNames){
     const picked=[];
@@ -1222,7 +1222,14 @@ const SPONSORS = {
     from.avg=mean(from.riders.map(r=>r.avg)); to.avg=mean(to.riders.map(r=>r.avg));
     return true;
   }
-  function advanceCounters(S){ S.abs++; pruneLedgers(S); if(S.phase>=34){ S.year++; S.phase=1; refreshForm(S); } else { S.phase++; } }
+  function advanceCounters(S){ S.abs++; pruneLedgers(S);
+    if(S.phase>=34){ S.year++; S.phase=1; refreshForm(S);
+      if(S.pendingFixtures && S.pendingFixtures.length){
+        S.fixtures[4]=(S.fixtures[4]||[]).concat(S.pendingFixtures);
+        S.pendingFixtures=[];
+      }
+    } else { S.phase++; }
+  }
 
   // ---- import pipeline: overwrite stats from a re-imported database --------
   function normName(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
@@ -1832,6 +1839,7 @@ const SPONSORS = {
     const S={
       riders, teams, teamById, freeAgents,
       fixtures: buildFixtures(teams),
+      pendingFixtures: [],
       calendar: buildCalendar(),
       year:0, phase:1, abs:0, commonCount:0,   // Year 0 boots straight into championships (phase 1)
       ledger:[], riderLedger:[], territoryPts:{}, raceHistory:{}, riderTeam, riderCountry,
@@ -1877,7 +1885,8 @@ const SPONSORS = {
       ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep), territoryPts:pruneTerritory(S.territoryPts), raceHistory:S.raceHistory||{},
       palmares:S.palmares, teamPalmares:S.teamPalmares,
       injuries:S.injuries, injuryDays:S.injuryDays, phasesRidden:S.phasesRidden, gt:S.gt,
-      champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketPool:S.marketPool, marketLog:S.marketLog, history:S.history, majorWins:(S.majorWins||[]).slice(-400), log:(S.log||[]).slice(-1500), form:S.form||{}, rankPrevTeam:S.rankPrevTeam||{}, rankPrevRider:S.rankPrevRider||{} };
+      champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketPool:S.marketPool, marketLog:S.marketLog, history:S.history, majorWins:(S.majorWins||[]).slice(-400), log:(S.log||[]).slice(-1500), form:S.form||{}, rankPrevTeam:S.rankPrevTeam||{}, rankPrevRider:S.rankPrevRider||{},
+      fixtures:S.fixtures, pendingFixtures:S.pendingFixtures||[] };
   }
   function deserialize(obj){
     const teams=obj.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity||t.name, country:t.country, division:t.division, avg:t.avg, sponsored:t.sponsored,
@@ -1895,7 +1904,7 @@ const SPONSORS = {
     // migration: championships used to be the last phase; they now open the year at phase 1
     let phase=obj.phase; if((obj.v||1)<2 && phase>=34) phase=1;
     return { riders:[], teams, teamById, freeAgents:cleanFA.map(r=>({...r})),
-      fixtures:buildFixtures(teams), calendar:buildCalendar(),
+      fixtures:obj.fixtures || buildFixtures(teams), pendingFixtures:obj.pendingFixtures||[], calendar:buildCalendar(),
       year:obj.year, phase, abs:obj.abs, commonCount:obj.commonCount||0,
       ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], territoryPts:obj.territoryPts||{}, raceHistory:obj.raceHistory||{},
       riderTeam, riderCountry,
