@@ -320,28 +320,58 @@ check("a flat-stage sprint isn't near-deterministic for a standout sprinter (ter
 // =============================================================================
 group("Calendar history");
 
-check("forming a new team mid-season doesn't retroactively change already-played phases' calendar", () => {
+check("forming a new team mid-season doesn't change ANY phase's calendar this season " +
+      "(already-played or still upcoming)", () => {
   const S = E.newGame(riders);
-  const actualRaces = {};
-  for (let p = 1; p <= 8; p++) {
-    E.setupPhase(S);
-    while (E.nextUnit(S)) E.stepPhase(S);
-    const log = E.finishPhase(S);
-    actualRaces[p] = log.races.filter(r => r.tier !== "NATIONAL" && r.tier !== "WORLDS")
-      .map(r => r.name).sort();
-  }
+  for (let i = 0; i < 8; i++) { E.setupPhase(S); while (E.nextUnit(S)) E.stepPhase(S); E.finishPhase(S); }
+  const before = E.seasonSchedule(S);
+  const beforeMap = {};
+  before.forEach(x => { beforeMap[x.phase] = (x.races || []).map(r => r.name).sort(); });
   const faNames = S.freeAgents.slice(0, 15).map(r => r.name);
   const newTeam = E.formTeam(S, faNames);
   assert(newTeam, "formTeam failed to create a team from 15 available free agents");
-  const predicted = E.seasonSchedule(S);
-  for (let p = 2; p <= 8; p++) {
+  const after = E.seasonSchedule(S);
+  for (let p = 2; p <= 34; p++) {
+    const pred = after.find(x => x.phase === p);
+    if (!pred) continue;
+    const afterNames = (pred.races || []).map(r => r.name).sort();
+    assert(JSON.stringify(afterNames) === JSON.stringify(beforeMap[p]),
+      "phase " + p + "'s calendar changed after forming a new team this season");
+  }
+});
+
+check("a queued new-team fixture doesn't race until the following year", () => {
+  const S = E.newGame(riders);
+  for (let i = 0; i < 8; i++) { E.setupPhase(S); while (E.nextUnit(S)) E.stepPhase(S); E.finishPhase(S); }
+  const newTeam = E.formTeam(S, S.freeAgents.slice(0, 15).map(r => r.name));
+  const fixtureName = "Gran Premio " + newTeam.homeCity;
+  const formedYear = S.year;
+  let sawItSameYear = false;
+  while (S.year === formedYear) {
+    E.setupPhase(S); while (E.nextUnit(S)) E.stepPhase(S);
+    const log = E.finishPhase(S);
+    if (log.races.some(r => r.name === fixtureName)) sawItSameYear = true;
+  }
+  assert(!sawItSameYear, "a team formed mid-season raced in its own formation year -- should wait for the next year boundary");
+});
+
+check("a simple save+reload doesn't change any already-played phase's calendar", () => {
+  const S = E.newGame(riders);
+  const actual = {};
+  for (let p = 1; p <= 10; p++) {
+    E.setupPhase(S); while (E.nextUnit(S)) E.stepPhase(S);
+    const log = E.finishPhase(S);
+    actual[p] = log.races.filter(r => r.tier !== "NATIONAL" && r.tier !== "WORLDS").map(r => r.name).sort();
+  }
+  const S2 = E.deserialize(E.serialize(S));
+  const predicted = E.seasonSchedule(S2);
+  for (let p = 2; p <= 10; p++) {
     const pred = predicted.find(x => x.phase === p);
     if (!pred) continue;
     const predNames = (pred.races || []).map(r => r.name).sort();
-    const actNames = actualRaces[p] || [];
-    assert(JSON.stringify(predNames) === JSON.stringify(actNames),
-      "phase " + p + "'s calendar changed after forming a new team -- actual: " +
-      JSON.stringify(actNames) + " vs predicted: " + JSON.stringify(predNames));
+    assert(JSON.stringify(predNames) === JSON.stringify(actual[p] || []),
+      "phase " + p + "'s calendar changed after a save+reload -- actual: " +
+      JSON.stringify(actual[p]) + " vs after reload: " + JSON.stringify(predNames));
   }
 });
 
