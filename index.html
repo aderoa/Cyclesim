@@ -1164,6 +1164,23 @@ const SPONSORS = {
   // Build a brand-new team from selected free agents. Enters Division 4 and joins the
   // calendar from the NEXT phase (the current phase is already set up). Country = the
   // most-represented nationality; a unique sponsor name is auto-assigned.
+  // A new team from formTeam() only ever joins D4. Calling buildFixtures()
+  // again here used to regenerate EVERY division's ENTIRE fixture pool from
+  // scratch -- since drawFixtures()'s rolling window depends on the pool
+  // staying a fixed size/order, that silently invalidated every already-
+  // played phase's calendar history (measured: 6 of 7 already-raced phases
+  // showed the WRONG race name after forming just one new team -- the
+  // calendar would claim a race hadn't happened yet, or show a different
+  // name than what actually raced). Appending one fixture to D4 ONLY, never
+  // touching D1/D2/D3 (whose team composition never changed) or reordering
+  // D4's existing entries, keeps every already-passed phase exactly correct
+  // for as long as the season hasn't done a full lap through D4's pool yet.
+  function appendD4Fixture(S, team){
+    const city = team.homeCity || team.name;
+    const pool4 = S.fixtures[4] || (S.fixtures[4] = []);
+    pool4.push({ name:'Gran Premio '+city, host:city, country:team.country,
+      terrain:TERRAINS[(Math.random()*TERRAINS.length)|0], division:4, oneday:true });
+  }
   function formTeam(S, riderNames){
     const picked=[];
     (riderNames||[]).forEach(nm=>{ if(S.riderTeam[nm]!=null) return; const i=(S.freeAgents||[]).findIndex(r=>r.name===nm); if(i>=0) picked.push(S.freeAgents.splice(i,1)[0]); });
@@ -1178,7 +1195,7 @@ const SPONSORS = {
     S.teams.push(team); S.teamById[id]=team;
     picked.forEach(r=>{ S.riderTeam[r.name]=id; S.riderCountry[r.name]=r.country; });
     assignSponsors(S.teams);              // unique auto sponsor name
-    S.fixtures=buildFixtures(S.teams);    // its home race joins the pool for next phase
+    appendD4Fixture(S, team);             // its home race joins the D4 pool for next phase -- D1/D2/D3 untouched
     return team;
   }
   // Sign one free agent directly to a team that has an open ACTIVE slot --
