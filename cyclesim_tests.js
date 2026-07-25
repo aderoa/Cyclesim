@@ -316,6 +316,36 @@ check("a flat-stage sprint isn't near-deterministic for a standout sprinter (ter
 });
 
 // =============================================================================
+// CALENDAR HISTORY
+// =============================================================================
+group("Calendar history");
+
+check("forming a new team mid-season doesn't retroactively change already-played phases' calendar", () => {
+  const S = E.newGame(riders);
+  const actualRaces = {};
+  for (let p = 1; p <= 8; p++) {
+    E.setupPhase(S);
+    while (E.nextUnit(S)) E.stepPhase(S);
+    const log = E.finishPhase(S);
+    actualRaces[p] = log.races.filter(r => r.tier !== "NATIONAL" && r.tier !== "WORLDS")
+      .map(r => r.name).sort();
+  }
+  const faNames = S.freeAgents.slice(0, 15).map(r => r.name);
+  const newTeam = E.formTeam(S, faNames);
+  assert(newTeam, "formTeam failed to create a team from 15 available free agents");
+  const predicted = E.seasonSchedule(S);
+  for (let p = 2; p <= 8; p++) {
+    const pred = predicted.find(x => x.phase === p);
+    if (!pred) continue;
+    const predNames = (pred.races || []).map(r => r.name).sort();
+    const actNames = actualRaces[p] || [];
+    assert(JSON.stringify(predNames) === JSON.stringify(actNames),
+      "phase " + p + "'s calendar changed after forming a new team -- actual: " +
+      JSON.stringify(actNames) + " vs predicted: " + JSON.stringify(predNames));
+  }
+});
+
+// =============================================================================
 // LONG-RUN STABILITY
 // =============================================================================
 group("Long-run stability");
