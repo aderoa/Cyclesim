@@ -217,9 +217,12 @@ tr.rrow{cursor:pointer} tr.rrow:hover{background:var(--panel2)}
 .fullgc .pos{font-family:var(--mono);color:var(--muted);width:26px;text-align:right}
 .fullgc .gap{margin-left:auto;font-family:var(--mono);color:var(--muted);white-space:nowrap}
 .flowsub{font-size:13px;color:var(--ink);margin:2px 0 12px}
-.daycard{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);
+.daycard{display:flex;flex-direction:column;align-items:stretch;gap:6px;background:var(--panel);border:1px solid var(--line);
   border-radius:7px;padding:9px 12px;margin-bottom:7px;font-size:13px}
+.daycard-head{display:flex;align-items:center;gap:8px}
 .daycard .dnum{font-family:var(--mono);color:var(--muted);width:1.6em;text-align:right}
+.daycard-teams{display:flex;flex-wrap:wrap;gap:5px;padding-left:calc(1.6em + 8px)}
+.daycard-team{font-size:11px;background:var(--line);border-radius:5px;padding:2px 7px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .tbl th.sort{cursor:pointer;user-select:none}
 .tbl th.sort:hover{color:var(--ink)}
 .tbl th .ar{color:var(--d1)}
@@ -2181,49 +2184,59 @@ $('btnExport').onclick=()=>exportSave();
 $('btnImport').onclick=()=>importSave();
 const hasMore=()=>!!E.nextUnit(S);
 // primary stepper walks the guided pages: day → (preview → stage result → GC) per stage → recap → phase recap
-// flowHistory snapshots {flow, cur, flowTab} before each forward step,
-// so Back only ever restores a previously-shown screen -- it never
-// re-invokes E.stepPhase/finishPhase/finishMarket/etc, which actually
-// mutate game state and can't be safely undone. Going back is purely a
-// view change: re-display what was already computed, not re-simulate
-// anything.
-let flowHistory=[];
-function pushFlowHistory(){ flowHistory.push({flow, cur, flowTab}); }
+// Browser-style back/forward history: flowPast holds snapshots to go
+// back to, flowFuture holds snapshots to redo forward into. Critically,
+// pressing the main stepper button again after going Back checks
+// flowFuture FIRST and redoes from there instead of re-invoking
+// E.stepPhase/nextUnit/finishPhase -- those functions actually simulate
+// (randomness, picking the next race, recording results), so calling
+// them again after a Back would silently re-run the race with a fresh
+// outcome and even a different name/matchup. Once the schedule and a
+// result are established, forward-after-back must restore them exactly,
+// never regenerate them.
+let flowPast=[], flowFuture=[];
+function snapshotFlow(){ return {flow, cur, flowTab}; }
+function restoreFlow(s){ flow=s.flow; cur=s.cur; flowTab=s.flowTab; }
 $('btnPhase').onclick=()=>{ if(!S) return;
+  if(flowFuture.length){
+    flowPast.push(snapshotFlow());
+    restoreFlow(flowFuture.pop());
+    tab='flow'; render(); syncButtons(); return;
+  }
   if(flow===null){
-    flowHistory=[];
+    flowPast=[]; flowFuture=[];
     pdesc=E.setupPhase(S);
     flow='day';
     tab='flow'; render(); syncButtons(); return;
   }
-  if(flow==='day'){ pushFlowHistory(); cur=E.nextUnit(S); flow='preview'; flowTab='gc'; tab='flow'; render(); syncButtons(); return; }
-  if(flow==='preview'){ pushFlowHistory(); cur=E.stepPhase(S); flow='result'; tab='flow'; render(); syncButtons(); return; }
+  if(flow==='day'){ flowPast.push(snapshotFlow()); flowFuture=[]; cur=E.nextUnit(S); flow='preview'; flowTab='gc'; tab='flow'; render(); syncButtons(); return; }
+  if(flow==='preview'){ flowPast.push(snapshotFlow()); flowFuture=[]; cur=E.stepPhase(S); flow='result'; tab='flow'; render(); syncButtons(); return; }
   if(flow==='result'){
-    pushFlowHistory();
+    flowPast.push(snapshotFlow()); flowFuture=[];
     flow = cur.race.done ? 'recap' : (cur.race.nStages>1 ? 'gc' : 'recap');
     tab='flow'; render(); syncButtons(); return;
   }
   if(flow==='gc' || flow==='recap'){
-    pushFlowHistory();
+    flowPast.push(snapshotFlow()); flowFuture=[];
     if(hasMore()){ cur=E.nextUnit(S); flow='preview'; }
     else { lastLog=E.finishPhase(S); flow='phaserecap'; }
     tab='flow'; render(); syncButtons(); return;
   }
   if(flow==='phaserecap'){
-    pushFlowHistory();
+    flowPast.push(snapshotFlow()); flowFuture=[];
     if((S.market||[]).length){ flow='market'; tab='flow'; render(); syncButtons(); }
-    else { flowHistory=[]; flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); }
+    else { flowPast=[]; flowFuture=[]; flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); }
     return;
   }
   if(flow==='market'){
     if(S.marketPool&&S.marketPool.length){ E.finishMarket(S); saveGame(); render(); syncButtons(); return; }  // place rest → show recap
-    flowHistory=[]; flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); return;        // recap shown → close
+    flowPast=[]; flowFuture=[]; flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); return;        // recap shown → close
   }
 };
 $('btnFlowBack').onclick=()=>{
-  if(!flowHistory.length) return;
-  const prev=flowHistory.pop();
-  flow=prev.flow; cur=prev.cur; flowTab=prev.flowTab;
+  if(!flowPast.length) return;
+  flowFuture.push(snapshotFlow());
+  restoreFlow(flowPast.pop());
   tab='flow'; render(); syncButtons();
 };
 let advancing=false;
@@ -2253,7 +2266,7 @@ function syncButtons(){
   $('btnDraft').style.display = (riders && !S) ? '' : 'none';
   { const lw=$('loadwrap'), uw=$('updatewrap'); if(lw) lw.style.display = S?'none':''; if(uw) uw.style.display = S?'':'none'; }
   const fb=$('btnFlowBack');
-  if(fb){ fb.style.display = (on && flow!==null) ? '' : 'none'; fb.disabled = !flowHistory.length || advancing; }
+  if(fb){ fb.style.display = (on && flow!==null) ? '' : 'none'; fb.disabled = !flowPast.length || advancing; }
   const b=$('btnPhase'); b.disabled=!on||advancing;
   if(!on){ b.textContent='Advance phase'; return; }
   if(flow===null){ const cal=S.calendar[S.phase-1]; b.textContent = cal.type==='CHAMPS'?'Run championships':'Start phase'; return; }
@@ -2548,8 +2561,16 @@ function flowDay(v){
   v.appendChild(el('div','flowsub','Race day — events resolve east to west'+(first?', '+flag(first.country)+cname(first.country)+' first':'')+'. Press <b>Begin</b>.'));
   pdesc.races.forEach((r,i)=>{
     const profile = r.nStages>1 ? r.nStages+' stages' : 'one-day';
-    const c=el('div','daycard',('<span class="dnum">'+(i+1)+'</span>')+divOrChampChip(r.division,r.tier)+' '+flag(r.country)+
+    const c=el('div','daycard');
+    const head=el('div','daycard-head',('<span class="dnum">'+(i+1)+'</span>')+divOrChampChip(r.division,r.tier)+' '+flag(r.country)+
       '<b>'+r.name+'</b> <span class="mut">· '+profile+' · '+r.tier+'</span>');
+    c.appendChild(head);
+    const competing=(r.teams||[]).map(tid=>S.teamById[tid]).filter(Boolean)
+      .sort((a,b)=> a.division-b.division || a.name.localeCompare(b.name));
+    if(competing.length){
+      const tl=el('div','daycard-teams', competing.map(t=>'<span class="daycard-team">'+divChip(t.division)+' '+flag(t.country)+tname(t)+'</span>').join(''));
+      c.appendChild(tl);
+    }
     v.appendChild(c);
   });
 }
