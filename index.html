@@ -2012,6 +2012,26 @@ let faRnd={};                                  // stable per-rider random key, s
                                                 // order doesn't reshuffle on every incidental render
 function faRndFor(name){ if(!(name in faRnd)) faRnd[name]=Math.random(); return faRnd[name]; }
 let marketSort={key:'avg',dir:-1};             // market table sort
+// Generic per-table sort state for every other table (standings, world
+// ranking, territory ranking, team roster) -- same convention as the
+// riders/free-agency/market tables above (click a header to sort by it,
+// click again to flip direction), just factored out so it doesn't need
+// re-implementing per table. cols: [key, label, defaultDir, rightAlign?].
+const TBL_SORT={};
+function sortState(id,key,dir){ return TBL_SORT[id] || (TBL_SORT[id]={key,dir}); }
+function sortHead(id,cols,prefixHtml){
+  const st=TBL_SORT[id];
+  const ar=k=> st.key===k ? ('<span class="ar">'+(st.dir>0?'▲':'▼')+'</span>') : '';
+  return '<tr>'+(prefixHtml||'')+cols.map(c=>'<th class="sort'+(c[3]?' r':'')+'" data-k="'+c[0]+'" data-d="'+c[2]+'">'+c[1]+' '+ar(c[0])+'</th>').join('')+'</tr>';
+}
+function wireSortHead(tbl,id,onSort){
+  const st=TBL_SORT[id];
+  tbl.querySelectorAll('th.sort').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k, d=+th.dataset.d;
+    TBL_SORT[id]=(st.key===k)?{key:k,dir:-st.dir}:{key:k,dir:d};
+    onSort();
+  });
+}
 const $=id=>document.getElementById(id);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const DIVCOL={1:'d1',2:'d2',3:'d3',4:'d4'};
@@ -2586,9 +2606,13 @@ function renderDivisions(){
     b.onclick=()=>{selDiv=d;renderDivisions();}; sel.appendChild(b); });
   v.appendChild(sel);
   const dm=E.divisionMap(S.teams); const rp=rankPts();
-  const teams=dm[selDiv].slice().sort((a,b)=>(rp[b.id]||0)-(rp[a.id]||0));
+  const st=sortState('divisions','points',-1);
+  const cmp={ team:(a,b)=>a.name.localeCompare(b.name), country:(a,b)=>cname(a.country).localeCompare(cname(b.country)),
+    avg:(a,b)=>a.avg-b.avg, points:(a,b)=>(rp[a.id]||0)-(rp[b.id]||0), phases:(a,b)=>(a.phasesByDivision[selDiv]||0)-(b.phasesByDivision[selDiv]||0) };
+  const teams=dm[selDiv].slice().sort((a,b)=>cmp[st.key](a,b)*st.dir);
   const tbl=el('table','tbl');
-  tbl.innerHTML='<thead><tr><th>#</th><th>Team</th><th>Country</th><th class="r">Avg</th><th class="r">Ranking pts</th><th class="r">Phases in D'+selDiv+'</th></tr></thead>';
+  const cols=[['team','Team',1],['country','Country',1],['avg','Avg',-1,1],['points','Ranking pts',-1,1],['phases','Phases in D'+selDiv,-1,1]];
+  tbl.innerHTML='<thead>'+sortHead('divisions',cols,'<th>#</th>')+'</thead>';
   const tb=el('tbody');
   teams.forEach((t,i)=>{
     const tr=el('tr');
@@ -2599,6 +2623,7 @@ function renderDivisions(){
     tb.appendChild(tr);
   });
   tbl.appendChild(tb); v.appendChild(tbl);
+  wireSortHead(tbl,'divisions',renderDivisions);
 }
 
 function renderPhase(){
@@ -2720,17 +2745,23 @@ function renderRanking(){
   const v=$('view'); v.innerHTML='';
   const r=E.worldRanking(S);
   v.appendChild(el('div','phead','<b>World ranking</b> <span class="mut">— rolling last 33 phases · ▲▼ shows movement since this phase began</span>'));
+  const st=sortState('ranking','points',-1);
+  const cmp={ division:(a,b)=>a.team.division-b.team.division, team:(a,b)=>tname(a.team).localeCompare(tname(b.team)),
+    country:(a,b)=>cname(a.team.country).localeCompare(cname(b.team.country)), points:(a,b)=>a.pts-b.pts };
+  const sorted=r.slice().sort((a,b)=>cmp[st.key](a,b)*st.dir);
   const tbl=el('table','tbl');
-  tbl.innerHTML='<thead><tr><th>#</th><th class="r">+/−</th><th></th><th>Team</th><th>Country</th><th class="r">Points</th></tr></thead>';
+  const cols=[['division','Div',1],['team','Team',1],['country','Country',1],['points','Points',-1,1]];
+  tbl.innerHTML='<thead>'+sortHead('ranking',cols,'<th>#</th><th class="r">+/&minus;</th>')+'</thead>';
   const tb=el('tbody');
   const prevT=S.rankPrevTeam||{};
-  r.slice(0,50).forEach((o,i)=>{
+  sorted.slice(0,50).forEach((o,i)=>{
     const tr=el('tr');
     tr.innerHTML='<td class="mut">'+(i+1)+'</td><td class="r">'+moveChip(prevT[o.team.id],i+1)+'</td><td>'+divChip(o.team.division)+'</td>'+
       '<td class="tn">'+tname(o.team)+'</td><td class="mut">'+flag(o.team.country)+cname(o.team.country)+'</td><td class="r mono">'+o.pts+'</td>';
     tb.appendChild(tr);
   });
   tbl.appendChild(tb); v.appendChild(tbl);
+  wireSortHead(tbl,'ranking',renderRanking);
 }
 
 let nationsView='country', nationsSel=null;
@@ -2760,9 +2791,15 @@ function renderNations(){
   v.appendChild(selWrap);
 
   const riders = nationsView==='continent' ? E.continentRiderRanking(S, nationsSel) : E.nationRiderRanking(S, nationsSel);
+  const st=sortState('nations','points',-1);
+  const cmp={ rider:(a,b)=>a.name.localeCompare(b.name),
+    team:(a,b)=>(a.teamId!=null?teamNameById(a.teamId):'').localeCompare(b.teamId!=null?teamNameById(b.teamId):''),
+    races:(a,b)=>a.races-b.races, points:(a,b)=>a.pts-b.pts };
+  const sorted=riders.slice().sort((a,b)=>cmp[st.key](a,b)*st.dir);
   const tbl=el('table','tbl'); const tb=el('tbody');
-  tbl.innerHTML='<thead><tr><th>#</th><th>Rider</th><th>Team</th><th class="r">Races</th><th class="r">Points</th></tr></thead>';
-  riders.slice(0,100).forEach((r,i)=>{ const tr=el('tr'); tr.className='rrow';
+  const cols=[['rider','Rider',1],['team','Team',1],['races','Races',-1,1],['points','Points',-1,1]];
+  tbl.innerHTML='<thead>'+sortHead('nations',cols,'<th>#</th>')+'</thead>';
+  sorted.slice(0,100).forEach((r,i)=>{ const tr=el('tr'); tr.className='rrow';
     const leadFlag = (i===0 && nationsView==='country') ? ' <span class="leadmark" title="Leader of '+cname(nationsSel)+'">👑 '+flag(nationsSel)+' leader</span>' : '';
     tr.innerHTML='<td class="mut">'+(i+1)+'</td>'+
       '<td class="tn">'+flag(r.country)+rname(r.name)+leadFlag+'</td>'+
@@ -2770,6 +2807,7 @@ function renderNations(){
       '<td class="r mono">'+r.races+'</td><td class="r mono">'+Math.round(r.pts)+'</td>';
     tr.onclick=()=>openRider(r.name); tb.appendChild(tr); });
   tbl.appendChild(tb); v.appendChild(tbl);
+  wireSortHead(tbl,'nations',renderNations);
 }
 
 function renderRiders(){
@@ -2856,8 +2894,16 @@ function renderTeamBody(id){
     ' · '+(t.homeCity||'')+' · avg '+t.avg.toFixed(1)+' · '+(rp[t.id]||0)+' ranking pts</span></div>';
   h+='<div class="tmeta mut">Phases by division: '+[1,2,3,4].map(d=>'D'+d+' '+(t.phasesByDivision[d]||0)).join(' · ')+'</div>';
   h+='<div class="dsec">Roster</div>';
-  h+='<table class="tbl"><thead><tr><th>Rider</th><th>Role</th><th>Country</th><th class="r">Avg</th><th class="r">Phases</th><th class="r">GTs</th><th>Status</th></tr></thead><tbody>';
-  t.riders.filter(r=>!r.retired).slice().sort((a,b)=>b.avg-a.avg).forEach(r=>{
+  const rosterSt=sortState('teamRoster','avg',-1);
+  const rosterCmp={ rider:(a,b)=>a.name.localeCompare(b.name), role:(a,b)=>(a.a||0)-(b.a||0),
+    country:(a,b)=>cname(a.country).localeCompare(cname(b.country)), avg:(a,b)=>a.avg-b.avg,
+    phases:(a,b)=>(S.phasesRidden[a.name]||0)-(S.phasesRidden[b.name]||0), gts:(a,b)=>(S.gt[a.name]||0)-(S.gt[b.name]||0),
+    status:(a,b)=>{ const oa=S.injuries[a.name], ob=S.injuries[b.name];
+      const outA=(oa!=null&&oa>=S.abs)?1:0, outB=(ob!=null&&ob>=S.abs)?1:0; return outA-outB; } };
+  const rosterCols=[['rider','Rider',1],['role','Role',1],['country','Country',1],['avg','Avg',-1,1],['phases','Phases',-1,1],['gts','GTs',-1,1],['status','Status',1]];
+  const roster=t.riders.filter(r=>!r.retired).slice().sort((a,b)=>rosterCmp[rosterSt.key](a,b)*rosterSt.dir);
+  h+='<table class="tbl" id="rosterTbl"><thead>'+sortHead('teamRoster',rosterCols)+'</thead><tbody>';
+  roster.forEach(r=>{
     const inj=S.injuries[r.name]; const out=(inj!=null&&inj>=S.abs);
     const status=out?('<span class="dn">OUT '+(inj-S.abs+1)+'p</span>'):'<span class="ok">fit</span>';
     h+='<tr><td class="tn">'+rname(r.name)+'</td><td>'+roleChip(r.a)+'</td><td class="mut">'+flag(r.country)+cname(r.country)+'</td><td class="r mono">'+r.avg.toFixed(1)+
@@ -2866,12 +2912,16 @@ function renderTeamBody(id){
   });
   h+='</tbody></table>';
   const openSlots = (E.ROSTER_SIZE||15) - t.riders.filter(r=>!r.retired).length;
+  let fa=[];
   if(openSlots>0){
     h+='<div class="dsec">Open roster slot'+(openSlots>1?'s':'')+' ('+openSlots+') &mdash; sign a free agent</div>';
-    const fa=(S.freeAgents||[]).slice().sort((a,b)=>b.avg-a.avg).slice(0,20);
+    const faSt=sortState('teamOpenSlots','avg',-1);
+    const faCmp={ rider:(a,b)=>a.name.localeCompare(b.name), country:(a,b)=>cname(a.country).localeCompare(cname(b.country)), avg:(a,b)=>a.avg-b.avg };
+    fa=(S.freeAgents||[]).filter(r=>!r.retired).slice().sort((a,b)=>faCmp[faSt.key](a,b)*faSt.dir).slice(0,20);
     if(!fa.length){ h+='<div class="empty">No free agents available right now.</div>'; }
     else {
-      h+='<table class="tbl"><thead><tr><th>Rider</th><th>Country</th><th class="r">Avg</th><th></th></tr></thead><tbody>';
+      const faCols=[['rider','Rider',1],['country','Country',1],['avg','Avg',-1,1]];
+      h+='<table class="tbl" id="openSlotsTbl"><thead>'+sortHead('teamOpenSlots',faCols).replace('</tr>','<th></th></tr>')+'</thead><tbody>';
       fa.forEach(r=>{ h+='<tr><td class="tn">'+rname(r.name)+'</td><td class="mut">'+flag(r.country)+cname(r.country)+
           '</td><td class="r mono">'+r.avg.toFixed(1)+'</td><td><button class="lnk fasign" data-n="'+attrEsc(r.name)+'">sign</button></td></tr>'; });
       h+='</tbody></table>';
@@ -2879,6 +2929,10 @@ function renderTeamBody(id){
   }
   h+='<div class="dsec">Team palmarès</div>'+palmaresBlock(S.teamPalmares[id]);
   box.innerHTML=h;
+  const rosterTbl=box.querySelector('#rosterTbl');
+  if(rosterTbl) wireSortHead(rosterTbl,'teamRoster',()=>renderTeamBody(id));
+  const openTbl=box.querySelector('#openSlotsTbl');
+  if(openTbl) wireSortHead(openTbl,'teamOpenSlots',()=>renderTeamBody(id));
   box.querySelectorAll('.fasign').forEach(b=>b.onclick=()=>{
     if(E.signFreeAgentTo(S, b.dataset.n, id)){ msg(b.dataset.n+' signed to '+t.name); saveGame(); renderTeamBody(id); }
   });
