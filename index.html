@@ -1246,7 +1246,12 @@ const SPONSORS = {
   // ---- import pipeline: overwrite stats from a re-imported database --------
   function normName(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
   function importUpdate(S, incoming){
-    const existing=[]; S.teams.forEach(t=>t.riders.forEach(r=>existing.push(r))); (S.freeAgents||[]).forEach(r=>existing.push(r)); (S.marketPool||[]).forEach(r=>existing.push(r));
+    // retiredRiders must be included here -- confirmed directly as a
+    // real bug: without it, a re-import can't match a retired rider
+    // against anyone, falls into the "brand new rider" branch below, and
+    // pushes them straight into freeAgents with retired:false, silently
+    // un-retiring them on every database update.
+    const existing=[]; S.teams.forEach(t=>t.riders.forEach(r=>existing.push(r))); (S.freeAgents||[]).forEach(r=>existing.push(r)); (S.marketPool||[]).forEach(r=>existing.push(r)); (S.retiredRiders||[]).forEach(r=>existing.push(r));
     const byId={}, byNorm={};
     existing.forEach(r=>{ if(r.id) byId[r.id]=r; const n=normName(r.name); (byNorm[n]||(byNorm[n]=[])).push(r); });
     const seen=new Set();
