@@ -306,6 +306,7 @@ tr.mktactive td{background:rgba(63,179,107,.08)}
   <label class="filebtn" id="loadwrap">Load database<input type="file" id="csv" accept=".csv"></label>
   <label class="filebtn ghost" id="updatewrap" style="display:none">Update database<input type="file" id="updcsv" accept=".csv"></label>
   <button id="btnDraft" disabled>Run draft</button>
+  <button id="btnFlowBack" class="ghost" style="display:none">&larr; Back</button>
   <button id="btnPhase" disabled>Start phase</button>
   <button id="btnYear" disabled>Advance year</button>
   <button id="btnReset" class="ghost">Reset</button>
@@ -1108,13 +1109,19 @@ const SPONSORS = {
   function eligibleMarketTeams(S, division){
     return S.teams.filter(t=>activeRiders(t).length<ROSTER_SIZE && (division==null || Math.abs(t.division-division)<=1));
   }
-  // up to three random teams that still need riders, within ±1 division of the rider on the block
+  // Up to two teams that still need riders, within +/-1 division of the
+  // rider on the block. The rider's own former team is excluded unless
+  // there aren't at least 2 other eligible options -- the point of a
+  // transfer market is seeing them move somewhere new, not routinely
+  // offering "re-sign with the team that just released you."
   function rollMarketTeams(S){
     const active=(S.marketPool||[])[0];
     const div=riderPoolDiv(S, active);
     let ids=eligibleMarketTeams(S, div).map(t=>t.id);
     if(!ids.length) ids=eligibleMarketTeams(S, null).map(t=>t.id);   // fallback: nothing in range
-    shuffle(ids); S.marketTeams=ids.slice(0,3);
+    const withoutOwn = active ? ids.filter(id => id !== active.fromId) : ids;
+    const pool = withoutOwn.length >= 2 ? withoutOwn : ids;          // only fall back to including the former team if there's no other way to reach 2
+    shuffle(pool); S.marketTeams=pool.slice(0,2);
   }
   // open the window: release ~0.8% of all riders into a floating pool sorted best→worst,
   // each release leaving an open slot on its former team. The pool is re-signed one rider
@@ -2174,32 +2181,50 @@ $('btnExport').onclick=()=>exportSave();
 $('btnImport').onclick=()=>importSave();
 const hasMore=()=>!!E.nextUnit(S);
 // primary stepper walks the guided pages: day → (preview → stage result → GC) per stage → recap → phase recap
+// flowHistory snapshots {flow, cur, flowTab} before each forward step,
+// so Back only ever restores a previously-shown screen -- it never
+// re-invokes E.stepPhase/finishPhase/finishMarket/etc, which actually
+// mutate game state and can't be safely undone. Going back is purely a
+// view change: re-display what was already computed, not re-simulate
+// anything.
+let flowHistory=[];
+function pushFlowHistory(){ flowHistory.push({flow, cur, flowTab}); }
 $('btnPhase').onclick=()=>{ if(!S) return;
   if(flow===null){
+    flowHistory=[];
     pdesc=E.setupPhase(S);
     flow='day';
     tab='flow'; render(); syncButtons(); return;
   }
-  if(flow==='day'){ cur=E.nextUnit(S); flow='preview'; flowTab='gc'; tab='flow'; render(); syncButtons(); return; }
-  if(flow==='preview'){ cur=E.stepPhase(S); flow='result'; tab='flow'; render(); syncButtons(); return; }
+  if(flow==='day'){ pushFlowHistory(); cur=E.nextUnit(S); flow='preview'; flowTab='gc'; tab='flow'; render(); syncButtons(); return; }
+  if(flow==='preview'){ pushFlowHistory(); cur=E.stepPhase(S); flow='result'; tab='flow'; render(); syncButtons(); return; }
   if(flow==='result'){
+    pushFlowHistory();
     flow = cur.race.done ? 'recap' : (cur.race.nStages>1 ? 'gc' : 'recap');
     tab='flow'; render(); syncButtons(); return;
   }
   if(flow==='gc' || flow==='recap'){
+    pushFlowHistory();
     if(hasMore()){ cur=E.nextUnit(S); flow='preview'; }
     else { lastLog=E.finishPhase(S); flow='phaserecap'; }
     tab='flow'; render(); syncButtons(); return;
   }
   if(flow==='phaserecap'){
+    pushFlowHistory();
     if((S.market||[]).length){ flow='market'; tab='flow'; render(); syncButtons(); }
-    else { flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); }
+    else { flowHistory=[]; flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); }
     return;
   }
   if(flow==='market'){
     if(S.marketPool&&S.marketPool.length){ E.finishMarket(S); saveGame(); render(); syncButtons(); return; }  // place rest → show recap
-    flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); return;        // recap shown → close
+    flowHistory=[]; flow=null; cur=null; pdesc=null; tab='phase'; setTab(); render(); syncButtons(); saveGame(); return;        // recap shown → close
   }
+};
+$('btnFlowBack').onclick=()=>{
+  if(!flowHistory.length) return;
+  const prev=flowHistory.pop();
+  flow=prev.flow; cur=prev.cur; flowTab=prev.flowTab;
+  tab='flow'; render(); syncButtons();
 };
 let advancing=false;
 $('btnYear').onclick=async ()=>{
@@ -2227,6 +2252,8 @@ function syncButtons(){
   $('btnSave').disabled=!on;
   $('btnDraft').style.display = (riders && !S) ? '' : 'none';
   { const lw=$('loadwrap'), uw=$('updatewrap'); if(lw) lw.style.display = S?'none':''; if(uw) uw.style.display = S?'':'none'; }
+  const fb=$('btnFlowBack');
+  if(fb){ fb.style.display = (on && flow!==null) ? '' : 'none'; fb.disabled = !flowHistory.length || advancing; }
   const b=$('btnPhase'); b.disabled=!on||advancing;
   if(!on){ b.textContent='Advance phase'; return; }
   if(flow===null){ const cal=S.calendar[S.phase-1]; b.textContent = cal.type==='CHAMPS'?'Run championships':'Start phase'; return; }
@@ -2614,7 +2641,7 @@ function flowRecap(v){
   cl('🔵 Sprints classification', r.sprintStand);
   if(isStage) cl('🟢 Points classification', r.pointsStand);
   cl('🔴 Mountains classification', r.komStand);
-  if(r.teamClass&&r.teamClass.length){ const tc=el('div'); tc.innerHTML='<div class="dsec">Team classification <span class="mut">· ▲ promotion / ▼ relegation</span></div>'+teamClassList(r); v.appendChild(tc); }
+  if(r.teamClass&&r.teamClass.length){ const tc=el('div'); tc.innerHTML='<div class="dsec">'+divChip(race.division)+' Team classification <span class="mut">· ▲ promotion / ▼ relegation</span></div>'+teamClassList(r); v.appendChild(tc); }
   flowInjuries(v, r.injuries);
   const more=el('div','rfoot','<button class="lnk">stage-by-stage & full field →</button>');
   more.querySelector('.lnk').onclick=()=>openRaceFromResult(race,'flow');
@@ -3175,7 +3202,7 @@ function renderMarket(){
   const cand=(S.marketTeams||[]).map(id=>S.teamById[id]).filter(Boolean);
   const aft=S.teamById[active.fromId]; const adiv=aft?aft.division:null;
   const range = adiv!=null ? (' <span class="mut">· eligible divisions '+[adiv-1,adiv,adiv+1].filter(d=>d>=1&&d<=4).map(d=>'D'+d).join('/')+'</span>') : '';
-  v.appendChild(el('div','flowsub','Now signing: '+flag(active.country)+'<b>'+active.name+'</b> <span class="mut">'+active.avg.toFixed(1)+' — pick one of three teams</span>'+range));
+  v.appendChild(el('div','flowsub','Now signing: '+flag(active.country)+'<b>'+active.name+'</b> <span class="mut">'+active.avg.toFixed(1)+' — pick one of '+cand.length+' team'+(cand.length===1?'':'s')+'</span>'+range));
   const rows=pool.map(p=>{ const ft=S.teamById[p.fromId];
     return { name:p.name, country:p.country||'', cn:cname(p.country||''), avg:p.avg,
       fromId:p.fromId, fromName:ft?ft.name:'', fromDiv:ft?ft.division:9 }; });
