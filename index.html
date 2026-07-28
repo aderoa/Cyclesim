@@ -1669,6 +1669,22 @@ const SPONSORS = {
                  S.riderLedger.push({name:g.name, pts, abs:S.abs});
                  addTerritory(S, race.country, g.name, pts); }
     });
+    const award=(who,posEquiv)=>{ if(!who) return;
+      const pts=pointsFor(race.tier, posEquiv);
+      if(pts>0){ S.ledger.push({teamId:who.teamId, pts, abs:S.abs});
+                 S.riderLedger.push({name:who.name, pts, abs:S.abs});
+                 addTerritory(S, race.country, who.name, pts); } };
+    // Stage wins: real UCI rankings award points for individual stage
+    // wins, not just the overall GC. Only multi-stage races -- a one-day
+    // race's single "stage" is the GC result already awarded above, so
+    // awarding it again here would double-count the same result.
+    if(race.nStages>1) (race.result.stages||[]).forEach(s=>award(s.winner, 7));  // roughly a top-8 GC finish's worth
+    // Secondary classifications: points/sprints jersey and mountains
+    // jersey, same as real life. Points-vs-sprints split matches the
+    // same nStages branching recordRacePalmares already uses (a one-day
+    // race tracks sprint points, not a separate points classification).
+    award(race.nStages>1 ? race.result.jersey.points : (race.result.sprintStand&&race.result.sprintStand[0]), 10);
+    award(race.result.jersey.kom, 10);
   }
 
   function processInjuries(S, race){
