@@ -1966,7 +1966,18 @@ const SPONSORS = {
       palmares:S.palmares, teamPalmares:S.teamPalmares,
       injuries:S.injuries, injuryDays:S.injuryDays, phasesRidden:S.phasesRidden, gt:S.gt,
       champions:S.champions, market:S.market, marketTeams:S.marketTeams, marketPool:S.marketPool, marketLog:S.marketLog, history:S.history, majorWins:(S.majorWins||[]).slice(-400), log:(S.log||[]).slice(-1500), form:S.form||{}, rankPrevTeam:S.rankPrevTeam||{}, rankPrevRider:S.rankPrevRider||{},
-      fixtures:S.fixtures, pendingFixtures:S.pendingFixtures||[] };
+      fixtures:S.fixtures, pendingFixtures:S.pendingFixtures||[],
+      // The actual mid-phase simulation state (races in progress, each
+      // rider's in-race time/energy/points) -- confirmed directly as the
+      // real bug behind "Next stage doesn't work after refresh":
+      // nextUnit/stepPhase/hasMore all read S.phaseCtx exclusively, and
+      // without this, a reload always left it null (the UI display layer
+      // -- flow/cur/pdesc -- was already fixed separately, but looked
+      // like it was mid-phase while the engine state underneath it was
+      // gone). Structured clone (not JSON.stringify) handles this fine,
+      // including the internal rider-object cross-references within
+      // phaseCtx itself.
+      phaseCtx: S.phaseCtx || null };
   }
   function deserialize(obj){
     const teams=obj.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity||t.name, country:t.country, division:t.division, avg:t.avg, sponsored:t.sponsored,
@@ -1981,10 +1992,29 @@ const SPONSORS = {
     // free agents are riders who have never been on a team: drop any that are now rostered
     // or sitting in the trade market (legacy saves could carry these as duplicates)
     const cleanFA=(obj.freeAgents||[]).filter(r=> riderTeam[r.name]==null && !_mktNames.has(r.name));
+    const freeAgents=cleanFA.map(r=>({...r}));
+    const retiredRiders=(obj.retiredRiders||[]).map(r=>({...r}));
     // migration: championships used to be the last phase; they now open the year at phase 1
     let phase=obj.phase; if((obj.v||1)<2 && phase>=34) phase=1;
-    return { riders:[], teams, teamById, freeAgents:cleanFA.map(r=>({...r})),
-      retiredRiders:(obj.retiredRiders||[]).map(r=>({...r})),
+    // Re-link every in-race rider to the matching, freshly-built roster
+    // object by name -- phaseCtx.races[].riders[].rider must point to
+    // the SAME object as the corresponding S.teams[].riders[] entry
+    // (mutating a rider's in-race state depends on this), but structured
+    // clone gave it an independent copy, since it was never actually the
+    // same object as data.teams to begin with (that goes through its own
+    // separate rid() mapper during serialize).
+    let phaseCtx=null;
+    if(obj.phaseCtx){
+      const riderByName={};
+      teams.forEach(t=>t.riders.forEach(r=>{ riderByName[r.name]=r; }));
+      freeAgents.forEach(r=>{ riderByName[r.name]=r; });
+      retiredRiders.forEach(r=>{ riderByName[r.name]=r; });
+      phaseCtx=obj.phaseCtx;
+      (phaseCtx.races||[]).forEach(rs=>{
+        (rs.riders||[]).forEach(r=>{ if(riderByName[r.name]) r.rider=riderByName[r.name]; });
+      });
+    }
+    return { riders:[], teams, teamById, freeAgents, retiredRiders,
       fixtures:obj.fixtures || buildFixtures(teams), pendingFixtures:obj.pendingFixtures||[], calendar:buildCalendar(),
       year:obj.year, phase, abs:obj.abs, commonCount:obj.commonCount||0,
       ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], territoryPts:obj.territoryPts||{}, raceHistory:obj.raceHistory||{},
@@ -1992,7 +2022,7 @@ const SPONSORS = {
       palmares:obj.palmares||{}, teamPalmares:obj.teamPalmares||{},
       injuries:obj.injuries||{}, injuryDays:obj.injuryDays||{}, phasesRidden:obj.phasesRidden||{}, gt:obj.gt||{},
       champions:obj.champions||{world:null,worldTT:null,national:{}}, market:obj.market||[], marketTeams:obj.marketTeams||[], marketPool:obj.marketPool||[], marketLog:obj.marketLog||[], history:obj.history||[], majorWins:obj.majorWins||[], log:obj.log||[], form:obj.form||null, rankPrevTeam:obj.rankPrevTeam||{}, rankPrevRider:obj.rankPrevRider||{},
-      _divRaces:{} };
+      phaseCtx, _divRaces:{} };
   }
 
   const API={ ATTRS, parseCSV, genesisDraft, seedDivisions, divisionMap, racesPerDivision,
