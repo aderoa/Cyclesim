@@ -1137,6 +1137,7 @@ const SPONSORS = {
   // sign the named pool rider to a team that still has an open slot (<15)
   function signFromPool(S, name, toId){
     const i=(S.marketPool||[]).findIndex(p=>p.name===name); if(i<0) return false;
+    if(S.marketPool[i].retired) return false; // retired riders can't be re-signed, even from the market pool
     const t=S.teamById[toId]; if(!t || activeRiders(t).length>=ROSTER_SIZE) return false;
     // division gate: only sign within ±1 division, unless no in-range team exists at all
     const div=riderPoolDiv(S, S.marketPool[i]);
@@ -1183,7 +1184,7 @@ const SPONSORS = {
   }
   function formTeam(S, riderNames){
     const picked=[];
-    (riderNames||[]).forEach(nm=>{ if(S.riderTeam[nm]!=null) return; const i=(S.freeAgents||[]).findIndex(r=>r.name===nm); if(i>=0) picked.push(S.freeAgents.splice(i,1)[0]); });
+    (riderNames||[]).forEach(nm=>{ if(S.riderTeam[nm]!=null) return; const i=(S.freeAgents||[]).findIndex(r=>r.name===nm); if(i>=0 && !S.freeAgents[i].retired) picked.push(S.freeAgents.splice(i,1)[0]); });
     if(!picked.length) return null;
     const cnt={}; picked.forEach(r=>cnt[r.country]=(cnt[r.country]||0)+1);
     const country=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]||String(a).localeCompare(b))[0];
@@ -1207,6 +1208,7 @@ const SPONSORS = {
     const t=S.teamById[teamId]; if(!t) return false;
     if(activeRiders(t).length>=ROSTER_SIZE) return false;
     const i=(S.freeAgents||[]).findIndex(r=>r.name===name); if(i<0) return false;
+    if(S.freeAgents[i].retired) return false; // retired riders can't be signed back onto a roster
     const r=S.freeAgents.splice(i,1)[0];
     t.riders.push(r); S.riderTeam[name]=teamId; S.riderCountry[name]=r.country;
     t.avg=mean(t.riders.map(x=>x.avg));
@@ -1932,6 +1934,45 @@ const YR0 = 2026;                 // internal year 0 == the 2026 season
 const dyear = y => (y||0) + YR0;  // display the real calendar year
 // ---- persistence (IndexedDB; auto-save each phase, auto-resume on load) ----
 const DBNAME='cyclesim_v14', STORE='saves', SKEY='current';
+// Retired-rider registry: a "New Game"/Draft click calls E.newGame(riders),
+// which rebuilds S entirely from the fresh riders list -- every rider's
+// `retired` flag reverts to false along with everything else, since S is
+// a brand-new object, not an update to the old one. This registry lives
+// under its own key in the same store, is never touched by newGame() or
+// the main save/load path, and gets re-applied to the fresh roster right
+// after every reset so retirements survive it. Keyed by normalized name
+// (matching the engine's own normName convention for cross-import rider
+// matching), not id, since ids can be reassigned on a fresh draft but
+// names are the stable identifier across resets/re-imports.
+const RKEY='retiredRegistry';
+function normNameUI(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim(); }
+async function loadRetiredRegistry(){ try{ const db=await idbOpen();
+  const data=await new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readonly'); const rq=tx.objectStore(STORE).get(RKEY); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); });
+  return new Set(data||[]); }catch(e){ console.warn('CycleSim retired-registry load failed', e); return new Set(); } }
+async function saveRetiredRegistry(set){ try{ const db=await idbOpen();
+  await new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).put([...set],RKEY); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); });
+  }catch(e){ console.warn('CycleSim retired-registry save failed', e); } }
+// Marks/unmarks a rider retired in both the live game state and the
+// persistent registry in one call -- use this instead of setting
+// r.retired directly, so the two never drift out of sync.
+async function setRetired(r, val){
+  r.retired=val;
+  const reg=await loadRetiredRegistry();
+  const key=normNameUI(r.name);
+  if(val) reg.add(key); else reg.delete(key);
+  await saveRetiredRegistry(reg);
+}
+// Re-applies the persistent registry to every rider in a freshly-built
+// game state -- call this right after E.newGame(riders), before the
+// first render, so a reset can't silently un-retire anyone.
+async function reapplyRetiredRegistry(state){
+  const reg=await loadRetiredRegistry();
+  if(!reg.size) return;
+  const apply=r=>{ if(reg.has(normNameUI(r.name))) r.retired=true; };
+  (state.teams||[]).forEach(t=>t.riders.forEach(apply));
+  (state.freeAgents||[]).forEach(apply);
+  (state.marketPool||[]).forEach(apply);
+}
 function idbOpen(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DBNAME,1);
   r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE); };
   r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
@@ -2051,8 +2092,9 @@ $('updcsv').addEventListener('change', e=>{
   };
   rd.readAsText(f);
 });
-$('btnDraft').onclick=()=>{ if(!riders) return;
+$('btnDraft').onclick=async ()=>{ if(!riders) return;
   S=E.newGame(riders); lastLog=null; selTeamId=null; flow=null; cur=null; pdesc=null;
+  await reapplyRetiredRegistry(S);
   msg(S.teams.length+' teams built · '+S.freeAgents.length+' free agents · here\u2019s the '+dyear(S.year)+' calendar');
   tab='calendar'; setTab(); render(); syncButtons(); saveGame();
 };
@@ -2201,7 +2243,7 @@ function openRider(name){
     (RIDERRANK[name]?'<div class="wrankline">🌍 World ranking: <b>#'+RIDERRANK[name]+'</b> '+moveChip((S.rankPrevRider||{})[name],RIDERRANK[name])+'</div>':'')+
     '<div style="margin:2px 0 12px"><button class="lnk" id="retireBtn">'+(r.retired?'↩ Un-retire rider':'⛔ Mark as retired')+'</button></div>'+
     '<div class="dsec">Palmarès</div>'+palmaresBlock(S.palmares[name]);
-  const rb=document.getElementById('retireBtn'); if(rb) rb.onclick=()=>{ r.retired=!r.retired; saveGame(); openRider(name); render(); };
+  const rb=document.getElementById('retireBtn'); if(rb) rb.onclick=async ()=>{ await setRetired(r, !r.retired); saveGame(); openRider(name); render(); };
   $('modal').style.display='flex';
 }
 
