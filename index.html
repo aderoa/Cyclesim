@@ -2113,9 +2113,21 @@ $('updcsv').addEventListener('change', e=>{
   rd.readAsText(f);
 });
 $('btnDraft').onclick=async ()=>{ if(!riders) return;
-  S=E.newGame(riders); lastLog=null; selTeamId=null; flow=null; cur=null; pdesc=null;
-  await reapplyRetiredRegistry(S);
-  msg(S.teams.length+' teams built · '+S.freeAgents.length+' free agents · here\u2019s the '+dyear(S.year)+' calendar');
+  const registry=await loadRetiredRegistry();
+  // Filtered out BEFORE newGame()/genesisDraft() ever sees them -- the
+  // previous approach called newGame() first and marked retirements
+  // afterward, which meant a retired rider still got drafted onto a
+  // team (wasting a roster slot on someone who should never have been
+  // eligible) before being flagged. Now they never enter the draft pool
+  // at all.
+  const eligible=[], retiredOut=[];
+  (riders||[]).forEach(r=> (registry.has(normNameUI(r.name)) ? retiredOut : eligible).push(r));
+  S=E.newGame(eligible); lastLog=null; selTeamId=null; flow=null; cur=null; pdesc=null;
+  // Kept in the database as (unsignable) free agents, already marked
+  // retired -- same fields serialize()/deserialize() already expect.
+  retiredOut.forEach(r=> S.freeAgents.push({ name:r.name, country:r.country, avg:r.avg, a:r.a, id:r.id, lastSeen:r.lastSeen, retired:true }));
+  await reapplyRetiredRegistry(S); // safety net, in case any slipped through some other path
+  msg(S.teams.length+' teams built · '+S.freeAgents.length+' free agents'+(retiredOut.length?' ('+retiredOut.length+' retired, excluded from the draft)':'')+' · here\u2019s the '+dyear(S.year)+' calendar');
   tab='calendar'; setTab(); render(); syncButtons(); saveGame();
 };
 $('btnSave').onclick=()=>{ if(S){ saveGame(); msg('game saved'); } };
