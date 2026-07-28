@@ -2871,13 +2871,13 @@ function renderRiders(){
   S.teams.forEach(t=>t.riders.forEach(r=>{
     const inj=S.injuries[r.name]; const out=(inj!=null&&inj>=S.abs)?(inj-S.abs+1):0;
     rows.push({name:r.name, country:r.country, cn:cname(r.country), teamId:t.id, teamName:t.name,
-      division:t.division, rating:r.avg, phases:S.phasesRidden[r.name]||0, out, pts:rankPts[r.name]||0, retired:!!r.retired}); }));
+      division:t.division, rating:r.avg, phases:S.phasesRidden[r.name]||0, out, pts:rankPts[r.name]||0, retired:!!r.retired, lastSeen:r.lastSeen||null}); }));
   (S.freeAgents||[]).forEach(r=>{ const inj=S.injuries[r.name]; const out=(inj!=null&&inj>=S.abs)?(inj-S.abs+1):0;
     rows.push({name:r.name, country:r.country, cn:cname(r.country), teamId:null, teamName:'', division:9,
-      rating:r.avg, phases:S.phasesRidden[r.name]||0, out, pts:rankPts[r.name]||0, retired:!!r.retired}); });
+      rating:r.avg, phases:S.phasesRidden[r.name]||0, out, pts:rankPts[r.name]||0, retired:!!r.retired, lastSeen:r.lastSeen||null}); });
   (S.retiredRiders||[]).forEach(r=>{
     rows.push({name:r.name, country:r.country, cn:cname(r.country), teamId:null, teamName:'', division:9,
-      rating:r.avg, phases:S.phasesRidden[r.name]||0, out:0, pts:rankPts[r.name]||0, retired:true}); });
+      rating:r.avg, phases:S.phasesRidden[r.name]||0, out:0, pts:rankPts[r.name]||0, retired:true, lastSeen:r.lastSeen||null}); });
 
   const head=el('div','phead','<b>Riders</b> <span class="mut">— '+rows.length.toLocaleString()+' riders · click a column to sort</span>');
   v.appendChild(head);
@@ -2892,11 +2892,13 @@ function renderRiders(){
   const cmp={ name:(a,b)=>a.name.localeCompare(b.name), country:(a,b)=>a.cn.localeCompare(b.cn)||a.name.localeCompare(b.name),
     team:(a,b)=>(a.division-b.division)||a.teamName.localeCompare(b.teamName)||b.rating-a.rating,
     division:(a,b)=>a.division-b.division||b.rating-a.rating, rating:(a,b)=>a.rating-b.rating,
-    phases:(a,b)=>a.phases-b.phases, health:(a,b)=>a.out-b.out||b.rating-a.rating, points:(a,b)=>a.pts-b.pts };
+    phases:(a,b)=>a.phases-b.phases, health:(a,b)=>a.out-b.out||b.rating-a.rating, points:(a,b)=>a.pts-b.pts,
+    lastSeen:(a,b)=>{ const ta=a.lastSeen?Date.parse(a.lastSeen):null, tb=b.lastSeen?Date.parse(b.lastSeen):null;
+      if(ta==null&&tb==null) return 0; if(ta==null) return -1; if(tb==null) return 1; return ta-tb; } };
   filtered.sort((a,b)=>cmp[riderSort.key](a,b)*riderSort.dir);
 
   const cols=[['name','Rider',1],['country','Country',1],['team','Team',1],['division','Div',1],
-    ['rating','Rating',-1],['phases','Phases',-1],['health','Health',1],['points','Points',-1]];
+    ['rating','Rating',-1],['phases','Phases',-1],['health','Health',1],['points','Points',-1],['lastSeen','Last seen',-1]];
   const tbl=el('table','tbl');
   const ar=k=> riderSort.key===k ? ('<span class="ar">'+(riderSort.dir>0?'▲':'▼')+'</span>') : '';
   tbl.innerHTML='<thead><tr><th>#</th>'+cols.map(c=>'<th class="sort'+(c[0]==='rating'||c[0]==='phases'||c[0]==='points'?' r':'')+'" data-k="'+c[0]+'" data-d="'+c[2]+'">'+c[1]+' '+ar(c[0])+'</th>').join('')+'</tr></thead>';
@@ -2914,7 +2916,8 @@ function renderRiders(){
       '<td class="mut">'+(t?tname(t):'<span class="mut">free agent</span>')+'</td>'+
       '<td>'+(o.division===9?'<span class="mut">—</span>':divChip(o.division))+'</td>'+
       '<td class="r mono">'+o.rating.toFixed(1)+'</td><td class="r mono">'+o.phases+'</td>'+
-      '<td>'+health+'</td><td class="r mono">'+o.pts+(RIDERRANK[o.name]?' <span class="mvsm">'+moveChip((S.rankPrevRider||{})[o.name],RIDERRANK[o.name])+'</span>':'')+'</td>';
+      '<td>'+health+'</td><td class="r mono">'+o.pts+(RIDERRANK[o.name]?' <span class="mvsm">'+moveChip((S.rankPrevRider||{})[o.name],RIDERRANK[o.name])+'</span>':'')+'</td>'+
+      '<td class="mut">'+(o.lastSeen||'&mdash;')+'</td>';
     tb.appendChild(tr); });
   tbl.appendChild(tb); v.appendChild(tbl);
   if(filtered.length>400) v.appendChild(el('div','palmsum','Showing top 400 of '+filtered.length.toLocaleString()+
