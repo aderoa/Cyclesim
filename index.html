@@ -1839,7 +1839,7 @@ const SPONSORS = {
     const riderTeam={}, riderCountry={};
     teams.forEach(t=>t.riders.forEach(r=>{ riderTeam[r.name]=t.id; riderCountry[r.name]=r.country; }));
     const S={
-      riders, teams, teamById, freeAgents,
+      riders, teams, teamById, freeAgents, retiredRiders:[],
       fixtures: buildFixtures(teams),
       pendingFixtures: [],
       calendar: buildCalendar(),
@@ -1884,6 +1884,7 @@ const SPONSORS = {
       teams:S.teams.map(t=>({ id:t.id, name:t.name, homeCity:t.homeCity, country:t.country, division:t.division, avg:t.avg, sponsored:t.sponsored,
         phasesByDivision:t.phasesByDivision, riders:t.riders.map(rid) })),
       freeAgents:(S.freeAgents||[]).map(rid),
+      retiredRiders:(S.retiredRiders||[]).map(rid),
       ledger:S.ledger.filter(keep), riderLedger:S.riderLedger.filter(keep), territoryPts:pruneTerritory(S.territoryPts), raceHistory:S.raceHistory||{},
       palmares:S.palmares, teamPalmares:S.teamPalmares,
       injuries:S.injuries, injuryDays:S.injuryDays, phasesRidden:S.phasesRidden, gt:S.gt,
@@ -1906,6 +1907,7 @@ const SPONSORS = {
     // migration: championships used to be the last phase; they now open the year at phase 1
     let phase=obj.phase; if((obj.v||1)<2 && phase>=34) phase=1;
     return { riders:[], teams, teamById, freeAgents:cleanFA.map(r=>({...r})),
+      retiredRiders:(obj.retiredRiders||[]).map(r=>({...r})),
       fixtures:obj.fixtures || buildFixtures(teams), pendingFixtures:obj.pendingFixtures||[], calendar:buildCalendar(),
       year:obj.year, phase, abs:obj.abs, commonCount:obj.commonCount||0,
       ledger:obj.ledger||[], riderLedger:obj.riderLedger||[], territoryPts:obj.territoryPts||{}, raceHistory:obj.raceHistory||{},
@@ -1954,24 +1956,59 @@ async function saveRetiredRegistry(set){ try{ const db=await idbOpen();
   }catch(e){ console.warn('CycleSim retired-registry save failed', e); } }
 // Marks/unmarks a rider retired in both the live game state and the
 // persistent registry in one call -- use this instead of setting
-// r.retired directly, so the two never drift out of sync.
-async function setRetired(r, val){
-  r.retired=val;
+// r.retired directly, so the two never drift out of sync. Takes name
+// (not the rider object) since retiring now actually MOVES the rider
+// between lists rather than just flipping a flag: a retired rider only
+// lives in S.retiredRiders (findable/viewable there, but not on any
+// team roster and not in S.freeAgents, so signFreeAgentTo/formTeam/
+// signFromPool never even see them as a candidate). Un-retiring moves
+// them back into S.freeAgents specifically (not their old team --
+// they re-enter as a normal signable free agent, someone has to
+// actually sign them again).
+function meanUI(a){ return a.length ? a.reduce((s,x)=>s+x,0)/a.length : 0; }
+async function setRetired(name, val){
+  if(val){
+    const {r, team}=findRider(name);
+    if(!r) return;
+    if(team){ const i=team.riders.findIndex(x=>x.name===name); if(i>=0) team.riders.splice(i,1);
+      delete S.riderTeam[name]; team.avg=meanUI(team.riders.map(x=>x.avg)); }
+    else { const i=(S.freeAgents||[]).findIndex(x=>x.name===name); if(i>=0) S.freeAgents.splice(i,1); }
+    r.retired=true;
+    (S.retiredRiders||(S.retiredRiders=[])).push(r);
+  } else {
+    const i=(S.retiredRiders||[]).findIndex(x=>x.name===name);
+    if(i<0) return;
+    const r=S.retiredRiders.splice(i,1)[0];
+    r.retired=false;
+    (S.freeAgents||(S.freeAgents=[])).push(r);
+  }
   const reg=await loadRetiredRegistry();
-  const key=normNameUI(r.name);
+  const key=normNameUI(name);
   if(val) reg.add(key); else reg.delete(key);
   await saveRetiredRegistry(reg);
 }
-// Re-applies the persistent registry to every rider in a freshly-built
-// game state -- call this right after E.newGame(riders), before the
-// first render, so a reset can't silently un-retire anyone.
+// Re-applies the persistent registry to a freshly-built game state --
+// call this right after E.newGame(riders), before the first render.
+// Under normal operation this is a no-op (the draft handler already
+// filters retired riders out before newGame() runs), but if one ever
+// slips through some other path, this moves them into retiredRiders
+// rather than just flagging them in place -- consistent with the rest
+// of the retirement system, where retired means "only in
+// retiredRiders," not "flagged wherever they happen to be sitting."
 async function reapplyRetiredRegistry(state){
   const reg=await loadRetiredRegistry();
   if(!reg.size) return;
-  const apply=r=>{ if(reg.has(normNameUI(r.name))) r.retired=true; };
-  (state.teams||[]).forEach(t=>t.riders.forEach(apply));
-  (state.freeAgents||[]).forEach(apply);
-  (state.marketPool||[]).forEach(apply);
+  if(!state.retiredRiders) state.retiredRiders=[];
+  (state.teams||[]).forEach(t=>{
+    const stray=t.riders.filter(r=>reg.has(normNameUI(r.name)));
+    if(stray.length){ t.riders=t.riders.filter(r=>!reg.has(normNameUI(r.name)));
+      stray.forEach(r=>{ r.retired=true; state.retiredRiders.push(r); }); }
+  });
+  if(state.freeAgents){
+    const stray=state.freeAgents.filter(r=>reg.has(normNameUI(r.name)));
+    if(stray.length){ state.freeAgents=state.freeAgents.filter(r=>!reg.has(normNameUI(r.name)));
+      stray.forEach(r=>{ r.retired=true; state.retiredRiders.push(r); }); }
+  }
 }
 function idbOpen(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DBNAME,1);
   r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE); };
@@ -2123,11 +2160,13 @@ $('btnDraft').onclick=async ()=>{ if(!riders) return;
   const eligible=[], retiredOut=[];
   (riders||[]).forEach(r=> (registry.has(normNameUI(r.name)) ? retiredOut : eligible).push(r));
   S=E.newGame(eligible); lastLog=null; selTeamId=null; flow=null; cur=null; pdesc=null;
-  // Kept in the database as (unsignable) free agents, already marked
-  // retired -- same fields serialize()/deserialize() already expect.
-  retiredOut.forEach(r=> S.freeAgents.push({ name:r.name, country:r.country, avg:r.avg, a:r.a, id:r.id, lastSeen:r.lastSeen, retired:true }));
+  // Only live in S.retiredRiders -- findable/viewable (the riders table
+  // and rider detail modal both check this list), but never in
+  // freeAgents, so they're not even a candidate for signFreeAgentTo/
+  // formTeam/signFromPool to consider.
+  S.retiredRiders = retiredOut.map(r=>({ name:r.name, country:r.country, avg:r.avg, a:r.a, id:r.id, lastSeen:r.lastSeen, retired:true }));
   await reapplyRetiredRegistry(S); // safety net, in case any slipped through some other path
-  msg(S.teams.length+' teams built · '+S.freeAgents.length+' free agents'+(retiredOut.length?' ('+retiredOut.length+' retired, excluded from the draft)':'')+' · here\u2019s the '+dyear(S.year)+' calendar');
+  msg(S.teams.length+' teams built · '+S.freeAgents.length+' free agents'+(retiredOut.length?' · '+retiredOut.length+' retired (excluded from the draft)':'')+' · here\u2019s the '+dyear(S.year)+' calendar');
   tab='calendar'; setTab(); render(); syncButtons(); saveGame();
 };
 $('btnSave').onclick=()=>{ if(S){ saveGame(); msg('game saved'); } };
@@ -2222,7 +2261,10 @@ document.addEventListener('click', e=>{
 });
 function closeModal(){ $('modal').style.display='none'; }
 function findRider(name){ const tid=S.riderTeam[name]; const t=S.teamById[tid];
-  const r=t&&t.riders.find(x=>x.name===name); return {r, team:t}; }
+  const r=t&&t.riders.find(x=>x.name===name); if(r) return {r, team:t};
+  const fa=(S.freeAgents||[]).find(x=>x.name===name); if(fa) return {r:fa, team:null};
+  const rr=(S.retiredRiders||[]).find(x=>x.name===name); if(rr) return {r:rr, team:null};
+  return {r:null, team:null}; }
 function palmaresLine(e){
   const lab={win:'Won',['2nd']:'2nd',['3rd']:'3rd',points:'Points jersey',sprints:'Sprints jersey',kom:'Mountains jersey',NC:'National Champion',WC:'World Champion','WC-TT':'TT World Champion',stage:'Stage win'}[e.place]||e.place;
   const cls=(e.place==='win'||e.place==='stage')?'win':(e.place==='NC'||e.place==='WC'||e.place==='WC-TT')?'title':'';
@@ -2275,7 +2317,7 @@ function openRider(name){
     (RIDERRANK[name]?'<div class="wrankline">🌍 World ranking: <b>#'+RIDERRANK[name]+'</b> '+moveChip((S.rankPrevRider||{})[name],RIDERRANK[name])+'</div>':'')+
     '<div style="margin:2px 0 12px"><button class="lnk" id="retireBtn">'+(r.retired?'↩ Un-retire rider':'⛔ Mark as retired')+'</button></div>'+
     '<div class="dsec">Palmarès</div>'+palmaresBlock(S.palmares[name]);
-  const rb=document.getElementById('retireBtn'); if(rb) rb.onclick=async ()=>{ await setRetired(r, !r.retired); saveGame(); openRider(name); render(); };
+  const rb=document.getElementById('retireBtn'); if(rb) rb.onclick=async ()=>{ await setRetired(name, !r.retired); saveGame(); openRider(name); render(); };
   $('modal').style.display='flex';
 }
 
@@ -2833,6 +2875,9 @@ function renderRiders(){
   (S.freeAgents||[]).forEach(r=>{ const inj=S.injuries[r.name]; const out=(inj!=null&&inj>=S.abs)?(inj-S.abs+1):0;
     rows.push({name:r.name, country:r.country, cn:cname(r.country), teamId:null, teamName:'', division:9,
       rating:r.avg, phases:S.phasesRidden[r.name]||0, out, pts:rankPts[r.name]||0, retired:!!r.retired}); });
+  (S.retiredRiders||[]).forEach(r=>{
+    rows.push({name:r.name, country:r.country, cn:cname(r.country), teamId:null, teamName:'', division:9,
+      rating:r.avg, phases:S.phasesRidden[r.name]||0, out:0, pts:rankPts[r.name]||0, retired:true}); });
 
   const head=el('div','phead','<b>Riders</b> <span class="mut">— '+rows.length.toLocaleString()+' riders · click a column to sort</span>');
   v.appendChild(head);
