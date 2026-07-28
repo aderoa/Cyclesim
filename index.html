@@ -1698,11 +1698,35 @@ const SPONSORS = {
 
   // ---- promotion / relegation ------------------------------------------
   function exemptTeams(race){
-    // teams safe from relegation: GC top-10 rider OR a jersey winner
+    // teams safe from relegation: GC top-10 rider, a jersey winner, OR at
+    // least one stage win in this race.
     const safe=new Set();
     race.result.gc.slice(0,10).forEach(g=>safe.add(g.teamId));
     if(race.result.jersey.points) safe.add(race.result.jersey.points.teamId);
     if(race.result.jersey.kom)    safe.add(race.result.jersey.kom.teamId);
+
+    // Stage-win protection: any team with a stage win is safe from
+    // relegation for this race. Win counts are tracked per team so the
+    // Grand Tour safeguard below can tell "exactly 1 win" apart from "2+
+    // wins" -- one stage out of 21 is a much weaker signal than winning
+    // several, and only the former yields to the safeguard.
+    const stageWinCount={};
+    (race.result.stages||[]).forEach(s=>{ if(s.winner) stageWinCount[s.winner.teamId]=(stageWinCount[s.winner.teamId]||0)+1; });
+    const stageWinOnly=new Set(); // teams whose ONLY protection is the stage-win rule (not already safe via GC/jersey)
+    Object.keys(stageWinCount).forEach(k=>{ const tid=+k; if(!safe.has(tid)) stageWinOnly.add(tid); safe.add(tid); });
+
+    // Grand Tour safeguard: with 21 stages, enough different teams could
+    // each pick up a single win that too few teams remain eligible for
+    // relegation at all. If fewer than 2 non-exempt teams remain, teams
+    // whose only protection is exactly 1 stage win lose it -- 2+ wins is
+    // a real, race-defining result and stays protected either way.
+    if(race.gt){
+      const totalTeams=(race.teams||[]).length;
+      const nonExemptCount=totalTeams-safe.size;
+      if(nonExemptCount<2){
+        stageWinOnly.forEach(tid=>{ if(stageWinCount[tid]===1) safe.delete(tid); });
+      }
+    }
     return safe;
   }
   function bottomNonExempt(race, n){
