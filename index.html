@@ -224,6 +224,13 @@ tr.rrow{cursor:pointer} tr.rrow:hover{background:var(--panel2)}
 .daycard .dnum{font-family:var(--mono);color:var(--muted);width:1.6em;text-align:right}
 .daycard-teams{display:flex;flex-wrap:wrap;gap:5px;padding-left:calc(1.6em + 8px)}
 .daycard-team{font-size:11px;background:var(--line);border-radius:5px;padding:2px 7px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.tagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:14px}
+.tacard{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.tacard-head{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.tacard-head .flag{margin-right:1px}
+.tacard-teams{display:flex;flex-direction:column;gap:4px}
+.tarow{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
+.tarow select{font-size:11px;max-width:150px;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:inherit}
 .tbl th.sort{cursor:pointer;user-select:none}
 .tbl th.sort:hover{color:var(--ink)}
 .tbl th .ar{color:var(--d1)}
@@ -982,15 +989,49 @@ const SPONSORS = {
       const fresh=divisionMap(S.teams);
       S.phaseCtx.races.push(prepareRace(1, cal.special, fresh[1], S));
       S.phaseCtx.special=true;
-    } else {
-      for(let d=1; d<=4; d++){
-        const teams=dm[d]; if(!teams||!teams.length) continue;
-        const nR=racesPerDivision(teams.length,d); const pool=S.fixtures[d]||[]; if(!pool.length) continue;
-        const hosts=drawFixtures(pool, nR, S.commonCount*nR);
-        assignTeams(teams,hosts).forEach(b=>{ if(b.teams.length) S.phaseCtx.races.push(prepareRace(d,b.fixture,b.teams,S)); });
-      }
-      S.phaseCtx.dmBefore=dm;
+      return finishCommonSetup(S);
     }
+    // COMMON: draws the same suggested assignment as before, but stops
+    // here instead of immediately calling prepareRace -- the user gets a
+    // chance to move teams between this division's races first. planTeams
+    // (below) carries {division, hosts, buckets} per division; nothing
+    // is locked in (riders aren't even selected yet) until
+    // confirmPhaseTeams runs.
+    const plan={};
+    for(let d=1; d<=4; d++){
+      const teams=dm[d]; if(!teams||!teams.length) continue;
+      const nR=racesPerDivision(teams.length,d); const pool=S.fixtures[d]||[]; if(!pool.length) continue;
+      const hosts=drawFixtures(pool, nR, S.commonCount*nR);
+      plan[d]={ hosts, buckets:assignTeams(teams,hosts) };
+    }
+    S.phaseCtx.dmBefore=dm;
+    S.phaseCtx.pendingPlan=plan;
+    return { planning:true, byDivision:Object.keys(plan).map(d=>({
+      division:+d,
+      races:plan[d].buckets.map((b,i)=>({ raceIdx:i, host:b.fixture.host, country:b.fixture.country,
+        teams:b.teams.map(t=>({teamId:t.id, name:t.name, country:t.country})) }))
+    })) };
+  }
+  // Finalizes a (possibly user-adjusted) team-to-race plan for a COMMON
+  // phase into real races -- this is where prepareRace actually runs
+  // (rider selection, stage generation), same as setupPhase used to do
+  // in one step. finalBuckets: array of {division, races:[{teams:[ids]}]}
+  // in the same shape planTeams's output describes, letting the UI hand
+  // back whatever arrangement the user settled on.
+  function confirmPhaseTeams(S, finalByDivision){
+    const plan=S.phaseCtx.pendingPlan;
+    finalByDivision.forEach(entry=>{
+      const d=entry.division; const dv=plan[d]; if(!dv) return;
+      entry.races.forEach((r,i)=>{
+        const host=dv.buckets[i].fixture;
+        const teams=r.teamIds.map(id=>S.teamById[id]).filter(Boolean);
+        if(teams.length) S.phaseCtx.races.push(prepareRace(d, host, teams, S));
+      });
+    });
+    delete S.phaseCtx.pendingPlan;
+    return finishCommonSetup(S);
+  }
+  function finishCommonSetup(S){
     // resolve races east-to-west (time-zone order): Australia/NZ first, California last
     S.phaseCtx.races.sort((a,b)=> geo(b.country)[1] - geo(a.country)[1]);
     S.phaseCtx.maxStages=Math.max(1, ...S.phaseCtx.races.map(r=>r.nStages));
@@ -2026,7 +2067,7 @@ const SPONSORS = {
   }
 
   const API={ ATTRS, parseCSV, genesisDraft, seedDivisions, divisionMap, racesPerDivision,
-              buildCalendar, runPhase, setupPhase, stepPhase, nextUnit, finishPhase, phaseRaceSnapshot,
+              buildCalendar, runPhase, setupPhase, confirmPhaseTeams, stepPhase, nextUnit, finishPhase, phaseRaceSnapshot,
               worldRanking, worldRankingRiders, rankIndex, newGame, openMarket, rollMarketTeams, transferRider, signFromPool, finishMarket, formTeam, roleOf, ROLE_ABBR,
               activeRiders, signFreeAgentTo, ROSTER_SIZE,
               importUpdate, staleRiders,
@@ -2130,7 +2171,7 @@ async function saveGame(){ if(!S) return; try{ const db=await idbOpen(); const d
   // (day/preview/result/gc/recap/etc) always snapped back to nothing.
   // IndexedDB uses structured clone (not JSON.stringify), so this
   // handles the same object graphs serialize() already deals with fine.
-  data.uiFlow = { flow, cur, pdesc, tab, flowTab };
+  data.uiFlow = { flow, cur, pdesc, tab, flowTab, teamPlan, teamPlanNames };
   await new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).put(data,SKEY); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); });
   saveStamp(data.savedAt); }catch(e){ console.warn('CycleSim save failed', e); } }
 async function loadGame(){ try{ const db=await idbOpen();
@@ -2138,8 +2179,23 @@ async function loadGame(){ try{ const db=await idbOpen();
   if(!data) return false; S=E.deserialize(data); if(!S.form||!Object.keys(S.form).length) E.refreshForm(S); riders=null; lastLog=null; selTeamId=null;
   flowPast=[]; flowFuture=[]; // back/redo history isn't carried across a reload, only the current screen + progress
   const uf=data.uiFlow;
-  if(uf){ flow=uf.flow||null; cur=uf.cur||null; pdesc=uf.pdesc||null; tab=uf.tab||'phase'; flowTab=uf.flowTab||'gc'; }
-  else { flow=null; cur=null; pdesc=null; }
+  if(uf){ flow=uf.flow||null; cur=uf.cur||null; pdesc=uf.pdesc||null; tab=uf.tab||'phase'; flowTab=uf.flowTab||'gc';
+    teamPlan=uf.teamPlan||null; teamPlanNames=uf.teamPlanNames||null; }
+  else { flow=null; cur=null; pdesc=null; teamPlan=null; teamPlanNames=null; }
+  // Recovery for saves made before phaseCtx started being persisted: the
+  // UI-flow snapshot (flow/cur/pdesc) restores fine on its own, but if
+  // it claims to be mid-phase while S.phaseCtx (the actual race
+  // simulation state that produced it) is missing, that specific
+  // in-progress phase can't be resumed -- it was purely in-memory and
+  // is genuinely gone, not recoverable from this save. Bounce back to
+  // the start of that phase cleanly instead of leaving a dead button.
+  // phaserecap/market are excluded: S.phaseCtx=null is the CORRECT state
+  // there (finishPhase intentionally clears it once a phase completes).
+  loadGame.recoveredFromPoisonedSave = false;
+  if(['day','preview','result','gc','recap','teamassign'].includes(flow) && !S.phaseCtx){
+    flow=null; cur=null; pdesc=null; tab='phase'; teamPlan=null; teamPlanNames=null;
+    loadGame.recoveredFromPoisonedSave = true;
+  }
   saveStamp(data.savedAt); return true; }catch(e){ console.warn('CycleSim load failed', e); return false; } }
 async function clearSave(){ try{ const db=await idbOpen(); await new Promise(res=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).delete(SKEY); tx.oncomplete=res; tx.onerror=res; }); }catch(e){} saveStamp(null); }
 function exportSave(){ if(!S){ msg('no game to export'); return; }
@@ -2161,6 +2217,7 @@ function importSave(){
 }
 let S=null, riders=null, lastLog=null, selDiv=1, tab='divisions';
 let flow=null, cur=null, pdesc=null;          // guided race flow: day→preview→result→gc→recap→phaserecap
+let teamPlan=null, teamPlanNames=null;        // pending team-to-race assignment during the new 'teamassign' step (COMMON phases only)
 let raceView=null, raceBackTab='phase', raceTab='gc', flowTab='gc'; // race screen + classification tabs
 let riderSort={key:'rating',dir:-1};           // riders table sort
 let riderSearch='';                             // riders table name filter
@@ -2326,7 +2383,22 @@ $('btnPhase').onclick=()=>{ if(!S) return;
   }
   if(flow===null){
     flowPast=[]; flowFuture=[];
-    pdesc=E.setupPhase(S);
+    const result=E.setupPhase(S);
+    if(result.planning){
+      teamPlan=result.byDivision.map(d=>({ division:d.division, races:d.races.map(r=>({ raceIdx:r.raceIdx, host:r.host, country:r.country,
+        teamIds:r.teams.map(t=>t.teamId) })) }));
+      teamPlanNames={}; result.byDivision.forEach(d=>d.races.forEach(r=>r.teams.forEach(t=>{ teamPlanNames[t.teamId]={name:t.name,country:t.country}; })));
+      flow='teamassign';
+    } else {
+      pdesc=result;
+      flow='day';
+    }
+    tab='flow'; render(); syncButtons(); saveGame(); return;
+  }
+  if(flow==='teamassign'){
+    flowPast.push(snapshotFlow()); flowFuture=[];
+    pdesc=E.confirmPhaseTeams(S, teamPlan);
+    teamPlan=null; teamPlanNames=null;
     flow='day';
     tab='flow'; render(); syncButtons(); saveGame(); return;
   }
@@ -2392,6 +2464,7 @@ function syncButtons(){
   if(!on){ b.textContent='Advance phase'; return; }
   if(flow===null){ const cal=S.calendar[S.phase-1]; b.textContent = cal.type==='CHAMPS'?'Run championships':'Start phase'; return; }
   const prog = cur&&cur.total ? ' ('+(cur.unit||cur.total)+'/'+cur.total+')' : '';
+  if(flow==='teamassign') b.textContent='Confirm teams →';
   if(flow==='day') b.textContent='Begin →';
   else if(flow==='preview') b.textContent=(cur&&cur.nStages>1?'Ride stage →':'Ride race →');
   else if(flow==='result') b.textContent='Continue →';
@@ -2664,6 +2737,7 @@ function renderHistory(){
 // ---- guided race flow: day → preview → stage result → GC → recap → phase recap ----
 function renderFlow(){
   const v=$('view'); v.innerHTML='';
+  if(flow==='teamassign') return flowTeamAssign(v);
   if(flow==='day') return flowDay(v);
   if(flow==='preview') return flowPreview(v);
   if(flow==='result') return flowResult(v);
@@ -2672,6 +2746,49 @@ function renderFlow(){
   if(flow==='phaserecap') return renderPhase();
   if(flow==='market') return renderMarket();
   v.appendChild(el('div','empty','—'));
+}
+function moveTeamInPlan(division, teamId, newRaceIdx){
+  const dv=teamPlan.find(d=>d.division===division); if(!dv) return;
+  // 25-team cap enforcement -- refuse the move rather than silently truncating
+  const target=dv.races[newRaceIdx];
+  if(target.teamIds.length>=25 && !target.teamIds.includes(teamId)){ msg('that race is already at the 25-team cap'); return; }
+  dv.races.forEach(r=>{ r.teamIds=r.teamIds.filter(id=>id!==teamId); });
+  target.teamIds.push(teamId);
+  renderFlow(); saveGame();
+}
+function flowTeamAssign(v){
+  v.appendChild(el('div','phead','<b>'+dyear(S.year)+' · Phase '+S.phase+'</b> · COMMON <span class="mut">· suggested team assignment — adjust as needed, then confirm</span>'));
+  v.appendChild(el('div','flowsub','Teams are grouped by division below. Each race caps at 25 teams. Move a team to a different race in its division using the dropdown, or press <b>Confirm teams</b> to accept the suggestion as-is.'));
+  teamPlan.forEach(dv=>{
+    const d=el('div'); d.innerHTML='<div class="dsec">'+divChip(dv.division)+' Division '+dv.division+'</div>';
+    v.appendChild(d);
+    const grid=el('div','tagrid');
+    dv.races.forEach((r,ri)=>{
+      const card=el('div','tacard');
+      const full = r.teamIds.length>=25;
+      card.innerHTML='<div class="tacard-head">'+flag(r.country)+'<b>'+r.host+'</b> <span class="'+(full?'dn':'mut')+'">'+r.teamIds.length+'/25</span></div>';
+      const list=el('div','tacard-teams');
+      r.teamIds.forEach(tid=>{
+        const info=teamPlanNames[tid]||{name:tid,country:''};
+        const row=el('div','tarow');
+        const otherRaces=dv.races.map((r2,ri2)=>({ri2,host:r2.host})).filter(x=>x.ri2!==ri);
+        row.innerHTML='<span>'+flag(info.country)+info.name+'</span>'+
+          '<select data-team="'+tid+'" data-div="'+dv.division+'">'+
+            '<option value="'+ri+'">stays: '+r.host+'</option>'+
+            otherRaces.map(o=>{
+              const otherRace=dv.races[o.ri2]; const wouldExceed=otherRace.teamIds.length>=25;
+              return '<option value="'+o.ri2+'"'+(wouldExceed?' disabled':'')+'>move to '+o.host+(wouldExceed?' (full)':'')+'</option>';
+            }).join('')+
+          '</select>';
+        list.appendChild(row);
+      });
+      card.appendChild(list); grid.appendChild(card);
+    });
+    v.appendChild(grid);
+  });
+  v.querySelectorAll('select[data-team]').forEach(sel=>{
+    sel.onchange=()=>{ moveTeamInPlan(+sel.dataset.div, +sel.dataset.team, +sel.value); };
+  });
 }
 function flowDay(v){
   const sp = pdesc.type==='SPECIAL';
@@ -3401,7 +3518,12 @@ msg('load a rider database to begin');
 // auto-resume a saved season if one exists
 (async function boot(){ try{ const ok=await loadGame();
   if(ok){ setTab(); render(); syncButtons();
-    msg((flow!==null?'resumed mid-phase — ':'resumed your saved season — ')+dyear(S.year)+' · Phase '+S.phase); }
+    if(loadGame.recoveredFromPoisonedSave){
+      msg('this phase\u2019s in-progress state was from before mid-phase saving worked, so it couldn\u2019t be resumed — back to the start of Phase '+S.phase+' (your season and standings are untouched)');
+    } else {
+      msg((flow!==null?'resumed mid-phase — ':'resumed your saved season — ')+dyear(S.year)+' · Phase '+S.phase);
+    }
+  }
 }catch(e){} })();
 })();
 
