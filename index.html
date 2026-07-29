@@ -231,6 +231,13 @@ tr.rrow{cursor:pointer} tr.rrow:hover{background:var(--panel2)}
 .tacard-teams{display:flex;flex-direction:column;gap:4px}
 .tarow{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
 .tarow select{font-size:11px;max-width:150px;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:inherit}
+.tacountry{margin-bottom:6px}
+.tacountry-head{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.tarow{cursor:grab}
+.tarow:active{cursor:grabbing}
+.tarow.dragging{opacity:.4}
+.tadrag{color:var(--muted);font-size:12px;cursor:grab}
+.tacard.dragover{border-color:var(--d1,#4a90d9);box-shadow:0 0 0 2px rgba(74,144,217,.25)}
 .tbl th.sort{cursor:pointer;user-select:none}
 .tbl th.sort:hover{color:var(--ink)}
 .tbl th .ar{color:var(--d1)}
@@ -2747,6 +2754,7 @@ function renderFlow(){
   if(flow==='market') return renderMarket();
   v.appendChild(el('div','empty','—'));
 }
+let draggedTeam=null; // {division, teamId} while a drag is in progress
 function moveTeamInPlan(division, teamId, newRaceIdx){
   const dv=teamPlan.find(d=>d.division===division); if(!dv) return;
   // 25-team cap enforcement -- refuse the move rather than silently truncating
@@ -2758,29 +2766,36 @@ function moveTeamInPlan(division, teamId, newRaceIdx){
 }
 function flowTeamAssign(v){
   v.appendChild(el('div','phead','<b>'+dyear(S.year)+' · Phase '+S.phase+'</b> · COMMON <span class="mut">· suggested team assignment — adjust as needed, then confirm</span>'));
-  v.appendChild(el('div','flowsub','Teams are grouped by division below. Each race caps at 25 teams. Move a team to a different race in its division using the dropdown, or press <b>Confirm teams</b> to accept the suggestion as-is.'));
+  v.appendChild(el('div','flowsub','Teams are grouped by division and country below. Each race caps at 25 teams. Drag a team onto a different race card in its division to move it (or use the dropdown), or press <b>Confirm teams</b> to accept the suggestion as-is.'));
   teamPlan.forEach(dv=>{
     const d=el('div'); d.innerHTML='<div class="dsec">'+divChip(dv.division)+' Division '+dv.division+'</div>';
     v.appendChild(d);
     const grid=el('div','tagrid');
     dv.races.forEach((r,ri)=>{
-      const card=el('div','tacard');
+      const card=el('div','tacard'); card.dataset.div=dv.division; card.dataset.race=ri;
       const full = r.teamIds.length>=25;
       card.innerHTML='<div class="tacard-head">'+flag(r.country)+'<b>'+r.host+'</b> <span class="'+(full?'dn':'mut')+'">'+r.teamIds.length+'/25</span></div>';
       const list=el('div','tacard-teams');
-      r.teamIds.forEach(tid=>{
-        const info=teamPlanNames[tid]||{name:tid,country:''};
-        const row=el('div','tarow');
-        const otherRaces=dv.races.map((r2,ri2)=>({ri2,host:r2.host})).filter(x=>x.ri2!==ri);
-        row.innerHTML='<span>'+flag(info.country)+info.name+'</span>'+
-          '<select data-team="'+tid+'" data-div="'+dv.division+'">'+
-            '<option value="'+ri+'">stays: '+r.host+'</option>'+
-            otherRaces.map(o=>{
-              const otherRace=dv.races[o.ri2]; const wouldExceed=otherRace.teamIds.length>=25;
-              return '<option value="'+o.ri2+'"'+(wouldExceed?' disabled':'')+'>move to '+o.host+(wouldExceed?' (full)':'')+'</option>';
-            }).join('')+
-          '</select>';
-        list.appendChild(row);
+      // group this race's teams by country, so e.g. all French teams sit together
+      const byCountry={};
+      r.teamIds.forEach(tid=>{ const c=(teamPlanNames[tid]||{}).country||'??'; (byCountry[c]||(byCountry[c]=[])).push(tid); });
+      Object.keys(byCountry).sort((a,b)=>cname(a).localeCompare(cname(b))).forEach(country=>{
+        const grp=el('div','tacountry'); grp.innerHTML='<div class="tacountry-head">'+flag(country)+cname(country)+'</div>';
+        byCountry[country].forEach(tid=>{
+          const info=teamPlanNames[tid]||{name:tid,country:''};
+          const row=el('div','tarow'); row.draggable=true; row.dataset.team=tid; row.dataset.div=dv.division; row.dataset.fromRace=ri;
+          const otherRaces=dv.races.map((r2,ri2)=>({ri2,host:r2.host})).filter(x=>x.ri2!==ri);
+          row.innerHTML='<span class="tadrag">⠿</span><span>'+info.name+'</span>'+
+            '<select data-team="'+tid+'" data-div="'+dv.division+'">'+
+              '<option value="'+ri+'">stays: '+r.host+'</option>'+
+              otherRaces.map(o=>{
+                const otherRace=dv.races[o.ri2]; const wouldExceed=otherRace.teamIds.length>=25;
+                return '<option value="'+o.ri2+'"'+(wouldExceed?' disabled':'')+'>move to '+o.host+(wouldExceed?' (full)':'')+'</option>';
+              }).join('')+
+            '</select>';
+          grp.appendChild(row);
+        });
+        list.appendChild(grp);
       });
       card.appendChild(list); grid.appendChild(card);
     });
@@ -2788,6 +2803,24 @@ function flowTeamAssign(v){
   });
   v.querySelectorAll('select[data-team]').forEach(sel=>{
     sel.onchange=()=>{ moveTeamInPlan(+sel.dataset.div, +sel.dataset.team, +sel.value); };
+  });
+  v.querySelectorAll('.tarow[draggable]').forEach(row=>{
+    row.addEventListener('dragstart', (e)=>{
+      draggedTeam={ division:+row.dataset.div, teamId:+row.dataset.team };
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed='move';
+    });
+    row.addEventListener('dragend', ()=>{ row.classList.remove('dragging'); draggedTeam=null; });
+  });
+  v.querySelectorAll('.tacard').forEach(card=>{
+    card.addEventListener('dragover', (e)=>{ if(!draggedTeam) return; e.preventDefault(); card.classList.add('dragover'); });
+    card.addEventListener('dragleave', ()=>{ card.classList.remove('dragover'); });
+    card.addEventListener('drop', (e)=>{
+      e.preventDefault(); card.classList.remove('dragover');
+      if(!draggedTeam || draggedTeam.division!==+card.dataset.div) return;
+      moveTeamInPlan(draggedTeam.division, draggedTeam.teamId, +card.dataset.race);
+      draggedTeam=null;
+    });
   });
 }
 function flowDay(v){
