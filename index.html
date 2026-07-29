@@ -228,14 +228,15 @@ tr.rrow{cursor:pointer} tr.rrow:hover{background:var(--panel2)}
 .tacard{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 .tacard-head{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--line)}
 .tacard-head .flag{margin-right:1px}
-.tacard-teams{display:flex;flex-direction:column;gap:4px}
-.tarow{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}
-.tarow select{font-size:11px;max-width:150px;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:inherit}
-.tacountry{margin-bottom:6px}
-.tacountry-head{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px;display:flex;align-items:center;gap:4px}
+.tacard-teams{display:grid;grid-template-columns:16px 1fr auto;align-items:center;column-gap:8px;row-gap:5px}
+.tarow{display:contents;font-size:12px}
+.tarow select{font-size:11px;width:145px;background:var(--bg);border:1px solid var(--line);border-radius:4px;color:inherit}
+.tacountry{display:contents}
+.tacountry-head{grid-column:1/-1;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-top:6px;display:flex;align-items:center;gap:4px}
+.tacountry:first-child .tacountry-head{margin-top:0}
 .tarow{cursor:grab}
 .tarow:active{cursor:grabbing}
-.tarow.dragging{opacity:.4}
+.tarow.dragging>*{opacity:.4}
 .tadrag{color:var(--muted);font-size:12px;cursor:grab}
 .tacard.dragover{border-color:var(--d1,#4a90d9);box-shadow:0 0 0 2px rgba(74,144,217,.25)}
 .tbl th.sort{cursor:pointer;user-select:none}
